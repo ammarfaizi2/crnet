@@ -417,11 +417,21 @@ void crhttp_transfer::Finish(int err, int net_error)
 	timer_.Stop();
 
 	if (request_) {
-		// Cancel() guarantees no further delegate calls (a re-entrant
-		// OnReadCompleted is ignored via finished_). We may be inside a
-		// URLRequest callback, so delete it on a later task.
+		// We may be inside a URLRequest callback, so the request is
+		// deleted on a later task. Cancel() can still have queued a
+		// delegate notification (OnResponseStarted(ERR_ABORTED)) ahead
+		// of that task, so the request keeps its delegate (us) alive
+		// until it is gone; finished_ turns such late calls into
+		// no-ops.
 		request_->Cancel();
-		runner_->DeleteSoon(FROM_HERE, std::move(request_));
+		runner_->PostTask(
+			FROM_HERE,
+			base::BindOnce(
+				[](std::unique_ptr<net::URLRequest> req,
+				   scoped_refptr<crhttp_transfer> self) {
+					req.reset();
+				},
+				std::move(request_), base::WrapRefCounted(this)));
 	}
 	buf_ = nullptr;
 
