@@ -127,6 +127,12 @@ void crhttp_transfer::Cancel(int reason)
 
 void crhttp_transfer::Pause()
 {
+	// From a callback on the network thread it must take effect before
+	// the read that would otherwise follow the callback.
+	if (runner_->BelongsToCurrentThread()) {
+		paused_ = true;
+		return;
+	}
 	runner_->PostTask(FROM_HERE, base::BindOnce(
 					     [](scoped_refptr<crhttp_transfer> t) {
 						     t->paused_ = true;
