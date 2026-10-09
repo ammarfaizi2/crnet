@@ -9,3 +9,5 @@
 
 # CMake build trees
 /build*/
+/chromium/.gclient_previous_custom_vars
+/chromium/.gcs_entries
