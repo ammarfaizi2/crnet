@@ -1,0 +1,11 @@
+# Chromium checkout and depot_tools (fetched by scripts/fetch-chromium.sh)
+/chromium/src/
+/chromium/depot_tools/
+/chromium/.gclient
+/chromium/.gclient_entries
+/chromium/.gclient_previous_sync_commits
+/chromium/.cipd/
+/chromium/_bad_scm/
+
+# CMake build trees
+/build*/
