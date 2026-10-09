@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause
-"""Local test server for the crhttp test suite.
+"""Local test server for the crnet test suite.
 
 Listens on 127.0.0.1 (ephemeral ports) and serves:
   * HTTPS with ALPN h2 + http/1.1 (self-signed certificate)
   * HTTPS restricted to http/1.1
   * plain HTTP/1.1
   * a SOCKS5 proxy (no auth, CONNECT only, remote name resolution)
-  * an HTTP CONNECT proxy requiring Basic auth (user "crhttp", pass "secret")
+  * an HTTP CONNECT proxy requiring Basic auth (user "crnet", pass "secret")
 
 On start-up it prints one JSON line with the ports to stdout, then runs
 until stdin is closed or it receives SIGTERM.
@@ -51,8 +51,8 @@ try:
 except ImportError:  # pragma: no cover
     brotli = None
 
-PLAINTEXT = (b"crhttp content-encoding test payload. " * 200)
-PROXY_USER = "crhttp"
+PLAINTEXT = (b"crnet content-encoding test payload. " * 200)
+PROXY_USER = "crnet"
 PROXY_PASS = "secret"
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0}
 
@@ -446,9 +446,9 @@ async def serve_socks5(reader, writer):
             writer.write(b"\x05\x07\x00\x01" + b"\x00" * 6)
             writer.close()
             return
-        # Names under .crhttp-test resolve to localhost through the proxy
+        # Names under .crnet-test resolve to localhost through the proxy
         # only, proving that resolution happened remotely.
-        target = "127.0.0.1" if host.endswith(".crhttp-test") else host
+        target = "127.0.0.1" if host.endswith(".crnet-test") else host
         STATS["socks5_connects"] += 1
         writer.write(b"\x05\x00\x00\x01" + b"\x00" * 6)
         await writer.drain()
@@ -472,7 +472,7 @@ async def serve_http_proxy(reader, writer):
             ("%s:%s" % (PROXY_USER, PROXY_PASS)).encode()).decode()
         if auth != want:
             writer.write(b"HTTP/1.1 407 Proxy Authentication Required\r\n"
-                         b"Proxy-Authenticate: Basic realm=\"crhttp\"\r\n"
+                         b"Proxy-Authenticate: Basic realm=\"crnet\"\r\n"
                          b"Content-Length: 0\r\n\r\n")
             await writer.drain()
             # Keep the connection for the authenticated retry.
@@ -484,7 +484,7 @@ async def serve_http_proxy(reader, writer):
             writer.close()
             return
         host, port = target.rsplit(":", 1)
-        target_host = "127.0.0.1" if host.endswith(".crhttp-test") else host
+        target_host = "127.0.0.1" if host.endswith(".crnet-test") else host
         STATS["http_proxy_connects"] += 1
         writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         await writer.drain()
@@ -502,9 +502,9 @@ def make_cert(tmpdir):
     subprocess.run(
         ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
          "ec_paramgen_curve:prime256v1", "-nodes", "-days", "2",
-         "-subj", "/CN=crhttp test", "-keyout", key, "-out", crt,
+         "-subj", "/CN=crnet test", "-keyout", key, "-out", crt,
          "-addext",
-         "subjectAltName=DNS:localhost,DNS:*.crhttp-test,IP:127.0.0.1"],
+         "subjectAltName=DNS:localhost,DNS:*.crnet-test,IP:127.0.0.1"],
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return crt, key
 
@@ -517,7 +517,7 @@ def tls_context(crt, key, alpn):
 
 
 async def main():
-    tmpdir = tempfile.mkdtemp(prefix="crhttp-test-")
+    tmpdir = tempfile.mkdtemp(prefix="crnet-test-")
     crt, key = make_cert(tmpdir)
     host = "127.0.0.1"
     servers = {

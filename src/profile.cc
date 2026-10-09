@@ -18,13 +18,13 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "crhttp/internal.h"
+#include "crnet/internal.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 
-namespace crhttp {
+namespace crnet {
 namespace {
 
-constexpr int kMajor = CRHTTP_CHROMIUM_MAJOR;
+constexpr int kMajor = CRNET_CHROMIUM_MAJOR;
 
 // content/common/content_constants_internal.h kFrameAcceptHeaderValueWithJxl
 // plus the signed-exchange suffix added by Chrome.
@@ -234,7 +234,7 @@ BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 			bh.initiator = url::Origin::Create(r);
 		bh.referrer = **ref;
 	}
-	if (!bh.initiator && spec.mode == CRHTTP_MODE_FETCH)
+	if (!bh.initiator && spec.mode == CRNET_MODE_FETCH)
 		bh.initiator = url::Origin::Create(spec.url);
 
 	const bool safe = IsSafeMethod(spec.method);
@@ -242,7 +242,7 @@ BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 		bh.initiator && !bh.initiator->IsSameOriginWith(spec.url);
 
 	switch (spec.mode) {
-	case CRHTTP_MODE_NAVIGATE:
+	case CRNET_MODE_NAVIGATE:
 		bh.priority = net::HIGHEST;
 		if (!safe)
 			h.SetHeader("Cache-Control", "max-age=0");
@@ -262,7 +262,7 @@ BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 		h.SetHeader("Sec-Fetch-Dest", "document");
 		bh.auto_fetch_site = true;
 		break;
-	case CRHTTP_MODE_FETCH:
+	case CRNET_MODE_FETCH:
 		bh.priority = net::MEDIUM;
 		h.SetHeader("sec-ch-ua-platform", platform);
 		h.SetHeader("User-Agent", ua);
@@ -277,7 +277,7 @@ BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 		h.SetHeader("Sec-Fetch-Dest", "empty");
 		bh.auto_fetch_site = true;
 		break;
-	case CRHTTP_MODE_RAW:
+	case CRNET_MODE_RAW:
 	default:
 		bh.priority = net::MEDIUM;
 		break;
@@ -301,7 +301,7 @@ BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 	}
 
 	switch (spec.priority) {
-	case CRHTTP_PRIORITY_DEFAULT:
+	case CRNET_PRIORITY_DEFAULT:
 		break;
 	default:
 		bh.priority = static_cast<net::RequestPriority>(spec.priority);
@@ -350,11 +350,11 @@ net::HttpRequestHeaders FinalizeHeaders(const RequestSpec &spec,
 						       req.url_chain());
 	}
 
-	if (spec.mode == CRHTTP_MODE_RAW)
+	if (spec.mode == CRNET_MODE_RAW)
 		return in;
 
 	base::span<const std::string_view> order =
-		spec.mode == CRHTTP_MODE_FETCH ? base::span(kFetchOrder)
+		spec.mode == CRNET_MODE_FETCH ? base::span(kFetchOrder)
 					       : base::span(kNavigateOrder);
 
 	auto known = [&](std::string_view name) {
@@ -406,4 +406,4 @@ std::string NetErrorName(int net_error)
 	return net_error == 0 ? std::string() : net::ErrorToString(net_error);
 }
 
-} // namespace crhttp
+} // namespace crnet

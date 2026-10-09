@@ -23,10 +23,10 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/thread.h"
-#include "crhttp/internal.h"
+#include "crnet/internal.h"
 #include "net/base/network_change_notifier.h"
 
-namespace crhttp {
+namespace crnet {
 namespace {
 
 std::mutex g_init_mu;
@@ -37,7 +37,7 @@ thread_local bool tls_network_thread = false;
 
 int LogLevelFromEnv()
 {
-	const char *v = getenv("CRHTTP_LOG_LEVEL");
+	const char *v = getenv("CRNET_LOG_LEVEL");
 	if (!v || !*v)
 		return logging::LOGGING_FATAL;
 	// Same scale as Chrome's --log-level: 0=INFO 1=WARNING 2=ERROR 3=FATAL.
@@ -60,7 +60,7 @@ std::string FromEnv(const char *arg, const char *env)
 bool DoInit(const char *enable_features, const char *disable_features)
 {
 	// Leaked on purpose: Chromium singletons register exit callbacks with
-	// it, and running them while the host process exits (with crhttp
+	// it, and running them while the host process exits (with crnet
 	// threads possibly still alive) is unsafe.
 	new base::AtExitManager();
 
@@ -77,16 +77,16 @@ bool DoInit(const char *enable_features, const char *disable_features)
 
 	auto fl = std::make_unique<base::FeatureList>();
 	fl->InitFromCommandLine(
-		FromEnv(enable_features, "CRHTTP_ENABLE_FEATURES"),
-		FromEnv(disable_features, "CRHTTP_DISABLE_FEATURES"));
+		FromEnv(enable_features, "CRNET_ENABLE_FEATURES"),
+		FromEnv(disable_features, "CRNET_DISABLE_FEATURES"));
 	base::FeatureList::SetInstance(std::move(fl));
 
-	base::ThreadPoolInstance::CreateAndStartWithDefaultParams("crhttp");
+	base::ThreadPoolInstance::CreateAndStartWithDefaultParams("crnet");
 
 	// The NetworkChangeNotifier feeds the system DNS configuration to the
 	// built-in resolver and lets //net react to network changes, as in
 	// Chrome. It lives on a dedicated IO thread for the process lifetime.
-	auto *ncn_thread = new base::Thread("crhttp-ncn");
+	auto *ncn_thread = new base::Thread("crnet-ncn");
 	base::Thread::Options opts(base::MessagePumpType::IO, 0);
 	if (!ncn_thread->StartWithOptions(std::move(opts)))
 		return false;
@@ -128,4 +128,4 @@ void MarkNetworkThread()
 	tls_network_thread = true;
 }
 
-} // namespace crhttp
+} // namespace crnet

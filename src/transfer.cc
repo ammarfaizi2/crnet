@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //
-// crhttp_transfer: one request driven through net::URLRequest as an
+// crnet_transfer: one request driven through net::URLRequest as an
 // asynchronous state machine on the client's network thread.
 //
 //   StartOnNetworkThread -> [OnReceivedRedirect]* -> OnResponseStarted
@@ -15,7 +15,7 @@
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
-#include "crhttp/internal.h"
+#include "crnet/internal.h"
 #include "net/base/auth.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
@@ -36,11 +36,11 @@ namespace {
 constexpr int kReadSize = 64 * 1024;
 
 constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
-	net::DefineNetworkTrafficAnnotation("crhttp", R"(
+	net::DefineNetworkTrafficAnnotation("crnet", R"(
 		semantics {
-			sender: "crhttp"
-			description: "HTTP request issued by a crhttp user."
-			trigger: "crhttp_perform() or crhttp_start()."
+			sender: "crnet"
+			description: "HTTP request issued by a crnet user."
+			trigger: "crnet_perform() or crnet_start()."
 			data: "Whatever the embedding application sends."
 			destination: OTHER
 		}
@@ -53,12 +53,12 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
 // Ties a URLRequest back to its transfer for the NetworkDelegate.
 const void *const kTransferKey = &kTransferKey;
 struct TransferLink : public base::SupportsUserData::Data {
-	explicit TransferLink(crhttp_transfer *t) : t(t) {}
-	crhttp_transfer *t;
+	explicit TransferLink(crnet_transfer *t) : t(t) {}
+	crnet_transfer *t;
 };
 
 // Marks the current thread as running a callback of |t| for the
-// duration of the scope (re-entrancy detection in crhttp_transfer_free).
+// duration of the scope (re-entrancy detection in crnet_transfer_free).
 class CallbackScope {
 public:
 	explicit CallbackScope(std::atomic<base::PlatformThreadId> *slot)
@@ -75,21 +75,21 @@ private:
 
 } // namespace
 
-namespace crhttp {
+namespace crnet {
 
-crhttp_transfer *TransferForRequest(const net::URLRequest *req)
+crnet_transfer *TransferForRequest(const net::URLRequest *req)
 {
 	auto *link =
 		static_cast<TransferLink *>(req->GetUserData(kTransferKey));
 	return link ? link->t : nullptr;
 }
 
-} // namespace crhttp
+} // namespace crnet
 
-crhttp_transfer::crhttp_transfer(crhttp_client *client,
-				 crhttp::RequestSpec spec,
-				 const crhttp_callbacks *cb, void *user_data,
-				 crhttp_queue *queue)
+crnet_transfer::crnet_transfer(crnet_client *client,
+				 crnet::RequestSpec spec,
+				 const crnet_callbacks *cb, void *user_data,
+				 crnet_queue *queue)
 	: client_(client),
 	  runner_(client->runner()),
 	  spec_(std::move(spec)),
@@ -100,9 +100,9 @@ crhttp_transfer::crhttp_transfer(crhttp_client *client,
 		cb_ = *cb;
 }
 
-crhttp_transfer::~crhttp_transfer() = default;
+crnet_transfer::~crnet_transfer() = default;
 
-bool crhttp_transfer::in_callback_on_this_thread() const
+bool crnet_transfer::in_callback_on_this_thread() const
 {
 	return callback_thread_.load() == base::PlatformThread::CurrentId();
 }
@@ -111,7 +111,7 @@ bool crhttp_transfer::in_callback_on_this_thread() const
 // Any thread
 // ------------------------------------------------------------------
 
-void crhttp_transfer::Cancel(int reason)
+void crnet_transfer::Cancel(int reason)
 {
 	if (done())
 		return;
@@ -120,12 +120,12 @@ void crhttp_transfer::Cancel(int reason)
 		return;
 	}
 	runner_->PostTask(FROM_HERE,
-			  base::BindOnce(&crhttp_transfer::FailOnNetworkThread,
+			  base::BindOnce(&crnet_transfer::FailOnNetworkThread,
 					 base::WrapRefCounted(this), reason,
 					 net::ERR_ABORTED));
 }
 
-void crhttp_transfer::Pause()
+void crnet_transfer::Pause()
 {
 	// From a callback on the network thread it must take effect before
 	// the read that would otherwise follow the callback.
@@ -134,20 +134,20 @@ void crhttp_transfer::Pause()
 		return;
 	}
 	runner_->PostTask(FROM_HERE, base::BindOnce(
-					     [](scoped_refptr<crhttp_transfer> t) {
+					     [](scoped_refptr<crnet_transfer> t) {
 						     t->paused_ = true;
 					     },
 					     base::WrapRefCounted(this)));
 }
 
-void crhttp_transfer::Resume()
+void crnet_transfer::Resume()
 {
 	runner_->PostTask(FROM_HERE,
-			  base::BindOnce(&crhttp_transfer::ResumeOnNetworkThread,
+			  base::BindOnce(&crnet_transfer::ResumeOnNetworkThread,
 					 base::WrapRefCounted(this)));
 }
 
-int crhttp_transfer::Wait(uint64_t timeout_ms)
+int crnet_transfer::Wait(uint64_t timeout_ms)
 {
 	std::unique_lock<std::mutex> lk(mu_);
 	auto pred = [this] { return done(); };
@@ -157,14 +157,14 @@ int crhttp_transfer::Wait(uint64_t timeout_ms)
 		// Clamp to avoid overflow in the clock arithmetic.
 		uint64_t ms = std::min<uint64_t>(timeout_ms, 1ull << 40);
 		if (!cv_.wait_for(lk, std::chrono::milliseconds(ms), pred))
-			return CRHTTP_E_TIMEOUT;
+			return CRNET_E_TIMEOUT;
 	} else if (!pred()) {
-		return CRHTTP_E_TIMEOUT;
+		return CRNET_E_TIMEOUT;
 	}
 	return result_;
 }
 
-crhttp_response *crhttp_transfer::TakeResponse()
+crnet_response *crnet_transfer::TakeResponse()
 {
 	if (!done())
 		return nullptr;
@@ -175,14 +175,14 @@ crhttp_response *crhttp_transfer::TakeResponse()
 // Network thread
 // ------------------------------------------------------------------
 
-void crhttp_transfer::StartOnNetworkThread()
+void crnet_transfer::StartOnNetworkThread()
 {
 	DCHECK(runner_->BelongsToCurrentThread());
 	if (finished_)
 		return;
 
-	const crhttp::ClientConfig &cfg = client_->config();
-	bh_ = crhttp::BuildBrowserHeaders(cfg, spec_);
+	const crnet::ClientConfig &cfg = client_->config();
+	bh_ = crnet::BuildBrowserHeaders(cfg, spec_);
 
 	request_ = client_->context()->CreateRequest(
 		spec_.url, bh_.priority, this, kTrafficAnnotation,
@@ -201,7 +201,7 @@ void crhttp_transfer::StartOnNetworkThread()
 	request_->set_site_for_cookies(
 		net::SiteForCookies::FromUrl(spec_.url));
 	request_->set_force_main_frame_for_same_site_cookies(
-		spec_.mode == CRHTTP_MODE_NAVIGATE);
+		spec_.mode == CRNET_MODE_NAVIGATE);
 	request_->SetPriorityIncremental(true);
 	if (!spec_.decompress)
 		request_->set_client_side_content_decoding_enabled(true);
@@ -223,28 +223,28 @@ void crhttp_transfer::StartOnNetworkThread()
 			     base::Milliseconds(std::min<uint64_t>(
 				     timeout,
 				     std::numeric_limits<int64_t>::max())),
-			     base::BindOnce(&crhttp_transfer::OnTimeout,
+			     base::BindOnce(&crnet_transfer::OnTimeout,
 					    base::Unretained(this)));
 	}
 
-	resp_ = std::make_unique<crhttp_response>();
+	resp_ = std::make_unique<crnet_response>();
 	resp_->url = spec_.url.spec();
 	request_->Start();
 }
 
-void crhttp_transfer::FailOnNetworkThread(int err, int net_error)
+void crnet_transfer::FailOnNetworkThread(int err, int net_error)
 {
 	if (finished_)
 		return;
 	Finish(err, net_error);
 }
 
-void crhttp_transfer::OnTimeout()
+void crnet_transfer::OnTimeout()
 {
-	FailOnNetworkThread(CRHTTP_E_TIMEOUT, net::ERR_TIMED_OUT);
+	FailOnNetworkThread(CRNET_E_TIMEOUT, net::ERR_TIMED_OUT);
 }
 
-void crhttp_transfer::ResumeOnNetworkThread()
+void crnet_transfer::ResumeOnNetworkThread()
 {
 	if (!paused_)
 		return;
@@ -253,11 +253,11 @@ void crhttp_transfer::ResumeOnNetworkThread()
 		ReadMore();
 }
 
-void crhttp_transfer::FillResponseMeta(net::URLRequest *request)
+void crnet_transfer::FillResponseMeta(net::URLRequest *request)
 {
 	if (!resp_)
-		resp_ = std::make_unique<crhttp_response>();
-	crhttp_response &r = *resp_;
+		resp_ = std::make_unique<crnet_response>();
+	crnet_response &r = *resp_;
 	r.url = request->url().spec();
 	r.status = request->GetResponseCode();
 	r.headers.clear();
@@ -277,7 +277,7 @@ void crhttp_transfer::FillResponseMeta(net::URLRequest *request)
 	r.via_proxy = info.WasFetchedViaProxy();
 }
 
-void crhttp_transfer::OnReceivedRedirect(net::URLRequest *request,
+void crnet_transfer::OnReceivedRedirect(net::URLRequest *request,
 					 const net::RedirectInfo &redirect_info,
 					 bool *defer_redirect)
 {
@@ -285,16 +285,16 @@ void crhttp_transfer::OnReceivedRedirect(net::URLRequest *request,
 		// Hand the 3xx itself to the caller.
 		FillResponseMeta(request);
 		*defer_redirect = true;
-		Finish(CRHTTP_OK, net::OK);
+		Finish(CRNET_OK, net::OK);
 		return;
 	}
 	resp_->redirects++;
 }
 
-void crhttp_transfer::OnAuthRequired(net::URLRequest *request,
+void crnet_transfer::OnAuthRequired(net::URLRequest *request,
 				     const net::AuthChallengeInfo &auth_info)
 {
-	const crhttp::ClientConfig &cfg = client_->config();
+	const crnet::ClientConfig &cfg = client_->config();
 	if (auth_info.is_proxy && !proxy_auth_tried_ &&
 	    !cfg.proxy_user.empty()) {
 		proxy_auth_tried_ = true;
@@ -307,14 +307,14 @@ void crhttp_transfer::OnAuthRequired(net::URLRequest *request,
 	request->CancelAuth();
 }
 
-void crhttp_transfer::OnCertificateRequested(
+void crnet_transfer::OnCertificateRequested(
 	net::URLRequest *request, net::SSLCertRequestInfo *cert_request_info)
 {
 	// No client certificates; continue the handshake without one.
 	request->ContinueWithCertificate(nullptr, nullptr);
 }
 
-void crhttp_transfer::OnSSLCertificateError(net::URLRequest *request,
+void crnet_transfer::OnSSLCertificateError(net::URLRequest *request,
 					    int net_error,
 					    const net::SSLInfo &ssl_info,
 					    bool fatal)
@@ -326,13 +326,13 @@ void crhttp_transfer::OnSSLCertificateError(net::URLRequest *request,
 	request->CancelWithSSLError(net_error, ssl_info);
 }
 
-void crhttp_transfer::OnResponseStarted(net::URLRequest *request,
+void crnet_transfer::OnResponseStarted(net::URLRequest *request,
 					int net_error)
 {
 	if (finished_)
 		return;
 	if (net_error != net::OK) {
-		Finish(CRHTTP_E_NET, net_error);
+		Finish(CRNET_E_NET, net_error);
 		return;
 	}
 	FillResponseMeta(request);
@@ -346,7 +346,7 @@ void crhttp_transfer::OnResponseStarted(net::URLRequest *request,
 		if (finished_)
 			return;
 		if (rc) {
-			Finish(CRHTTP_E_CALLBACK, net::ERR_ABORTED);
+			Finish(CRNET_E_CALLBACK, net::ERR_ABORTED);
 			return;
 		}
 	}
@@ -357,7 +357,7 @@ void crhttp_transfer::OnResponseStarted(net::URLRequest *request,
 		ReadMore();
 }
 
-void crhttp_transfer::ReadMore()
+void crnet_transfer::ReadMore()
 {
 	while (!finished_ && !paused_) {
 		int n = request_->Read(buf_.get(), buf_->size());
@@ -370,7 +370,7 @@ void crhttp_transfer::ReadMore()
 	}
 }
 
-void crhttp_transfer::OnReadCompleted(net::URLRequest *request,
+void crnet_transfer::OnReadCompleted(net::URLRequest *request,
 				      int bytes_read)
 {
 	read_pending_ = false;
@@ -380,20 +380,20 @@ void crhttp_transfer::OnReadCompleted(net::URLRequest *request,
 		ReadMore();
 }
 
-bool crhttp_transfer::HandleRead(int n)
+bool crnet_transfer::HandleRead(int n)
 {
 	if (n < 0) {
-		Finish(CRHTTP_E_NET, n);
+		Finish(CRNET_E_NET, n);
 		return false;
 	}
 	if (n == 0) {
-		Finish(CRHTTP_OK, net::OK);
+		Finish(CRNET_OK, net::OK);
 		return false;
 	}
 
 	body_bytes_ += n;
 	if (spec_.max_body && body_bytes_ > spec_.max_body) {
-		Finish(CRHTTP_E_TOO_LARGE, net::ERR_FILE_TOO_BIG);
+		Finish(CRNET_E_TOO_LARGE, net::ERR_FILE_TOO_BIG);
 		return false;
 	}
 
@@ -406,7 +406,7 @@ bool crhttp_transfer::HandleRead(int n)
 		if (finished_)
 			return false;
 		if (rc) {
-			Finish(CRHTTP_E_CALLBACK, net::ERR_ABORTED);
+			Finish(CRNET_E_CALLBACK, net::ERR_ABORTED);
 			return false;
 		}
 	} else {
@@ -415,7 +415,7 @@ bool crhttp_transfer::HandleRead(int n)
 	return true;
 }
 
-void crhttp_transfer::Finish(int err, int net_error)
+void crnet_transfer::Finish(int err, int net_error)
 {
 	DCHECK(runner_->BelongsToCurrentThread());
 	DCHECK(!finished_);
@@ -434,7 +434,7 @@ void crhttp_transfer::Finish(int err, int net_error)
 			FROM_HERE,
 			base::BindOnce(
 				[](std::unique_ptr<net::URLRequest> req,
-				   scoped_refptr<crhttp_transfer> self) {
+				   scoped_refptr<crnet_transfer> self) {
 					req.reset();
 				},
 				std::move(request_), base::WrapRefCounted(this)));
@@ -442,14 +442,14 @@ void crhttp_transfer::Finish(int err, int net_error)
 	buf_ = nullptr;
 
 	if (!resp_)
-		resp_ = std::make_unique<crhttp_response>();
-	if (err != CRHTTP_OK) {
+		resp_ = std::make_unique<crnet_response>();
+	if (err != CRNET_OK) {
 		resp_->net_error = net_error;
-		resp_->net_error_str = crhttp::NetErrorName(net_error);
+		resp_->net_error_str = crnet::NetErrorName(net_error);
 	}
 
 	// Keep ourselves alive through the callback and the hand-offs below.
-	scoped_refptr<crhttp_transfer> self(this);
+	scoped_refptr<crnet_transfer> self(this);
 	{
 		std::lock_guard<std::mutex> lk(mu_);
 		result_ = err;

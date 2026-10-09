@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+if(NOT TARGET crnet::crnet)
+  add_library(crnet::crnet SHARED IMPORTED)
+  set_target_properties(crnet::crnet PROPERTIES
+    IMPORTED_LOCATION "@PACKAGE_CMAKE_INSTALL_LIBDIR@/libcrnet.so.@PROJECT_VERSION@"
+    IMPORTED_SONAME "libcrnet.so.@CRNET_SOVERSION@"
+    INTERFACE_INCLUDE_DIRECTORIES "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+endif()
+
+check_required_components(crnet)

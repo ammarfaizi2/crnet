@@ -16,20 +16,20 @@ namespace {
 
 using Names = std::vector<std::string>;
 
-json EchoOf(crhttp_client *c, crhttp_request *req)
+json EchoOf(crnet_client *c, crnet_request *req)
 {
 	Result r = Perform(c, req);
-	EXPECT_EQ(r.rc, CRHTTP_OK) << crhttp_response_error_string(r.resp);
-	if (r.rc != CRHTTP_OK)
+	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	if (r.rc != CRNET_OK)
 		return json::object({{"headers", json::array()}});
 	return r.echo();
 }
 
-crhttp_request *Req(const char *method, const std::string &url,
-		    crhttp_mode mode = CRHTTP_MODE_NAVIGATE)
+crnet_request *Req(const char *method, const std::string &url,
+		    crnet_mode mode = CRNET_MODE_NAVIGATE)
 {
-	crhttp_request *r = crhttp_request_new(method, url.c_str());
-	crhttp_request_set_mode(r, mode);
+	crnet_request *r = crnet_request_new(method, url.c_str());
+	crnet_request_set_mode(r, mode);
 	return r;
 }
 
@@ -42,9 +42,9 @@ const char kNavAccept[] =
 
 TEST_F(ClientTest, NavigateHttp2MatchesChrome)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"));
+	crnet_request *req = Req("GET", HttpsUrl("/echo"));
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(HeaderNames(e), (Names{
 		":method", ":authority", ":scheme", ":path",
@@ -53,11 +53,11 @@ TEST_F(ClientTest, NavigateHttp2MatchesChrome)
 		"sec-fetch-site", "sec-fetch-mode", "sec-fetch-user",
 		"sec-fetch-dest", "accept-encoding", "accept-language",
 		"priority"}));
-	EXPECT_EQ(EchoHeader(e, "sec-ch-ua"), crhttp_default_sec_ch_ua());
+	EXPECT_EQ(EchoHeader(e, "sec-ch-ua"), crnet_default_sec_ch_ua());
 	EXPECT_EQ(EchoHeader(e, "sec-ch-ua-mobile"), "?0");
 	EXPECT_EQ(EchoHeader(e, "sec-ch-ua-platform"), "\"Linux\"");
 	EXPECT_EQ(EchoHeader(e, "upgrade-insecure-requests"), "1");
-	EXPECT_EQ(EchoHeader(e, "user-agent"), crhttp_default_user_agent());
+	EXPECT_EQ(EchoHeader(e, "user-agent"), crnet_default_user_agent());
 	EXPECT_EQ(EchoHeader(e, "accept"), kNavAccept);
 	EXPECT_EQ(EchoHeader(e, "sec-fetch-site"), "none");
 	EXPECT_EQ(EchoHeader(e, "sec-fetch-mode"), "navigate");
@@ -70,9 +70,9 @@ TEST_F(ClientTest, NavigateHttp2MatchesChrome)
 
 TEST_F(ClientTest, NavigateHttp11MatchesChromeIncludingCase)
 {
-	crhttp_request *req = Req("GET", HttpsH1Url("/echo"));
+	crnet_request *req = Req("GET", HttpsH1Url("/echo"));
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(HeaderNames(e), (Names{
 		"Host", "Connection", "sec-ch-ua", "sec-ch-ua-mobile",
@@ -85,10 +85,10 @@ TEST_F(ClientTest, NavigateHttp11MatchesChromeIncludingCase)
 
 TEST_F(ClientTest, NavigateWithRefererIsSameOrigin)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"));
-	crhttp_request_set_header(req, "Referer", HttpsUrl("/capture.html").c_str());
+	crnet_request *req = Req("GET", HttpsUrl("/echo"));
+	crnet_request_set_header(req, "Referer", HttpsUrl("/capture.html").c_str());
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(HeaderNames(e), (Names{
 		":method", ":authority", ":scheme", ":path",
@@ -103,13 +103,13 @@ TEST_F(ClientTest, NavigateWithRefererIsSameOrigin)
 
 TEST_F(ClientTest, NavigateFormPostMatchesChrome)
 {
-	crhttp_request *req = Req("POST", HttpsUrl("/echo"));
-	crhttp_request_set_header(req, "Referer", HttpsUrl("/form.html").c_str());
-	crhttp_request_set_header(req, "Content-Type",
+	crnet_request *req = Req("POST", HttpsUrl("/echo"));
+	crnet_request_set_header(req, "Referer", HttpsUrl("/form.html").c_str());
+	crnet_request_set_header(req, "Content-Type",
 				  "application/x-www-form-urlencoded");
-	crhttp_request_set_body(req, "a=b", 3);
+	crnet_request_set_body(req, "a=b", 3);
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(HeaderNames(e), (Names{
 		":method", ":authority", ":scheme", ":path",
@@ -127,10 +127,10 @@ TEST_F(ClientTest, NavigateFormPostMatchesChrome)
 
 TEST_F(ClientTest, FetchGetMatchesChrome)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"), CRHTTP_MODE_FETCH);
-	crhttp_request_set_header(req, "Referer", HttpsUrl("/app.html").c_str());
+	crnet_request *req = Req("GET", HttpsUrl("/echo"), CRNET_MODE_FETCH);
+	crnet_request_set_header(req, "Referer", HttpsUrl("/app.html").c_str());
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(HeaderNames(e), (Names{
 		":method", ":authority", ":scheme", ":path",
@@ -149,10 +149,10 @@ TEST_F(ClientTest, FetchGetMatchesChrome)
 
 TEST_F(ClientTest, FetchWithPageSetAcceptMovesItLikeChrome)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"), CRHTTP_MODE_FETCH);
-	crhttp_request_set_header(req, "Accept", "application/json, text/plain, */*");
+	crnet_request *req = Req("GET", HttpsUrl("/echo"), CRNET_MODE_FETCH);
+	crnet_request_set_header(req, "Accept", "application/json, text/plain, */*");
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(HeaderNames(e), (Names{
 		":method", ":authority", ":scheme", ":path",
@@ -165,13 +165,13 @@ TEST_F(ClientTest, FetchWithPageSetAcceptMovesItLikeChrome)
 
 TEST_F(ClientTest, FetchPostJsonMatchesChrome)
 {
-	crhttp_request *req = Req("POST", HttpsUrl("/echo"), CRHTTP_MODE_FETCH);
-	crhttp_request_set_header(req, "Content-Type", "application/json");
-	crhttp_request_set_header(req, "X-Custom", "1");
-	crhttp_request_set_header(req, "Referer", HttpsUrl("/capture.html").c_str());
-	crhttp_request_set_body(req, "{\"a\":1}", 7);
+	crnet_request *req = Req("POST", HttpsUrl("/echo"), CRNET_MODE_FETCH);
+	crnet_request_set_header(req, "Content-Type", "application/json");
+	crnet_request_set_header(req, "X-Custom", "1");
+	crnet_request_set_header(req, "Referer", HttpsUrl("/capture.html").c_str());
+	crnet_request_set_body(req, "{\"a\":1}", 7);
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(HeaderNames(e), (Names{
 		":method", ":authority", ":scheme", ":path",
@@ -185,10 +185,10 @@ TEST_F(ClientTest, FetchPostJsonMatchesChrome)
 
 TEST_F(ClientTest, XhrHeaderPositionMatchesChrome)
 {
-	crhttp_request *req = Req("GET", HttpsH1Url("/echo"), CRHTTP_MODE_FETCH);
-	crhttp_request_set_header(req, "X-Requested-With", "XMLHttpRequest");
+	crnet_request *req = Req("GET", HttpsH1Url("/echo"), CRNET_MODE_FETCH);
+	crnet_request_set_header(req, "X-Requested-With", "XMLHttpRequest");
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(HeaderNames(e), (Names{
 		"Host", "Connection", "sec-ch-ua-platform", "X-Requested-With",
@@ -201,10 +201,10 @@ TEST_F(ClientTest, FetchCrossSiteAddsOrigin)
 {
 	// 127.0.0.1 vs localhost: different sites.
 	std::string url = "https://127.0.0.1:" + std::to_string(ServerPorts().https) + "/echo";
-	crhttp_request *req = Req("GET", url, CRHTTP_MODE_FETCH);
-	crhttp_request_set_header(req, "Referer", HttpsUrl("/").c_str());
+	crnet_request *req = Req("GET", url, CRNET_MODE_FETCH);
+	crnet_request_set_header(req, "Referer", HttpsUrl("/").c_str());
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 
 	EXPECT_EQ(EchoHeader(e, "sec-fetch-site"), "cross-site");
 	EXPECT_EQ(EchoHeader(e, "origin"),
@@ -220,34 +220,34 @@ TEST_F(ClientTest, SecFetchSiteFollowsRedirectChain)
 	// Start same-origin, get redirected cross-site: Chrome reports the
 	// most distant relation seen along the chain.
 	std::string cross = "https://127.0.0.1:" + std::to_string(ServerPorts().https) + "/echo";
-	crhttp_request *req = Req("GET", HttpsUrl("/redirect-to?url=" + cross));
-	crhttp_request_set_header(req, "Referer", HttpsUrl("/").c_str());
+	crnet_request *req = Req("GET", HttpsUrl("/redirect-to?url=" + cross));
+	crnet_request_set_header(req, "Referer", HttpsUrl("/").c_str());
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 	EXPECT_EQ(EchoHeader(e, "sec-fetch-site"), "cross-site");
 }
 
 TEST_F(ClientTest, RawModeSendsNoBrowserHeaders)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"), CRHTTP_MODE_RAW);
-	crhttp_request_set_header(req, "X-One", "1");
+	crnet_request *req = Req("GET", HttpsUrl("/echo"), CRNET_MODE_RAW);
+	crnet_request_set_header(req, "X-One", "1");
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 	for (const char *h : {"sec-ch-ua", "sec-fetch-mode", "upgrade-insecure-requests"})
 		EXPECT_FALSE(EchoHasHeader(e, h)) << h;
 	EXPECT_EQ(EchoHeader(e, "x-one"), "1");
 	// //net still adds these on its own.
-	EXPECT_EQ(EchoHeader(e, "user-agent"), crhttp_default_user_agent());
+	EXPECT_EQ(EchoHeader(e, "user-agent"), crnet_default_user_agent());
 	EXPECT_TRUE(EchoHasHeader(e, "accept-encoding"));
 }
 
 TEST_F(ClientTest, OverrideKeepsChromePosition)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"));
-	crhttp_request_set_header(req, "user-agent", "MyAgent/1.0");
-	crhttp_request_set_header(req, "Accept-Language", "id-ID,id;q=0.9");
+	crnet_request *req = Req("GET", HttpsUrl("/echo"));
+	crnet_request_set_header(req, "user-agent", "MyAgent/1.0");
+	crnet_request_set_header(req, "Accept-Language", "id-ID,id;q=0.9");
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 	Names n = HeaderNames(e);
 	EXPECT_EQ(n[8], "user-agent");
 	EXPECT_EQ(EchoHeader(e, "user-agent"), "MyAgent/1.0");
@@ -257,12 +257,12 @@ TEST_F(ClientTest, OverrideKeepsChromePosition)
 
 TEST_F(ClientTest, NullValueSuppressesDefaults)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"));
-	crhttp_request_set_header(req, "sec-ch-ua", nullptr);
-	crhttp_request_set_header(req, "Accept-Language", nullptr);
-	crhttp_request_set_header(req, "User-Agent", nullptr);
+	crnet_request *req = Req("GET", HttpsUrl("/echo"));
+	crnet_request_set_header(req, "sec-ch-ua", nullptr);
+	crnet_request_set_header(req, "Accept-Language", nullptr);
+	crnet_request_set_header(req, "User-Agent", nullptr);
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 	EXPECT_FALSE(EchoHasHeader(e, "sec-ch-ua"));
 	EXPECT_FALSE(EchoHasHeader(e, "accept-language"));
 	EXPECT_FALSE(EchoHasHeader(e, "user-agent"));
@@ -271,20 +271,20 @@ TEST_F(ClientTest, NullValueSuppressesDefaults)
 
 TEST_F(ClientTest, ExplicitSecFetchSiteIsKept)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"));
-	crhttp_request_set_header(req, "Referer", "https://elsewhere.example/");
-	crhttp_request_set_header(req, "Sec-Fetch-Site", "same-site");
+	crnet_request *req = Req("GET", HttpsUrl("/echo"));
+	crnet_request_set_header(req, "Referer", "https://elsewhere.example/");
+	crnet_request_set_header(req, "Sec-Fetch-Site", "same-site");
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 	EXPECT_EQ(EchoHeader(e, "sec-fetch-site"), "same-site");
 }
 
 TEST_F(ClientTest, CustomHeadersArePlaced)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"));
-	crhttp_request_set_header(req, "X-Trace-Id", "abc");
+	crnet_request *req = Req("GET", HttpsUrl("/echo"));
+	crnet_request_set_header(req, "X-Trace-Id", "abc");
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 	Names n = HeaderNames(e);
 	auto pos = [&](const char *h) { return std::find(n.begin(), n.end(), h) - n.begin(); };
 	EXPECT_EQ(EchoHeader(e, "x-trace-id"), "abc");
@@ -294,33 +294,33 @@ TEST_F(ClientTest, CustomHeadersArePlaced)
 
 TEST_F(ClientTest, PriorityOverride)
 {
-	crhttp_request *req = Req("GET", HttpsUrl("/echo"));
-	crhttp_request_set_priority(req, CRHTTP_PRIORITY_LOW);
+	crnet_request *req = Req("GET", HttpsUrl("/echo"));
+	crnet_request_set_priority(req, CRNET_PRIORITY_LOW);
 	json e = EchoOf(client_, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 	EXPECT_EQ(EchoHeader(e, "priority"), "u=2, i");
 }
 
 TEST(Identity, ConfiguredBrowserIdentity)
 {
-	crhttp_client_config *cfg = crhttp_client_config_new();
-	crhttp_client_config_set_user_agent(cfg, "UA/1");
-	crhttp_client_config_set_sec_ch_ua(cfg, "\"X\";v=\"1\"");
-	crhttp_client_config_set_platform(cfg, "Windows");
-	crhttp_client_config_set_accept_language(cfg, "id,en;q=0.5");
-	crhttp_client *c = NewTestClient(cfg);
-	crhttp_client_config_free(cfg);
+	crnet_client_config *cfg = crnet_client_config_new();
+	crnet_client_config_set_user_agent(cfg, "UA/1");
+	crnet_client_config_set_sec_ch_ua(cfg, "\"X\";v=\"1\"");
+	crnet_client_config_set_platform(cfg, "Windows");
+	crnet_client_config_set_accept_language(cfg, "id,en;q=0.5");
+	crnet_client *c = NewTestClient(cfg);
+	crnet_client_config_free(cfg);
 
-	for (crhttp_mode m : {CRHTTP_MODE_NAVIGATE, CRHTTP_MODE_FETCH, CRHTTP_MODE_RAW}) {
-		crhttp_request *req = Req("GET", HttpsUrl("/echo"), m);
+	for (crnet_mode m : {CRNET_MODE_NAVIGATE, CRNET_MODE_FETCH, CRNET_MODE_RAW}) {
+		crnet_request *req = Req("GET", HttpsUrl("/echo"), m);
 		json e = EchoOf(c, req);
-		crhttp_request_free(req);
+		crnet_request_free(req);
 		EXPECT_EQ(EchoHeader(e, "user-agent"), "UA/1") << m;
 		EXPECT_EQ(EchoHeader(e, "accept-language"), "id,en;q=0.5") << m;
-		if (m != CRHTTP_MODE_RAW) {
+		if (m != CRNET_MODE_RAW) {
 			EXPECT_EQ(EchoHeader(e, "sec-ch-ua"), "\"X\";v=\"1\"");
 			EXPECT_EQ(EchoHeader(e, "sec-ch-ua-platform"), "\"Windows\"");
 		}
 	}
-	crhttp_client_free(c);
+	crnet_client_free(c);
 }

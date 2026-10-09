@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //
 // Shared test fixture: starts tests/server/test_server.py once per test
-// process and offers small helpers around the crhttp C API.
+// process and offers small helpers around the crnet C API.
 //
-#ifndef CRHTTP_TESTS_COMMON_H
-#define CRHTTP_TESTS_COMMON_H
+#ifndef CRNET_TESTS_COMMON_H
+#define CRNET_TESTS_COMMON_H
 
 #include <string>
 #include <utility>
@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
-#include <crhttp/crhttp.h>
+#include <crnet/crnet.h>
 
 namespace crtest {
 
@@ -35,36 +35,36 @@ std::string HttpsH1Url(const std::string &path);
 std::string HttpUrl(const std::string &path);
 
 // A client that trusts the test server's self-signed certificate.
-crhttp_client *NewTestClient(crhttp_client_config *cfg = nullptr);
+crnet_client *NewTestClient(crnet_client_config *cfg = nullptr);
 
 // Owns the pieces of one blocking request.
 struct Result {
-	int rc = CRHTTP_E_STATE;
-	crhttp_response *resp = nullptr;
+	int rc = CRNET_E_STATE;
+	crnet_response *resp = nullptr;
 
 	Result() = default;
 	Result(Result &&o) noexcept : rc(o.rc), resp(std::exchange(o.resp, nullptr)) {}
-	~Result() { crhttp_response_free(resp); }
+	~Result() { crnet_response_free(resp); }
 
-	int status() const { return crhttp_response_status(resp); }
+	int status() const { return crnet_response_status(resp); }
 	std::string body() const
 	{
 		size_t n = 0;
-		const char *p = crhttp_response_body(resp, &n);
+		const char *p = crnet_response_body(resp, &n);
 		return p ? std::string(p, n) : std::string();
 	}
 	std::string header(const char *name) const
 	{
-		const char *v = crhttp_response_header(resp, name);
+		const char *v = crnet_response_header(resp, name);
 		return v ? v : "";
 	}
-	std::string protocol() const { return crhttp_response_protocol(resp); }
-	int net_error() const { return crhttp_response_net_error(resp); }
+	std::string protocol() const { return crnet_response_protocol(resp); }
+	int net_error() const { return crnet_response_net_error(resp); }
 	json echo() const { return json::parse(body()); }
 };
 
-Result Perform(crhttp_client *c, crhttp_request *req);
-Result Get(crhttp_client *c, const std::string &url);
+Result Perform(crnet_client *c, crnet_request *req);
+Result Get(crnet_client *c, const std::string &url);
 
 // Header names, in order, from an /echo document (pseudo headers kept).
 std::vector<std::string> HeaderNames(const json &echo);
@@ -76,10 +76,10 @@ bool EchoHasHeader(const json &echo, const std::string &name);
 class ClientTest : public ::testing::Test {
 protected:
 	void SetUp() override { client_ = NewTestClient(); ASSERT_NE(client_, nullptr); }
-	void TearDown() override { crhttp_client_free(client_); }
-	crhttp_client *client_ = nullptr;
+	void TearDown() override { crnet_client_free(client_); }
+	crnet_client *client_ = nullptr;
 };
 
 } // namespace crtest
 
-#endif // CRHTTP_TESTS_COMMON_H
+#endif // CRNET_TESTS_COMMON_H

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //
-// Internal declarations shared by the crhttp implementation. Nothing in
-// here is visible to library users; the public ABI is crhttp.h only.
+// Internal declarations shared by the crnet implementation. Nothing in
+// here is visible to library users; the public ABI is crnet.h only.
 //
-#ifndef CRHTTP_SRC_INTERNAL_H
-#define CRHTTP_SRC_INTERNAL_H
+#ifndef CRNET_SRC_INTERNAL_H
+#define CRNET_SRC_INTERNAL_H
 
 #include <stdint.h>
 
@@ -24,7 +24,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/timer/timer.h"
-#include "crhttp/crhttp.h"
+#include "crnet/crnet.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -42,11 +42,11 @@ class CertNetFetcherURLRequest;
 class FileNetLogObserver;
 }
 
-struct crhttp_transfer;
-struct crhttp_client;
-struct crhttp_queue;
+struct crnet_transfer;
+struct crnet_client;
+struct crnet_queue;
 
-namespace crhttp {
+namespace crnet {
 
 // ---------------------------------------------------------------------
 // Process-wide state (global.cc)
@@ -57,7 +57,7 @@ namespace crhttp {
 bool EnsureGlobalInit(const char *enable_features,
 		      const char *disable_features, bool *already);
 
-// True on any crhttp network thread. Blocking calls refuse to run there.
+// True on any crnet network thread. Blocking calls refuse to run there.
 bool OnNetworkThread();
 void MarkNetworkThread();
 
@@ -90,8 +90,8 @@ struct RequestSpec {
 	// means "remove / suppress the default".
 	std::vector<std::pair<std::string, std::optional<std::string>>> headers;
 	std::optional<std::string> body;
-	crhttp_mode mode = CRHTTP_MODE_NAVIGATE;
-	crhttp_priority priority = CRHTTP_PRIORITY_DEFAULT;
+	crnet_mode mode = CRNET_MODE_NAVIGATE;
+	crnet_priority priority = CRNET_PRIORITY_DEFAULT;
 	int max_redirects = 20;
 	std::optional<uint64_t> timeout_ms;
 	bool decompress = true;
@@ -143,19 +143,19 @@ net::HttpRequestHeaders FinalizeHeaders(const RequestSpec &spec,
 std::string NetErrorName(int net_error);
 
 // The transfer driving |req|, or nullptr (transfer.cc).
-crhttp_transfer *TransferForRequest(const net::URLRequest *req);
+crnet_transfer *TransferForRequest(const net::URLRequest *req);
 
-} // namespace crhttp
+} // namespace crnet
 
-struct crhttp_client_config {
-	crhttp::ClientConfig cfg;
+struct crnet_client_config {
+	crnet::ClientConfig cfg;
 };
 
-struct crhttp_request {
-	crhttp::RequestSpec spec;
+struct crnet_request {
+	crnet::RequestSpec spec;
 };
 
-struct crhttp_response {
+struct crnet_response {
 	int status = 0;
 	std::string status_text;
 	std::string url;
@@ -169,21 +169,21 @@ struct crhttp_response {
 	std::string net_error_str;
 };
 
-struct crhttp_queue;
+struct crnet_queue;
 
 // One execution of a request. Ref-counted: the caller's handle, the
 // client's running set and a completion queue may each hold a
 // reference. All URLRequest work happens on the client's network
 // thread; the mutex only guards completion state read by other threads.
-struct crhttp_transfer : public base::RefCountedThreadSafe<crhttp_transfer>,
+struct crnet_transfer : public base::RefCountedThreadSafe<crnet_transfer>,
 			 public net::URLRequest::Delegate {
 public:
-	crhttp_transfer(crhttp_client *client, crhttp::RequestSpec spec,
-			const crhttp_callbacks *cb, void *user_data,
-			crhttp_queue *queue);
+	crnet_transfer(crnet_client *client, crnet::RequestSpec spec,
+			const crnet_callbacks *cb, void *user_data,
+			crnet_queue *queue);
 
-	crhttp_transfer(const crhttp_transfer &) = delete;
-	crhttp_transfer &operator=(const crhttp_transfer &) = delete;
+	crnet_transfer(const crnet_transfer &) = delete;
+	crnet_transfer &operator=(const crnet_transfer &) = delete;
 
 	// Any thread.
 	void Cancel(int reason);
@@ -192,16 +192,16 @@ public:
 	int Wait(uint64_t timeout_ms);
 	bool done() const { return done_.load(std::memory_order_acquire); }
 	int result() const { return result_; }
-	crhttp_response *response() const { return resp_.get(); }
-	crhttp_response *TakeResponse();
+	crnet_response *response() const { return resp_.get(); }
+	crnet_response *TakeResponse();
 	void *user_data() const { return user_data_; }
 	bool in_callback_on_this_thread() const;
 
 	// Network thread.
 	void StartOnNetworkThread();
 	void FailOnNetworkThread(int err, int net_error);
-	const crhttp::BrowserHeaders &browser_headers() const { return bh_; }
-	const crhttp::RequestSpec &spec() const { return spec_; }
+	const crnet::BrowserHeaders &browser_headers() const { return bh_; }
+	const crnet::RequestSpec &spec() const { return spec_; }
 
 	// net::URLRequest::Delegate
 	void OnReceivedRedirect(net::URLRequest *request,
@@ -219,8 +219,8 @@ public:
 	void OnReadCompleted(net::URLRequest *request, int bytes_read) override;
 
 private:
-	friend class base::RefCountedThreadSafe<crhttp_transfer>;
-	~crhttp_transfer() override;
+	friend class base::RefCountedThreadSafe<crnet_transfer>;
+	~crnet_transfer() override;
 
 	void FillResponseMeta(net::URLRequest *request);
 	void ReadMore();
@@ -230,15 +230,15 @@ private:
 	void OnTimeout();
 	void ResumeOnNetworkThread();
 
-	crhttp_client *client_;
+	crnet_client *client_;
 	scoped_refptr<base::SingleThreadTaskRunner> runner_;
-	crhttp::RequestSpec spec_;
-	crhttp_callbacks cb_{};
+	crnet::RequestSpec spec_;
+	crnet_callbacks cb_{};
 	void *user_data_;
-	crhttp_queue *queue_;
+	crnet_queue *queue_;
 
 	// Network thread only.
-	crhttp::BrowserHeaders bh_;
+	crnet::BrowserHeaders bh_;
 	std::unique_ptr<net::URLRequest> request_;
 	scoped_refptr<net::IOBufferWithSize> buf_;
 	base::OneShotTimer timer_;
@@ -249,36 +249,36 @@ private:
 	bool proxy_auth_tried_ = false;
 	uint64_t body_bytes_ = 0;
 
-	std::unique_ptr<crhttp_response> resp_;
+	std::unique_ptr<crnet_response> resp_;
 
 	mutable std::mutex mu_;
 	std::condition_variable cv_;
 	std::atomic<bool> done_{false};
-	int result_ = CRHTTP_E_STATE;
+	int result_ = CRNET_E_STATE;
 	// Thread currently running one of this transfer's callbacks.
 	std::atomic<base::PlatformThreadId> callback_thread_{
 		base::kInvalidThreadId};
 };
 
 // A network context bound to its own IO thread.
-struct crhttp_client {
+struct crnet_client {
 public:
-	static crhttp_client *Create(const crhttp::ClientConfig &cfg);
+	static crnet_client *Create(const crnet::ClientConfig &cfg);
 	void Destroy();
 
 	// Any thread. Returns false if the client is shutting down.
-	bool Start(scoped_refptr<crhttp_transfer> t);
+	bool Start(scoped_refptr<crnet_transfer> t);
 
 	bool IsNetworkThread() const { return runner_->BelongsToCurrentThread(); }
 	const scoped_refptr<base::SingleThreadTaskRunner> &runner() const
 	{
 		return runner_;
 	}
-	const crhttp::ClientConfig &config() const { return cfg_; }
+	const crnet::ClientConfig &config() const { return cfg_; }
 
 	// Network thread only.
 	net::URLRequestContext *context() const { return context_.get(); }
-	void TransferFinished(crhttp_transfer *t);
+	void TransferFinished(crnet_transfer *t);
 
 	// Blocking helpers (not on a network thread).
 	int SetCookie(const std::string &url, const std::string &line);
@@ -287,13 +287,13 @@ public:
 	void CloseIdle();
 
 private:
-	explicit crhttp_client(const crhttp::ClientConfig &cfg);
-	~crhttp_client();
+	explicit crnet_client(const crnet::ClientConfig &cfg);
+	~crnet_client();
 
 	bool InitOnNetworkThread();
 	void ShutdownOnNetworkThread(base::WaitableEvent *ev);
 
-	crhttp::ClientConfig cfg_;
+	crnet::ClientConfig cfg_;
 	base::Thread thread_;
 	scoped_refptr<base::SingleThreadTaskRunner> runner_;
 	std::atomic<bool> shutting_down_{false};
@@ -302,20 +302,20 @@ private:
 	std::unique_ptr<net::URLRequestContext> context_;
 	std::unique_ptr<net::FileNetLogObserver> netlog_;
 	scoped_refptr<net::CertNetFetcherURLRequest> cert_fetcher_;
-	std::set<scoped_refptr<crhttp_transfer>> running_;
+	std::set<scoped_refptr<crnet_transfer>> running_;
 };
 
 // Completion queue (queue.cc).
-struct crhttp_queue {
+struct crnet_queue {
 public:
-	crhttp_queue();
-	~crhttp_queue();
+	crnet_queue();
+	~crnet_queue();
 
 	bool ok() const { return efd_ >= 0; }
 	int fd() const { return efd_; }
-	void Started(crhttp_transfer *t);
-	void Completed(crhttp_transfer *t);
-	int Pop(crhttp_transfer **t, void **user_data, uint64_t timeout_ms);
+	void Started(crnet_transfer *t);
+	void Completed(crnet_transfer *t);
+	int Pop(crnet_transfer **t, void **user_data, uint64_t timeout_ms);
 	size_t pending() const;
 	void Drain();
 
@@ -323,8 +323,8 @@ private:
 	int efd_ = -1;
 	mutable std::mutex mu_;
 	std::condition_variable cv_;
-	std::set<scoped_refptr<crhttp_transfer>> running_;
-	std::deque<scoped_refptr<crhttp_transfer>> done_;
+	std::set<scoped_refptr<crnet_transfer>> running_;
+	std::deque<scoped_refptr<crnet_transfer>> done_;
 };
 
-#endif // CRHTTP_SRC_INTERNAL_H
+#endif // CRNET_SRC_INTERNAL_H

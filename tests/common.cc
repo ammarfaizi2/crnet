@@ -11,8 +11,8 @@
 #include <mutex>
 #include <strings.h>
 
-#ifndef CRHTTP_TEST_SERVER
-#error "CRHTTP_TEST_SERVER must point at tests/server/test_server.py"
+#ifndef CRNET_TEST_SERVER
+#error "CRNET_TEST_SERVER must point at tests/server/test_server.py"
 #endif
 
 namespace crtest {
@@ -44,7 +44,7 @@ void StartServer()
 		dup2(out[1], 1);
 		close(in[1]);
 		close(out[0]);
-		execlp("python3", "python3", "-I", CRHTTP_TEST_SERVER, nullptr);
+		execlp("python3", "python3", "-I", CRNET_TEST_SERVER, nullptr);
 		_exit(127);
 	}
 	close(in[0]);
@@ -92,31 +92,31 @@ std::string HttpUrl(const std::string &path)
 	return "http://localhost:" + std::to_string(ServerPorts().http) + path;
 }
 
-crhttp_client *NewTestClient(crhttp_client_config *cfg)
+crnet_client *NewTestClient(crnet_client_config *cfg)
 {
 	ServerPorts();
 	bool own = !cfg;
 	if (own)
-		cfg = crhttp_client_config_new();
-	crhttp_client_config_set_insecure(cfg, 1);
-	crhttp_client *c = crhttp_client_new(cfg);
+		cfg = crnet_client_config_new();
+	crnet_client_config_set_insecure(cfg, 1);
+	crnet_client *c = crnet_client_new(cfg);
 	if (own)
-		crhttp_client_config_free(cfg);
+		crnet_client_config_free(cfg);
 	return c;
 }
 
-Result Perform(crhttp_client *c, crhttp_request *req)
+Result Perform(crnet_client *c, crnet_request *req)
 {
 	Result r;
-	r.rc = crhttp_perform(c, req, &r.resp);
+	r.rc = crnet_perform(c, req, &r.resp);
 	return r;
 }
 
-Result Get(crhttp_client *c, const std::string &url)
+Result Get(crnet_client *c, const std::string &url)
 {
-	crhttp_request *req = crhttp_request_new("GET", url.c_str());
+	crnet_request *req = crnet_request_new("GET", url.c_str());
 	Result r = Perform(c, req);
-	crhttp_request_free(req);
+	crnet_request_free(req);
 	return r;
 }
 

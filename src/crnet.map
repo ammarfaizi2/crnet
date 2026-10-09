@@ -1,7 +1,7 @@
 /* Export only the public C API; Chromium, BoringSSL and libc++ stay private. */
-CRHTTP_0 {
+CRNET_0 {
 	global:
-		crhttp_*;
+		crnet_*;
 	local:
 		*;
 };

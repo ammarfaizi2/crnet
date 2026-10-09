@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Fetch the pinned Chromium source tree (chromium/VERSION), sync its
-# dependencies, apply the crhttp patches and link //crhttp into it.
+# dependencies, apply the crnet patches and link //crnet into it.
 #
 # Usage: scripts/fetch-chromium.sh [CHROMIUM_DIR]
 #
 # Environment:
-#   CRHTTP_JOBS          parallel jobs for gclient (default: nproc, max 64)
-#   CRHTTP_INSTALL_DEPS  set to 1 to run build/install-build-deps.sh (sudo)
+#   CRNET_JOBS          parallel jobs for gclient (default: nproc, max 64)
+#   CRNET_INSTALL_DEPS  set to 1 to run build/install-build-deps.sh (sudo)
 #
 set -euo pipefail
 
@@ -16,7 +16,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CR_DIR="${1:-${ROOT_DIR}/chromium}"
 VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/chromium/VERSION")"
 PATCH_DIR="${ROOT_DIR}/chromium/patches"
-JOBS="${CRHTTP_JOBS:-$(nproc)}"
+JOBS="${CRNET_JOBS:-$(nproc)}"
 [ "${JOBS}" -gt 64 ] && JOBS=64
 
 mkdir -p "${CR_DIR}"
@@ -69,7 +69,7 @@ log "gclient sync (${JOBS} jobs)"
 (cd "${CR_DIR}" && gclient sync --nohooks --no-history -D -j "${JOBS}" \
 	--revision "src@${SRC_SHA}")
 
-if [ "${CRHTTP_INSTALL_DEPS:-0}" = "1" ]; then
+if [ "${CRNET_INSTALL_DEPS:-0}" = "1" ]; then
 	log "installing build dependencies"
 	sudo "${SRC_DIR}/build/install-build-deps.sh" --no-prompt --no-arm \
 		--no-chromeos-fonts --no-nacl
@@ -81,7 +81,7 @@ log "gclient runhooks"
 # 4) Patches. Reset the touched files first so re-running is idempotent.
 "${ROOT_DIR}/scripts/apply-patches.sh" "${SRC_DIR}"
 
-# 5) Expose the crhttp GN target as //crhttp.
-ln -sfn "${ROOT_DIR}/src" "${SRC_DIR}/crhttp"
+# 5) Expose the crnet GN target as //crnet.
+ln -sfn "${ROOT_DIR}/src" "${SRC_DIR}/crnet"
 
 log "done: ${SRC_DIR} @ ${VERSION} (${SRC_SHA})"

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /*
- * crget - a tiny curl-like tool on top of crhttp.
+ * crget - a tiny curl-like tool on top of crnet.
  *
  *   crget [-x proxy] [-X method] [-H "Name: value"]... [-d body]
  *         [-m navigate|fetch|raw] [-k] [-i] [-L max] [-t ms] URL
@@ -10,7 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <crhttp/crhttp.h>
+#include <crnet/crnet.h>
 
 static void usage(const char *argv0)
 {
@@ -52,22 +52,22 @@ int main(int argc, char *argv[])
 	if (optind != argc - 1)
 		usage(argv[0]);
 
-	crhttp_client_config *cfg = crhttp_client_config_new();
-	if (proxy && crhttp_client_config_set_proxy(cfg, proxy)) {
+	crnet_client_config *cfg = crnet_client_config_new();
+	if (proxy && crnet_client_config_set_proxy(cfg, proxy)) {
 		fprintf(stderr, "bad proxy: %s\n", proxy);
 		return 2;
 	}
-	crhttp_client_config_set_insecure(cfg, insecure);
+	crnet_client_config_set_insecure(cfg, insecure);
 	if (netlog)
-		crhttp_client_config_set_netlog(cfg, netlog);
-	crhttp_client *client = crhttp_client_new(cfg);
-	crhttp_client_config_free(cfg);
+		crnet_client_config_set_netlog(cfg, netlog);
+	crnet_client *client = crnet_client_new(cfg);
+	crnet_client_config_free(cfg);
 	if (!client) {
-		fprintf(stderr, "crhttp_client_new failed\n");
+		fprintf(stderr, "crnet_client_new failed\n");
 		return 1;
 	}
 
-	crhttp_request *req = crhttp_request_new(method, argv[optind]);
+	crnet_request *req = crnet_request_new(method, argv[optind]);
 	if (!req) {
 		fprintf(stderr, "bad URL or method\n");
 		return 2;
@@ -83,43 +83,43 @@ int main(int argc, char *argv[])
 		while (*colon == ' ')
 			colon++;
 		/* "Name:" with no value removes a default header. */
-		crhttp_request_set_header(req, h, *colon ? colon : NULL);
+		crnet_request_set_header(req, h, *colon ? colon : NULL);
 		free(h);
 	}
 	if (body)
-		crhttp_request_set_body(req, body, strlen(body));
+		crnet_request_set_body(req, body, strlen(body));
 	if (!strcmp(mode, "fetch"))
-		crhttp_request_set_mode(req, CRHTTP_MODE_FETCH);
+		crnet_request_set_mode(req, CRNET_MODE_FETCH);
 	else if (!strcmp(mode, "raw"))
-		crhttp_request_set_mode(req, CRHTTP_MODE_RAW);
-	crhttp_request_set_max_redirects(req, max_redirects);
+		crnet_request_set_mode(req, CRNET_MODE_RAW);
+	crnet_request_set_max_redirects(req, max_redirects);
 	if (timeout)
-		crhttp_request_set_timeout(req, timeout);
+		crnet_request_set_timeout(req, timeout);
 
-	crhttp_response *resp = NULL;
-	int rc = crhttp_perform(client, req, &resp);
-	if (rc != CRHTTP_OK) {
-		fprintf(stderr, "error: %s (%s)\n", crhttp_strerror(rc),
-			crhttp_response_error_string(resp));
+	crnet_response *resp = NULL;
+	int rc = crnet_perform(client, req, &resp);
+	if (rc != CRNET_OK) {
+		fprintf(stderr, "error: %s (%s)\n", crnet_strerror(rc),
+			crnet_response_error_string(resp));
 	} else {
 		if (show_headers) {
-			fprintf(stderr, "%s %d %s\n", crhttp_response_protocol(resp),
-				crhttp_response_status(resp),
-				crhttp_response_status_text(resp));
-			for (size_t i = 0; i < crhttp_response_header_count(resp); i++) {
+			fprintf(stderr, "%s %d %s\n", crnet_response_protocol(resp),
+				crnet_response_status(resp),
+				crnet_response_status_text(resp));
+			for (size_t i = 0; i < crnet_response_header_count(resp); i++) {
 				const char *k, *v;
-				crhttp_response_header_at(resp, i, &k, &v);
+				crnet_response_header_at(resp, i, &k, &v);
 				fprintf(stderr, "%s: %s\n", k, v);
 			}
 			fprintf(stderr, "\n");
 		}
 		size_t len;
-		const char *data = crhttp_response_body(resp, &len);
+		const char *data = crnet_response_body(resp, &len);
 		fwrite(data, 1, len, stdout);
 	}
 
-	crhttp_response_free(resp);
-	crhttp_request_free(req);
-	crhttp_client_free(client);
-	return rc == CRHTTP_OK ? 0 : 1;
+	crnet_response_free(resp);
+	crnet_request_free(req);
+	crnet_client_free(client);
+	return rc == CRNET_OK ? 0 : 1;
 }

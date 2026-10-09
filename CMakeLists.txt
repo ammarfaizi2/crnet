@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# crhttp top-level build.
+# crnet top-level build.
 #
-# libcrhttp.so itself must be compiled by Chromium's toolchain (its
+# libcrnet.so itself must be compiled by Chromium's toolchain (its
 # clang, libc++, sysroot and GN build graph), so this project:
 #   1. writes an args.gn and runs Chromium's `gn gen`,
-#   2. runs Chromium's `ninja` to build //crhttp -> libcrhttp.so,
-#   3. exposes the result as the imported target crhttp::crhttp,
+#   2. runs Chromium's `ninja` to build //crnet -> libcrnet.so,
+#   3. exposes the result as the imported target crnet::crnet,
 #   4. builds tests and examples with the *system* compiler against it,
 #      which is exactly how third-party consumers link it.
 #
@@ -17,68 +17,68 @@
 #   ctest --test-dir build
 #
 cmake_minimum_required(VERSION 3.16)
-project(crhttp VERSION 0.1.0 LANGUAGES C CXX)
+project(crnet VERSION 0.1.0 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
-set(CRHTTP_CHROMIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/chromium" CACHE PATH
+set(CRNET_CHROMIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/chromium" CACHE PATH
     "Directory holding depot_tools/ and src/ (see scripts/fetch-chromium.sh)")
-set(CRHTTP_GN_OUT "out/crhttp" CACHE STRING
+set(CRNET_GN_OUT "out/crnet" CACHE STRING
     "GN output directory, relative to the Chromium src/ directory")
-set(CRHTTP_GN_EXTRA_ARGS "" CACHE STRING
+set(CRNET_GN_EXTRA_ARGS "" CACHE STRING
     "Extra GN args appended to args.gn (newline or space separated)")
-option(CRHTTP_CHROMIUM_DEBUG "Build Chromium/crhttp with is_debug=true" OFF)
-option(CRHTTP_ASAN "Build Chromium/crhttp with AddressSanitizer" OFF)
-option(CRHTTP_BUILD_TESTS "Build the test suite" ON)
-option(CRHTTP_BUILD_EXAMPLES "Build the examples" ON)
-set(CRHTTP_NINJA_JOBS "" CACHE STRING "ninja -j for the Chromium build (empty = ninja default)")
+option(CRNET_CHROMIUM_DEBUG "Build Chromium/crnet with is_debug=true" OFF)
+option(CRNET_ASAN "Build Chromium/crnet with AddressSanitizer" OFF)
+option(CRNET_BUILD_TESTS "Build the test suite" ON)
+option(CRNET_BUILD_EXAMPLES "Build the examples" ON)
+set(CRNET_NINJA_JOBS "" CACHE STRING "ninja -j for the Chromium build (empty = ninja default)")
 
-set(CR_SRC "${CRHTTP_CHROMIUM_DIR}/src")
-set(CR_OUT "${CR_SRC}/${CRHTTP_GN_OUT}")
+set(CR_SRC "${CRNET_CHROMIUM_DIR}/src")
+set(CR_OUT "${CR_SRC}/${CRNET_GN_OUT}")
 set(CR_GN "${CR_SRC}/buildtools/linux64/gn")
 set(CR_NINJA "${CR_SRC}/third_party/ninja/ninja")
 
 if(NOT EXISTS "${CR_SRC}/chrome/VERSION")
   message(FATAL_ERROR
     "No Chromium checkout at ${CR_SRC}.\n"
-    "Run scripts/fetch-chromium.sh first, or set CRHTTP_CHROMIUM_DIR.")
+    "Run scripts/fetch-chromium.sh first, or set CRNET_CHROMIUM_DIR.")
 endif()
 
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/chromium/VERSION" CRHTTP_PINNED_CR)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/chromium/VERSION" CRNET_PINNED_CR)
 file(STRINGS "${CR_SRC}/chrome/VERSION" _cr_ver_lines)
 set(_cr_ver "")
 foreach(_l IN LISTS _cr_ver_lines)
   string(REGEX REPLACE "^[A-Z]+=" "" _v "${_l}")
   list(APPEND _cr_ver "${_v}")
 endforeach()
-list(JOIN _cr_ver "." CRHTTP_CHECKOUT_CR)
-if(NOT CRHTTP_CHECKOUT_CR STREQUAL CRHTTP_PINNED_CR)
+list(JOIN _cr_ver "." CRNET_CHECKOUT_CR)
+if(NOT CRNET_CHECKOUT_CR STREQUAL CRNET_PINNED_CR)
   message(WARNING
-    "Chromium checkout is ${CRHTTP_CHECKOUT_CR} but chromium/VERSION pins "
-    "${CRHTTP_PINNED_CR}; re-run scripts/fetch-chromium.sh.")
+    "Chromium checkout is ${CRNET_CHECKOUT_CR} but chromium/VERSION pins "
+    "${CRNET_PINNED_CR}; re-run scripts/fetch-chromium.sh.")
 endif()
-message(STATUS "crhttp: Chromium ${CRHTTP_CHECKOUT_CR} at ${CR_SRC}")
+message(STATUS "crnet: Chromium ${CRNET_CHECKOUT_CR} at ${CR_SRC}")
 
-# //crhttp must point at our src/.
-if(NOT EXISTS "${CR_SRC}/crhttp/BUILD.gn")
-  file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CR_SRC}/crhttp" SYMBOLIC)
+# //crnet must point at our src/.
+if(NOT EXISTS "${CR_SRC}/crnet/BUILD.gn")
+  file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CR_SRC}/crnet" SYMBOLIC)
 endif()
 
 # ---------------------------------------------------------------------------
 # GN configuration
 # ---------------------------------------------------------------------------
-if(CRHTTP_CHROMIUM_DEBUG)
-  set(CRHTTP_GN_IS_DEBUG true)
+if(CRNET_CHROMIUM_DEBUG)
+  set(CRNET_GN_IS_DEBUG true)
 else()
-  set(CRHTTP_GN_IS_DEBUG false)
+  set(CRNET_GN_IS_DEBUG false)
 endif()
-if(CRHTTP_ASAN)
-  set(CRHTTP_GN_IS_ASAN true)
+if(CRNET_ASAN)
+  set(CRNET_GN_IS_ASAN true)
 else()
-  set(CRHTTP_GN_IS_ASAN false)
+  set(CRNET_GN_IS_ASAN false)
 endif()
-string(REPLACE ";" "\n" CRHTTP_GN_EXTRA_ARGS_NL "${CRHTTP_GN_EXTRA_ARGS}")
-set(CRHTTP_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+string(REPLACE ";" "\n" CRNET_GN_EXTRA_ARGS_NL "${CRNET_GN_EXTRA_ARGS}")
+set(CRNET_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 
 file(MAKE_DIRECTORY "${CR_OUT}")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/args.gn.in"
@@ -92,7 +92,7 @@ if(EXISTS "${CR_OUT}/args.gn")
 endif()
 if(NOT _new_args STREQUAL _old_args OR NOT EXISTS "${CR_OUT}/build.ninja")
   file(WRITE "${CR_OUT}/args.gn" "${_new_args}")
-  message(STATUS "crhttp: gn gen ${CR_OUT}")
+  message(STATUS "crnet: gn gen ${CR_OUT}")
   execute_process(COMMAND "${CR_GN}" gen "${CR_OUT}"
                   WORKING_DIRECTORY "${CR_SRC}"
                   RESULT_VARIABLE _gn_rc)
@@ -102,56 +102,56 @@ if(NOT _new_args STREQUAL _old_args OR NOT EXISTS "${CR_OUT}/build.ninja")
 endif()
 
 # ---------------------------------------------------------------------------
-# libcrhttp.so (built by Chromium's ninja; always invoked, it is a no-op
+# libcrnet.so (built by Chromium's ninja; always invoked, it is a no-op
 # when up to date and tracks its own dependencies precisely)
 # ---------------------------------------------------------------------------
-set(CRHTTP_SOVERSION 0)
-set(CRHTTP_LIB_DIR "${CMAKE_CURRENT_BINARY_DIR}/lib")
-set(CRHTTP_LIB_REAL "${CRHTTP_LIB_DIR}/libcrhttp.so.${PROJECT_VERSION}")
-set(CRHTTP_LIB_SONAME "${CRHTTP_LIB_DIR}/libcrhttp.so.${CRHTTP_SOVERSION}")
-set(CRHTTP_LIB_LINK "${CRHTTP_LIB_DIR}/libcrhttp.so")
+set(CRNET_SOVERSION 0)
+set(CRNET_LIB_DIR "${CMAKE_CURRENT_BINARY_DIR}/lib")
+set(CRNET_LIB_REAL "${CRNET_LIB_DIR}/libcrnet.so.${PROJECT_VERSION}")
+set(CRNET_LIB_SONAME "${CRNET_LIB_DIR}/libcrnet.so.${CRNET_SOVERSION}")
+set(CRNET_LIB_LINK "${CRNET_LIB_DIR}/libcrnet.so")
 
 set(_ninja_jobs "")
-if(CRHTTP_NINJA_JOBS)
-  set(_ninja_jobs -j ${CRHTTP_NINJA_JOBS})
+if(CRNET_NINJA_JOBS)
+  set(_ninja_jobs -j ${CRNET_NINJA_JOBS})
 endif()
 
-add_custom_target(crhttp_chromium_build ALL
-  COMMAND "${CR_NINJA}" -C "${CR_OUT}" ${_ninja_jobs} crhttp:crhttp
-  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CRHTTP_LIB_DIR}"
+add_custom_target(crnet_chromium_build ALL
+  COMMAND "${CR_NINJA}" -C "${CR_OUT}" ${_ninja_jobs} crnet:crnet
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${CRNET_LIB_DIR}"
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-          "${CR_OUT}/libcrhttp.so" "${CRHTTP_LIB_REAL}"
+          "${CR_OUT}/libcrnet.so" "${CRNET_LIB_REAL}"
   COMMAND "${CMAKE_COMMAND}" -E create_symlink
-          "libcrhttp.so.${PROJECT_VERSION}" "${CRHTTP_LIB_SONAME}"
+          "libcrnet.so.${PROJECT_VERSION}" "${CRNET_LIB_SONAME}"
   COMMAND "${CMAKE_COMMAND}" -E create_symlink
-          "libcrhttp.so.${CRHTTP_SOVERSION}" "${CRHTTP_LIB_LINK}"
-  BYPRODUCTS "${CRHTTP_LIB_REAL}" "${CRHTTP_LIB_SONAME}" "${CRHTTP_LIB_LINK}"
+          "libcrnet.so.${CRNET_SOVERSION}" "${CRNET_LIB_LINK}"
+  BYPRODUCTS "${CRNET_LIB_REAL}" "${CRNET_LIB_SONAME}" "${CRNET_LIB_LINK}"
   WORKING_DIRECTORY "${CR_SRC}"
   USES_TERMINAL
-  COMMENT "Building libcrhttp.so with the Chromium toolchain")
+  COMMENT "Building libcrnet.so with the Chromium toolchain")
 
-add_library(crhttp SHARED IMPORTED GLOBAL)
-set_target_properties(crhttp PROPERTIES
-  IMPORTED_LOCATION "${CRHTTP_LIB_REAL}"
-  IMPORTED_SONAME "libcrhttp.so.${CRHTTP_SOVERSION}"
+add_library(crnet SHARED IMPORTED GLOBAL)
+set_target_properties(crnet PROPERTIES
+  IMPORTED_LOCATION "${CRNET_LIB_REAL}"
+  IMPORTED_SONAME "libcrnet.so.${CRNET_SOVERSION}"
   INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include")
-add_dependencies(crhttp crhttp_chromium_build)
-add_library(crhttp::crhttp ALIAS crhttp)
+add_dependencies(crnet crnet_chromium_build)
+add_library(crnet::crnet ALIAS crnet)
 
 # Convenience: (re)fetch / update the Chromium checkout.
 add_custom_target(chromium-fetch
-  COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/fetch-chromium.sh" "${CRHTTP_CHROMIUM_DIR}"
+  COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/fetch-chromium.sh" "${CRNET_CHROMIUM_DIR}"
   USES_TERMINAL
-  COMMENT "Fetching Chromium ${CRHTTP_PINNED_CR}")
+  COMMENT "Fetching Chromium ${CRNET_PINNED_CR}")
 
 # ---------------------------------------------------------------------------
 # Tests and examples (system toolchain)
 # ---------------------------------------------------------------------------
-if(CRHTTP_BUILD_EXAMPLES)
+if(CRNET_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
-if(CRHTTP_BUILD_TESTS)
+if(CRNET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
@@ -159,23 +159,23 @@ endif()
 # ---------------------------------------------------------------------------
 # Install: library, headers, pkg-config, CMake package
 # ---------------------------------------------------------------------------
-install(FILES "${CRHTTP_LIB_REAL}" DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-install(FILES "${CRHTTP_LIB_SONAME}" "${CRHTTP_LIB_LINK}"
+install(FILES "${CRNET_LIB_REAL}" DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+install(FILES "${CRNET_LIB_SONAME}" "${CRNET_LIB_LINK}"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-install(DIRECTORY include/crhttp DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(DIRECTORY include/crnet DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-configure_file(cmake/crhttp.pc.in "${CMAKE_CURRENT_BINARY_DIR}/crhttp.pc" @ONLY)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/crhttp.pc"
+configure_file(cmake/crnet.pc.in "${CMAKE_CURRENT_BINARY_DIR}/crnet.pc" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/crnet.pc"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 
 include(CMakePackageConfigHelpers)
-configure_package_config_file(cmake/crhttpConfig.cmake.in
-  "${CMAKE_CURRENT_BINARY_DIR}/crhttpConfig.cmake"
-  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/crhttp"
+configure_package_config_file(cmake/crnetConfig.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/crnetConfig.cmake"
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/crnet"
   PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
 write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/crhttpConfigVersion.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/crnetConfigVersion.cmake"
   COMPATIBILITY SameMinorVersion)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/crhttpConfig.cmake"
-              "${CMAKE_CURRENT_BINARY_DIR}/crhttpConfigVersion.cmake"
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/crhttp")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/crnetConfig.cmake"
+              "${CMAKE_CURRENT_BINARY_DIR}/crnetConfigVersion.cmake"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/crnet")

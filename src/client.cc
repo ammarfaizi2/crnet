@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //
-// crhttp_client: a URLRequestContext configured like Chrome's, living
+// crnet_client: a URLRequestContext configured like Chrome's, living
 // on a dedicated IO thread. All transfers of a client share that
 // thread, its connection pools, HTTP/2 sessions and cookie jar.
 //
@@ -16,7 +16,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/network_session_configurator/browser/network_session_configurator.h"
-#include "crhttp/internal.h"
+#include "crnet/internal.h"
 #include "net/base/features.h"
 #include "net/base/network_delegate_impl.h"
 #include "net/cert/cert_verifier.h"
@@ -48,14 +48,14 @@
 
 namespace {
 
-using crhttp::ClientConfig;
+using crnet::ClientConfig;
 
 constexpr net::NetworkTrafficAnnotationTag kProxyAnnotation =
-	net::DefineNetworkTrafficAnnotation("crhttp_proxy", R"(
+	net::DefineNetworkTrafficAnnotation("crnet_proxy", R"(
 		semantics {
-			sender: "crhttp"
-			description: "Proxy configured by the crhttp user."
-			trigger: "Any crhttp request."
+			sender: "crnet"
+			description: "Proxy configured by the crnet user."
+			trigger: "Any crnet request."
 			data: "None."
 			destination: OTHER
 		}
@@ -112,7 +112,7 @@ private:
 	net::SSLContextConfig config_;
 };
 
-// Applies crhttp's header policy right before each transaction (also
+// Applies crnet's header policy right before each transaction (also
 // after redirects) and implements the cookies on/off switch.
 class CrNetworkDelegate : public net::NetworkDelegateImpl {
 public:
@@ -122,11 +122,11 @@ public:
 		net::URLRequest *request, const net::HttpRequestHeaders &headers,
 		OnBeforeStartTransactionCallback callback) override
 	{
-		crhttp_transfer *t = crhttp::TransferForRequest(request);
+		crnet_transfer *t = crnet::TransferForRequest(request);
 		if (!t)
 			return net::OK;
 		std::optional<net::HttpRequestHeaders> out =
-			crhttp::FinalizeHeaders(t->spec(), t->browser_headers(),
+			crnet::FinalizeHeaders(t->spec(), t->browser_headers(),
 						*request, headers);
 		// Modified headers can only be returned through the callback.
 		// It is bound to a weak pointer of the job, so running it after
@@ -187,16 +187,16 @@ void SignalEvent(base::WaitableEvent *ev)
 
 } // namespace
 
-crhttp_client::crhttp_client(const ClientConfig &cfg)
-	: cfg_(cfg), thread_("crhttp-net")
+crnet_client::crnet_client(const ClientConfig &cfg)
+	: cfg_(cfg), thread_("crnet-io")
 {
 }
 
-crhttp_client::~crhttp_client() = default;
+crnet_client::~crnet_client() = default;
 
-crhttp_client *crhttp_client::Create(const ClientConfig &cfg)
+crnet_client *crnet_client::Create(const ClientConfig &cfg)
 {
-	auto *c = new crhttp_client(cfg);
+	auto *c = new crnet_client(cfg);
 	base::Thread::Options opts(base::MessagePumpType::IO, 0);
 	if (!c->thread_.StartWithOptions(std::move(opts))) {
 		delete c;
@@ -209,8 +209,8 @@ crhttp_client *crhttp_client::Create(const ClientConfig &cfg)
 	c->runner_->PostTask(
 		FROM_HERE,
 		base::BindOnce(
-			[](crhttp_client *c, bool *ok, base::WaitableEvent *ev) {
-				crhttp::MarkNetworkThread();
+			[](crnet_client *c, bool *ok, base::WaitableEvent *ev) {
+				crnet::MarkNetworkThread();
 				*ok = c->InitOnNetworkThread();
 				ev->Signal();
 			},
@@ -223,11 +223,11 @@ crhttp_client *crhttp_client::Create(const ClientConfig &cfg)
 	return c;
 }
 
-bool crhttp_client::InitOnNetworkThread()
+bool crnet_client::InitOnNetworkThread()
 {
 	net::URLRequestContextBuilder b;
 
-	b.set_user_agent(cfg_.user_agent.empty() ? crhttp::DefaultUserAgent()
+	b.set_user_agent(cfg_.user_agent.empty() ? crnet::DefaultUserAgent()
 						 : cfg_.user_agent);
 	b.set_accept_language(cfg_.accept_language);
 	b.set_enable_brotli(true);
@@ -279,31 +279,31 @@ bool crhttp_client::InitOnNetworkThread()
 	return true;
 }
 
-void crhttp_client::Destroy()
+void crnet_client::Destroy()
 {
 	shutting_down_.store(true);
 	base::WaitableEvent ev;
 	runner_->PostTask(FROM_HERE,
-			  base::BindOnce(&crhttp_client::ShutdownOnNetworkThread,
+			  base::BindOnce(&crnet_client::ShutdownOnNetworkThread,
 					 base::Unretained(this), &ev));
 	ev.Wait();
 	thread_.Stop();
 	delete this;
 }
 
-void crhttp_client::ShutdownOnNetworkThread(base::WaitableEvent *ev)
+void crnet_client::ShutdownOnNetworkThread(base::WaitableEvent *ev)
 {
 	// Fail everything still running; Finish() removes it from running_.
 	auto running = running_;
 	for (const auto &t : running)
-		t->FailOnNetworkThread(CRHTTP_E_SHUTDOWN, net::ERR_ABORTED);
+		t->FailOnNetworkThread(CRNET_E_SHUTDOWN, net::ERR_ABORTED);
 
 	// URLRequests are deleted with DeleteSoon(); tear the context down
 	// in a later task so they are gone first.
 	runner_->PostTask(
 		FROM_HERE,
 		base::BindOnce(
-			[](crhttp_client *c, base::WaitableEvent *ev) {
+			[](crnet_client *c, base::WaitableEvent *ev) {
 				if (c->cert_fetcher_)
 					c->cert_fetcher_->Shutdown();
 				c->context_.reset();
@@ -322,17 +322,17 @@ void crhttp_client::ShutdownOnNetworkThread(base::WaitableEvent *ev)
 			base::Unretained(this), ev));
 }
 
-bool crhttp_client::Start(scoped_refptr<crhttp_transfer> t)
+bool crnet_client::Start(scoped_refptr<crnet_transfer> t)
 {
 	if (shutting_down_.load())
 		return false;
 	return runner_->PostTask(
 		FROM_HERE,
 		base::BindOnce(
-			[](crhttp_client *c, scoped_refptr<crhttp_transfer> t) {
+			[](crnet_client *c, scoped_refptr<crnet_transfer> t) {
 				c->running_.insert(t);
 				if (!c->context_ || c->shutting_down_.load()) {
-					t->FailOnNetworkThread(CRHTTP_E_SHUTDOWN,
+					t->FailOnNetworkThread(CRNET_E_SHUTDOWN,
 							       net::ERR_ABORTED);
 					return;
 				}
@@ -341,7 +341,7 @@ bool crhttp_client::Start(scoped_refptr<crhttp_transfer> t)
 			base::Unretained(this), std::move(t)));
 }
 
-void crhttp_client::TransferFinished(crhttp_transfer *t)
+void crnet_client::TransferFinished(crnet_transfer *t)
 {
 	running_.erase(base::WrapRefCounted(t));
 }
@@ -350,20 +350,20 @@ void crhttp_client::TransferFinished(crhttp_transfer *t)
 // Cookie jar and pool helpers (blocking)
 // ------------------------------------------------------------------
 
-int crhttp_client::SetCookie(const std::string &url, const std::string &line)
+int crnet_client::SetCookie(const std::string &url, const std::string &line)
 {
 	GURL u(url);
 	if (!u.is_valid())
-		return CRHTTP_E_INVAL;
+		return CRNET_E_INVAL;
 	if (!cfg_.cookies)
-		return CRHTTP_E_STATE;
+		return CRNET_E_STATE;
 
-	int result = CRHTTP_E_INVAL;
+	int result = CRNET_E_INVAL;
 	base::WaitableEvent ev;
 	runner_->PostTask(
 		FROM_HERE,
 		base::BindOnce(
-			[](crhttp_client *c, GURL u, std::string line, int *result,
+			[](crnet_client *c, GURL u, std::string line, int *result,
 			   base::WaitableEvent *ev) {
 				net::CookieInclusionStatus status;
 				auto cc = net::CanonicalCookie::Create(
@@ -381,8 +381,8 @@ int crhttp_client::SetCookie(const std::string &url, const std::string &line)
 						[](int *result, base::WaitableEvent *ev,
 						   net::CookieAccessResult r) {
 							*result = r.status.IsInclude()
-									  ? CRHTTP_OK
-									  : CRHTTP_E_INVAL;
+									  ? CRNET_OK
+									  : CRNET_E_INVAL;
 							ev->Signal();
 						},
 						result, ev),
@@ -393,7 +393,7 @@ int crhttp_client::SetCookie(const std::string &url, const std::string &line)
 	return result;
 }
 
-std::optional<std::string> crhttp_client::GetCookies(const std::string &url)
+std::optional<std::string> crnet_client::GetCookies(const std::string &url)
 {
 	GURL u(url);
 	if (!u.is_valid())
@@ -406,7 +406,7 @@ std::optional<std::string> crhttp_client::GetCookies(const std::string &url)
 	runner_->PostTask(
 		FROM_HERE,
 		base::BindOnce(
-			[](crhttp_client *c, GURL u, std::string *line,
+			[](crnet_client *c, GURL u, std::string *line,
 			   base::WaitableEvent *ev) {
 				c->context_->cookie_store()->GetCookieListWithOptionsAsync(
 					u, net::CookieOptions::MakeAllInclusive(),
@@ -427,15 +427,15 @@ std::optional<std::string> crhttp_client::GetCookies(const std::string &url)
 	return line;
 }
 
-int crhttp_client::ClearCookies()
+int crnet_client::ClearCookies()
 {
 	if (!cfg_.cookies)
-		return CRHTTP_E_STATE;
+		return CRNET_E_STATE;
 	base::WaitableEvent ev;
 	runner_->PostTask(
 		FROM_HERE,
 		base::BindOnce(
-			[](crhttp_client *c, base::WaitableEvent *ev) {
+			[](crnet_client *c, base::WaitableEvent *ev) {
 				c->context_->cookie_store()->DeleteAllAsync(
 					base::BindOnce(
 						[](base::WaitableEvent *ev, uint32_t) {
@@ -445,19 +445,19 @@ int crhttp_client::ClearCookies()
 			},
 			base::Unretained(this), &ev));
 	ev.Wait();
-	return CRHTTP_OK;
+	return CRNET_OK;
 }
 
-void crhttp_client::CloseIdle()
+void crnet_client::CloseIdle()
 {
 	runner_->PostTask(
 		FROM_HERE,
 		base::BindOnce(
-			[](crhttp_client *c) {
+			[](crnet_client *c) {
 				if (c->context_)
 					c->context_->http_transaction_factory()
 						->GetSession()
-						->CloseIdleConnections("crhttp");
+						->CloseIdleConnections("crnet");
 			},
 			base::Unretained(this)));
 }

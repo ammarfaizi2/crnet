@@ -10,7 +10,7 @@
 #include <iostream>
 #include <vector>
 
-#include <crhttp/crhttp.hpp>
+#include <crnet/crnet.hpp>
 
 int main(int argc, char *argv[])
 {
@@ -19,45 +19,45 @@ int main(int argc, char *argv[])
 		return 2;
 	}
 
-	crhttp::Client client;
-	std::cout << "crhttp " << crhttp::version() << "\n";
+	crnet::Client client;
+	std::cout << "crnet " << crnet::version() << "\n";
 
 	// 1) Asynchronous transfers with callbacks (network thread).
-	std::vector<crhttp::Transfer> transfers;
+	std::vector<crnet::Transfer> transfers;
 	for (int i = 1; i < argc; i++) {
-		crhttp::Handlers h;
+		crnet::Handlers h;
 		std::string url = argv[i];
-		h.on_complete = [url](int err, const crhttp::ResponseView &r) {
+		h.on_complete = [url](int err, const crnet::ResponseView &r) {
 			if (err)
-				std::cout << "[cb]    " << url << " -> " << crhttp_strerror(err)
+				std::cout << "[cb]    " << url << " -> " << crnet_strerror(err)
 					  << " " << r.error_string() << "\n";
 			else
 				std::cout << "[cb]    " << url << " -> " << r.status() << " "
 					  << r.protocol() << " " << r.body().size() << " bytes\n";
 		};
-		transfers.push_back(client.start(crhttp::Request(url), std::move(h)));
+		transfers.push_back(client.start(crnet::Request(url), std::move(h)));
 	}
 	for (auto &t : transfers)
 		t.wait();
 	transfers.clear();
 
 	// 2) Completion queue: results are collected on this thread.
-	crhttp_queue *q = crhttp_queue_new();
+	crnet_queue *q = crnet_queue_new();
 	for (int i = 1; i < argc; i++)
-		crhttp_queue_start(q, client.get(), crhttp::Request(argv[i]).get(), argv[i]);
+		crnet_queue_start(q, client.get(), crnet::Request(argv[i]).get(), argv[i]);
 
-	struct pollfd pfd = {crhttp_queue_fd(q), POLLIN, 0};
-	while (crhttp_queue_pending(q) > 0) {
+	struct pollfd pfd = {crnet_queue_fd(q), POLLIN, 0};
+	while (crnet_queue_pending(q) > 0) {
 		poll(&pfd, 1, -1);
-		crhttp_transfer *t;
+		crnet_transfer *t;
 		void *ud;
-		while (crhttp_queue_pop(q, &t, &ud, 0) == CRHTTP_OK) {
-			crhttp::ResponseView r(crhttp_transfer_response(t));
+		while (crnet_queue_pop(q, &t, &ud, 0) == CRNET_OK) {
+			crnet::ResponseView r(crnet_transfer_response(t));
 			std::cout << "[queue] " << static_cast<const char *>(ud) << " -> "
 				  << r.status() << " " << r.protocol() << "\n";
-			crhttp_transfer_free(t);
+			crnet_transfer_free(t);
 		}
 	}
-	crhttp_queue_free(q);
+	crnet_queue_free(q);
 	return 0;
 }
