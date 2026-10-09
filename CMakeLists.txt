@@ -7,13 +7,14 @@
 #   1. writes an args.gn and runs Chromium's `gn gen`,
 #   2. runs Chromium's `ninja` to build //crhttp -> libcrhttp.so,
 #   3. exposes the result as the imported target crhttp::crhttp,
-#   4. builds the examples with the *system* compiler against it,
+#   4. builds tests and examples with the *system* compiler against it,
 #      which is exactly how third-party consumers link it.
 #
 # Quick start:
 #   scripts/fetch-chromium.sh            # once, ~30 GB
 #   cmake -S . -B build -G Ninja
 #   cmake --build build
+#   ctest --test-dir build
 #
 cmake_minimum_required(VERSION 3.16)
 project(crhttp VERSION 0.1.0 LANGUAGES C CXX)
@@ -28,6 +29,7 @@ set(CRHTTP_GN_EXTRA_ARGS "" CACHE STRING
     "Extra GN args appended to args.gn (newline or space separated)")
 option(CRHTTP_CHROMIUM_DEBUG "Build Chromium/crhttp with is_debug=true" OFF)
 option(CRHTTP_ASAN "Build Chromium/crhttp with AddressSanitizer" OFF)
+option(CRHTTP_BUILD_TESTS "Build the test suite" ON)
 option(CRHTTP_BUILD_EXAMPLES "Build the examples" ON)
 set(CRHTTP_NINJA_JOBS "" CACHE STRING "ninja -j for the Chromium build (empty = ninja default)")
 
@@ -143,10 +145,15 @@ add_custom_target(chromium-fetch
   COMMENT "Fetching Chromium ${CRHTTP_PINNED_CR}")
 
 # ---------------------------------------------------------------------------
-# Examples (system toolchain)
+# Tests and examples (system toolchain)
 # ---------------------------------------------------------------------------
 if(CRHTTP_BUILD_EXAMPLES)
   add_subdirectory(examples)
+endif()
+
+if(CRHTTP_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
 endif()
 
 # ---------------------------------------------------------------------------

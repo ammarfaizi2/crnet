@@ -11,3 +11,6 @@
 /build*/
 /chromium/.gclient_previous_custom_vars
 /chromium/.gcs_entries
+
+# Python bytecode (tests/server)
+__pycache__/
