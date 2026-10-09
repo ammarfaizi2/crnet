@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# libcrhttp.so, built inside the Chromium tree as //crhttp (this
+# directory is symlinked to chromium/src/crhttp by
+# scripts/fetch-chromium.sh). Driven by the top-level CMakeLists.txt.
+
+declare_args() {
+  # Absolute path of the crhttp source tree (for include/crhttp/*.h).
+  crhttp_root = ""
+}
+
+assert(crhttp_root != "", "crhttp_root must be set in args.gn")
+
+_cr_version = read_file("//chrome/VERSION", "scope")
+_cr_version_string = "${_cr_version.MAJOR}.${_cr_version.MINOR}." +
+                     "${_cr_version.BUILD}.${_cr_version.PATCH}"
+
+config("crhttp_config") {
+  include_dirs = [ "$crhttp_root/include" ]
+  defines = [
+    "CRHTTP_CHROMIUM_VERSION=\"$_cr_version_string\"",
+    "CRHTTP_CHROMIUM_MAJOR=${_cr_version.MAJOR}",
+  ]
+}
+
+shared_library("crhttp") {
+  output_name = "crhttp"
+  output_extension = "so"
+
+  sources = [
+    "$crhttp_root/include/crhttp/crhttp.h",
+    "api.cc",
+    "client.cc",
+    "global.cc",
+    "internal.h",
+    "profile.cc",
+    "queue.cc",
+    "transfer.cc",
+  ]
+
+  configs += [ ":crhttp_config" ]
+
+  # crhttp is not Chromium first-party code: skip the Chromium-only
+  # clang plugin rules (raw_ptr<T> etc.).
+  configs -= [ "//build/config/clang:find_bad_constructs" ]
+
+  deps = [
+    "//base",
+    "//base:i18n",
+    "//components/network_session_configurator/browser",
+    "//net",
+    "//url",
+  ]
+
+  inputs = [ "crhttp.map" ]
+  ldflags = [
+    "-Wl,--version-script=" + rebase_path("crhttp.map", root_build_dir),
+    "-Wl,-soname,libcrhttp.so.0",
+    "-Wl,-z,defs",
+  ]
+}
