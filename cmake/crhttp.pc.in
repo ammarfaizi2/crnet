@@ -1,0 +1,9 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: crhttp
+Description: HTTP client built on the Chromium network stack
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lcrhttp
+Cflags: -I${includedir}
