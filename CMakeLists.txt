@@ -7,7 +7,8 @@
 #   1. writes an args.gn and runs Chromium's `gn gen`,
 #   2. runs Chromium's `ninja` to build //crhttp -> libcrhttp.so,
 #   3. exposes the result as the imported target crhttp::crhttp,
-#   4. lets consumers in this tree link it with the *system* compiler.
+#   4. builds the examples with the *system* compiler against it,
+#      which is exactly how third-party consumers link it.
 #
 # Quick start:
 #   scripts/fetch-chromium.sh            # once, ~30 GB
@@ -27,6 +28,7 @@ set(CRHTTP_GN_EXTRA_ARGS "" CACHE STRING
     "Extra GN args appended to args.gn (newline or space separated)")
 option(CRHTTP_CHROMIUM_DEBUG "Build Chromium/crhttp with is_debug=true" OFF)
 option(CRHTTP_ASAN "Build Chromium/crhttp with AddressSanitizer" OFF)
+option(CRHTTP_BUILD_EXAMPLES "Build the examples" ON)
 set(CRHTTP_NINJA_JOBS "" CACHE STRING "ninja -j for the Chromium build (empty = ninja default)")
 
 set(CR_SRC "${CRHTTP_CHROMIUM_DIR}/src")
@@ -139,6 +141,13 @@ add_custom_target(chromium-fetch
   COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/scripts/fetch-chromium.sh" "${CRHTTP_CHROMIUM_DIR}"
   USES_TERMINAL
   COMMENT "Fetching Chromium ${CRHTTP_PINNED_CR}")
+
+# ---------------------------------------------------------------------------
+# Examples (system toolchain)
+# ---------------------------------------------------------------------------
+if(CRHTTP_BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()
 
 # ---------------------------------------------------------------------------
 # Install: library, headers, pkg-config, CMake package
