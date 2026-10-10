@@ -15,6 +15,7 @@ works.
 | [architecture.md](architecture.md) | Internals: threads, request state machine, Chromium integration, design decisions |
 | [testing.md](testing.md) | Running and extending the test suite, the local test server, capturing Chrome's headers |
 | [updating-chromium.md](updating-chromium.md) | Moving crnet to a new Chrome release |
+| [TODO.md](TODO.md) | Planned work: requested features, known problems, improvements |
 
 ## At a glance
 
