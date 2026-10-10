@@ -11,6 +11,7 @@ src/                      the library; linked into Chromium as //crnet
   internal.h              shared internal declarations
   api.cc                  C entry points, argument checks, proxy parsing
   global.cc               process-wide Chromium initialisation
+  event.{h,cc}            OneShotEvent: futex-based completion signal
   client.cc               crnet_client: network thread + URLRequestContext
   transfer.cc             crnet_transfer: one URLRequest state machine
   websocket.{h,cc}        crnet_ws: one WebSocketChannel per WebSocket
@@ -35,8 +36,7 @@ callbacks ◀───────────────  │  all transfers o
                             ┌── client B: "crnet-io" thread ─────────────────────┐
                             └────────────────────────────────────────────────────┘
                             process-wide: Chromium ThreadPool (cert verification,
-                            getaddrinfo fallback, file I/O), "crnet-ncn" thread
-                            (NetworkChangeNotifier)
+                            getaddrinfo fallback, file I/O, NetworkChangeNotifier)
 ```
 
 - Every **client** owns one IO thread with Chromium's message pump and
@@ -47,8 +47,14 @@ callbacks ◀───────────────  │  all transfers o
   per-request threads and no blocking round trips per read: data flows
   `URLRequest::Read()` → `on_data` (zero-copy from Chromium's buffer) or
   into the response body.
-- **Blocking APIs** wait on a per-transfer condition variable that is
-  signalled when the transfer finishes.
+- **Blocking APIs** wait on a per-transfer one-shot event (a futex,
+  `event.h`) that `Finish()` signals. Results are written before the
+  signal, so no lock guards them; checking for completion is a single
+  atomic load. Only a WebSocket's receive queue, which the network
+  thread and `crnet_ws_recv()` callers share, has a mutex.
+- **Creating a client** starts its thread and queues the context setup
+  as the thread's first task, without waiting for it. Everything posted
+  later runs after it.
 - One network thread can multiplex thousands of concurrent requests,
   as Chrome's network service does. When a single thread's CPU (TLS,
   decompression) becomes the bottleneck, use several clients.
@@ -128,7 +134,8 @@ No Chromium source is patched. `chromium/patches/` and
 
 ## Process-wide initialisation (`global.cc`)
 
-On the first `crnet_client_new()`:
+On the first `crnet_client_new()`, exactly once (`std::call_once`;
+later calls cost one atomic load):
 
 1. a leaked `base::AtExitManager` (Chromium singletons register with
    it; running them at process exit while crnet threads may still run is
@@ -138,9 +145,9 @@ On the first `crnet_client_new()`:
 4. `base::FeatureList` with the overrides from `crnet_global_init()` or
    `CRNET_ENABLE_FEATURES`/`CRNET_DISABLE_FEATURES`,
 5. the `ThreadPool`,
-6. a `NetworkChangeNotifier` on its own thread. It feeds the system DNS
-   configuration to the built-in resolver and lets `//net` react to
-   network changes.
+6. a `NetworkChangeNotifier`, living on a ThreadPool sequence (it needs
+   a sequence, not a thread). It feeds the system DNS configuration to
+   the built-in resolver and lets `//net` react to network changes.
 
 ## Design decisions
 
