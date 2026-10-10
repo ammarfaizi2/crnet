@@ -23,6 +23,10 @@ Endpoints (all servers):
   /stream/<n>?chunk=C&delay_ms=D  n bytes in chunks with delays
   /delay/<ms>           waits, then answers like /echo
   /encoded/<enc>        PLAINTEXT compressed with gzip|deflate|br|zstd
+  /upload-digest        JSON with the body's length, SHA-256, and framing
+                        headers (Content-Length / Transfer-Encoding)
+  /slow-upload?pause_ms=  the same, but waits before reading the body
+                        (HTTP/1.1 only)
   /dup-headers          repeated response headers
   /drop                 closes the connection without a response
 
@@ -193,6 +197,14 @@ def route(req):
             return Response(501, [], b"unsupported encoding")
         return Response(200, [("content-type", "text/plain"),
                               ("content-encoding", seg[1])], data)
+    if p in ("/upload-digest", "/slow-upload"):
+        doc = {"len": len(req.body),
+               "sha256": hashlib.sha256(req.body).hexdigest(),
+               "content_length": req.header("content-length"),
+               "transfer_encoding": req.header("transfer-encoding"),
+               "protocol": req.protocol, "method": req.method}
+        return Response(200, [("content-type", "application/json")],
+                        json.dumps(doc).encode())
     if p == "/dup-headers":
         return Response(200, [("x-dup", "one"), ("x-dup", "two"),
                               ("x-Mixed-Case", "yes"),
@@ -229,6 +241,10 @@ async def read_h1_request(reader):
         headers.append((k, v.strip()))
     body = b""
     lower = {k.lower(): v for k, v in headers}
+    if target.startswith("/slow-upload"):
+        # Let the client's buffers fill up before reading the body.
+        q = dict(parse_qsl(urlsplit(target).query))
+        await asyncio.sleep(int(q.get("pause_ms", "1000")) / 1000.0)
     if "content-length" in lower:
         body = await reader.readexactly(int(lower["content-length"]))
     elif lower.get("transfer-encoding", "").lower() == "chunked":
