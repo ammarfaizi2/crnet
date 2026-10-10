@@ -128,6 +128,25 @@ struct BrowserHeaders {
 BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 				   const RequestSpec &spec);
 
+// WebSocket handshake policy: what crnet hands to
+// WebSocketChannel::SendAddChannelRequest().
+struct WsHeaders {
+	// Additional headers, User-Agent first as Chrome's renderer passes
+	// it; //net adds the rest (Upgrade, Origin, Sec-WebSocket-*, ...).
+	net::HttpRequestHeaders extra;
+	url::Origin origin;
+	std::vector<std::string> protocols;
+	std::optional<std::string> user_cookie;
+	std::set<std::string> suppressed;
+};
+
+// |url| must already be ws:// or wss://. Fails (nullopt) on an invalid
+// Origin header or subprotocol list.
+std::optional<WsHeaders> BuildWsHeaders(const ClientConfig &cfg,
+					const RequestSpec &spec,
+					const GURL &url,
+					const char *protocols);
+
 // Drop |suppressed| headers (lower-case names) that //net added back
 // and merge a caller-supplied Cookie value with the jar's, keeping the
 // order of |in|.
@@ -189,6 +208,7 @@ struct crnet_response {
 };
 
 struct crnet_queue;
+struct crnet_ws;
 
 // One execution of a request. Ref-counted: the caller's handle, the
 // client's running set and a completion queue may each hold a
@@ -287,6 +307,7 @@ public:
 
 	// Any thread. Returns false if the client is shutting down.
 	bool Start(scoped_refptr<crnet_transfer> t);
+	bool StartWebSocket(scoped_refptr<crnet_ws> ws);
 
 	bool IsNetworkThread() const { return runner_->BelongsToCurrentThread(); }
 	const scoped_refptr<base::SingleThreadTaskRunner> &runner() const
@@ -298,6 +319,7 @@ public:
 	// Network thread only.
 	net::URLRequestContext *context() const { return context_.get(); }
 	void TransferFinished(crnet_transfer *t);
+	void WebSocketFinished(crnet_ws *ws);
 
 	// Blocking helpers (not on a network thread).
 	int SetCookie(const std::string &url, const std::string &line);
@@ -322,6 +344,7 @@ private:
 	std::unique_ptr<net::FileNetLogObserver> netlog_;
 	scoped_refptr<net::CertNetFetcherURLRequest> cert_fetcher_;
 	std::set<scoped_refptr<crnet_transfer>> running_;
+	std::set<scoped_refptr<crnet_ws>> sockets_;
 };
 
 // Completion queue (queue.cc).

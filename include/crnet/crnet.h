@@ -466,6 +466,177 @@ CRNET_API int crnet_queue_pop(crnet_queue *q, crnet_transfer **t,
 CRNET_API size_t crnet_queue_pending(const crnet_queue *q);
 
 /* ---------------------------------------------------------------- */
+/* WebSocket                                                        */
+/* ---------------------------------------------------------------- */
+
+/*
+ * A WebSocket connection (RFC 6455) made through Chromium's WebSocket
+ * implementation: the opening handshake (headers in Chrome's order,
+ * cookies, proxies, TLS), permessage-deflate compression and the
+ * closing handshake behave exactly as in Chrome. WebSockets over
+ * HTTP/2 (RFC 8441) are used when the server supports them.
+ *
+ * Messages are delivered whole (fragmented frames are reassembled),
+ * either to the on_message callback or, when it is NULL, to an internal
+ * queue read with crnet_ws_recv(), which also offers a pollable fd.
+ */
+typedef struct crnet_ws crnet_ws;
+
+typedef enum crnet_ws_msg_type {
+	CRNET_WS_TEXT	= 1,	/* UTF-8 text */
+	CRNET_WS_BINARY	= 2,
+} crnet_ws_msg_type;
+
+typedef enum crnet_ws_state {
+	CRNET_WS_CONNECTING	= 0,
+	CRNET_WS_OPEN		= 1,
+	CRNET_WS_CLOSING	= 2,
+	CRNET_WS_CLOSED		= 3,
+} crnet_ws_state;
+
+/*
+ * All callbacks run on the client's network thread, must return quickly
+ * and must not call blocking crnet functions.
+ */
+typedef struct crnet_ws_callbacks {
+	/*
+	 * Optional. The opening handshake succeeded. |handshake| is the
+	 * server's 101 response; |protocol| the selected subprotocol and
+	 * |extensions| the negotiated extensions ("" when none).
+	 */
+	void (*on_open)(crnet_ws *ws, const crnet_response *handshake,
+			const char *protocol, const char *extensions,
+			void *user_data);
+
+	/*
+	 * Optional. One complete message. |data| is only valid during the
+	 * call. Text messages are valid UTF-8 (Chromium fails the
+	 * connection otherwise). When NULL, messages are queued for
+	 * crnet_ws_recv().
+	 */
+	void (*on_message)(crnet_ws *ws, crnet_ws_msg_type type,
+			   const void *data, size_t len, void *user_data);
+
+	/*
+	 * Optional. Called exactly once when the connection is over, for any
+	 * reason. |error| is CRNET_OK after a clean closing handshake (either
+	 * side may have started it), otherwise the failure (CRNET_E_NET,
+	 * CRNET_E_TIMEOUT, CRNET_E_CANCELED, CRNET_E_SHUTDOWN,
+	 * CRNET_E_TOO_LARGE). |code| and |reason| are the close code and
+	 * reason (1006 and a description for failures).
+	 */
+	void (*on_close)(crnet_ws *ws, int error, int code, const char *reason,
+			 void *user_data);
+} crnet_ws_callbacks;
+
+/*
+ * Open a WebSocket. |req| supplies the URL (ws://, wss://; http(s):// is
+ * accepted and mapped), extra headers and options:
+ *   - "Origin" sets the handshake Origin; by default it is the origin of
+ *     the URL itself (http(s) for ws(s)), as for a same-origin page.
+ *   - "User-Agent" overrides the client's; NULL values remove headers
+ *     as for HTTP requests; "Cookie" is merged with the jar.
+ *   - The request timeout bounds the opening handshake.
+ *   - max_body_size limits the size of one received message
+ *     (CRNET_E_TOO_LARGE).
+ * Mode, priority, redirects and decompression do not apply.
+ * |protocols| is a comma separated list of subprotocols or NULL.
+ *
+ * |cb| may be NULL. Returns a handle (to release with crnet_ws_free())
+ * or NULL on invalid arguments or client shutdown.
+ */
+CRNET_API crnet_ws *crnet_ws_connect(crnet_client *client,
+				     const crnet_request *req,
+				     const char *protocols,
+				     const crnet_ws_callbacks *cb,
+				     void *user_data);
+
+/*
+ * Wait until the connection is open (CRNET_OK) or failed (the close
+ * error). CRNET_E_TIMEOUT if neither happened within |timeout_ms|
+ * (UINT64_MAX = forever). Not on the network thread.
+ */
+CRNET_API int crnet_ws_wait_open(crnet_ws *ws, uint64_t timeout_ms);
+
+/*
+ * Queue a message (copied). Thread-safe. CRNET_E_STATE unless the
+ * connection is open; CRNET_E_INVAL for a TEXT message that is not
+ * valid UTF-8.
+ */
+CRNET_API int crnet_ws_send(crnet_ws *ws, crnet_ws_msg_type type,
+			    const void *data, size_t len);
+
+/*
+ * Bytes passed to crnet_ws_send() that have not been handed to the
+ * operating system yet (like the browser's bufferedAmount).
+ */
+CRNET_API uint64_t crnet_ws_buffered_amount(const crnet_ws *ws);
+
+/*
+ * Receive the next queued message (only when on_message is NULL).
+ * *data is malloc()ed and NUL-terminated; release it with crnet_free().
+ * Returns CRNET_OK, CRNET_E_TIMEOUT, or, once the connection is closed
+ * and the queue is empty, CRNET_E_STATE. Not on the network thread.
+ * Reading from the network pauses while too much (4 MiB) is queued.
+ */
+CRNET_API int crnet_ws_recv(crnet_ws *ws, crnet_ws_msg_type *type,
+			    void **data, size_t *len, uint64_t timeout_ms);
+
+/*
+ * Readable while crnet_ws_recv() would not block (a message is queued,
+ * or the connection is closed). For poll/epoll integration.
+ */
+CRNET_API int crnet_ws_fd(const crnet_ws *ws);
+
+/*
+ * Start the closing handshake. |code| is 1000 or 3000-4999; |reason|
+ * may be NULL and must be valid UTF-8 of at most 123 bytes. Closing a
+ * connection that is still connecting aborts it (CRNET_E_CANCELED).
+ * Thread-safe; on_close follows.
+ */
+CRNET_API int crnet_ws_close(crnet_ws *ws, int code, const char *reason);
+
+/* Stop / resume reading messages from the network. Thread-safe. */
+CRNET_API void crnet_ws_pause(crnet_ws *ws);
+CRNET_API void crnet_ws_resume(crnet_ws *ws);
+
+/*
+ * Wait until the connection is closed; returns the close error (see
+ * on_close). CRNET_E_TIMEOUT if still open after |timeout_ms|.
+ */
+CRNET_API int crnet_ws_wait_closed(crnet_ws *ws, uint64_t timeout_ms);
+
+CRNET_API crnet_ws_state crnet_ws_get_state(const crnet_ws *ws);
+
+/* Valid once open: selected subprotocol and negotiated extensions. */
+CRNET_API const char *crnet_ws_protocol(const crnet_ws *ws);
+CRNET_API const char *crnet_ws_extensions(const crnet_ws *ws);
+
+/*
+ * The handshake response: the 101 response once open; on a failed
+ * handshake its status (e.g. 403) is set when the server answered.
+ * NULL before that.
+ */
+CRNET_API const crnet_response *crnet_ws_handshake_response(
+		const crnet_ws *ws);
+
+/*
+ * Once closed: close code and reason, and the Chromium net error of a
+ * failure (0 otherwise).
+ */
+CRNET_API int crnet_ws_close_code(const crnet_ws *ws);
+CRNET_API const char *crnet_ws_close_reason(const crnet_ws *ws);
+CRNET_API int crnet_ws_net_error(const crnet_ws *ws);
+
+/*
+ * Release the handle. A connection that is not closed yet is aborted
+ * without a closing handshake (on_close gets CRNET_E_CANCELED); for a
+ * clean shutdown call crnet_ws_close() and crnet_ws_wait_closed() first.
+ * Waits for on_close as crnet_transfer_free() does.
+ */
+CRNET_API void crnet_ws_free(crnet_ws *ws);
+
+/* ---------------------------------------------------------------- */
 /* Response                                                         */
 /* ---------------------------------------------------------------- */
 

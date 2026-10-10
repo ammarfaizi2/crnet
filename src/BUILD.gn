@@ -36,6 +36,8 @@ shared_library("crnet") {
     "profile.cc",
     "queue.cc",
     "transfer.cc",
+    "websocket.cc",
+    "websocket.h",
   ]
 
   configs += [ ":crnet_config" ]

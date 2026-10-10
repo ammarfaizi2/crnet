@@ -10,6 +10,11 @@
 //   crnet::Response r = client.get("https://example.com/");
 //   std::cout << r.status() << "\n" << r.body();
 //
+//   crnet::WebSocket ws = client.websocket("wss://example.com/chat");
+//   ws.wait_open();
+//   ws.send_text("hello");
+//   std::cout << ws.recv()->data;
+//
 #ifndef CRNET_CRNET_HPP
 #define CRNET_CRNET_HPP
 
@@ -18,6 +23,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -231,6 +237,106 @@ private:
 	std::unique_ptr<Handlers> h_;
 };
 
+// Callbacks for Client::websocket(); all run on the client's network
+// thread. Without on_message, messages are queued for WebSocket::recv().
+struct WsHandlers {
+	std::function<void(const ResponseView &handshake,
+			   const std::string &protocol,
+			   const std::string &extensions)> on_open;
+	std::function<void(crnet_ws_msg_type, std::string_view)> on_message;
+	std::function<void(int error, int code, const std::string &reason)> on_close;
+};
+
+struct WsMessage {
+	crnet_ws_msg_type type;
+	std::string data;
+	bool is_text() const noexcept { return type == CRNET_WS_TEXT; }
+};
+
+class WebSocket {
+public:
+	WebSocket() = default;
+	~WebSocket() { reset(); }
+	WebSocket(WebSocket &&o) noexcept : ws_(std::exchange(o.ws_, nullptr)), h_(std::move(o.h_)) {}
+	WebSocket &operator=(WebSocket &&o) noexcept
+	{
+		if (this != &o) {
+			reset();
+			ws_ = std::exchange(o.ws_, nullptr);
+			h_ = std::move(o.h_);
+		}
+		return *this;
+	}
+	WebSocket(const WebSocket &) = delete;
+	WebSocket &operator=(const WebSocket &) = delete;
+
+	explicit operator bool() const noexcept { return ws_ != nullptr; }
+
+	// Throws crnet::Error if the connection could not be opened.
+	void wait_open(uint64_t timeout_ms = UINT64_MAX)
+	{
+		int rc = crnet_ws_wait_open(ws_, timeout_ms);
+		if (rc != CRNET_OK)
+			throw Error(rc, std::string(crnet_strerror(rc)) + " (" +
+						detail::str(crnet_ws_close_reason(ws_)) + ")");
+	}
+
+	void send_text(std::string_view s) { check(crnet_ws_send(ws_, CRNET_WS_TEXT, s.data(), s.size())); }
+	void send_binary(std::string_view s) { check(crnet_ws_send(ws_, CRNET_WS_BINARY, s.data(), s.size())); }
+
+	// Next queued message (no on_message handler), std::nullopt on
+	// timeout or once the connection is closed and drained.
+	std::optional<WsMessage> recv(uint64_t timeout_ms = UINT64_MAX)
+	{
+		crnet_ws_msg_type t;
+		void *d = nullptr;
+		size_t n = 0;
+		if (crnet_ws_recv(ws_, &t, &d, &n, timeout_ms) != CRNET_OK)
+			return std::nullopt;
+		WsMessage m{t, std::string(static_cast<const char *>(d), n)};
+		crnet_free(d);
+		return m;
+	}
+
+	void close(int code = 1000, const std::string &reason = "") { check(crnet_ws_close(ws_, code, reason.c_str())); }
+	int wait_closed(uint64_t timeout_ms = UINT64_MAX) { return crnet_ws_wait_closed(ws_, timeout_ms); }
+	void pause() { crnet_ws_pause(ws_); }
+	void resume() { crnet_ws_resume(ws_); }
+
+	crnet_ws_state state() const { return crnet_ws_get_state(ws_); }
+	int fd() const { return crnet_ws_fd(ws_); }
+	uint64_t buffered_amount() const { return crnet_ws_buffered_amount(ws_); }
+	std::string protocol() const { return detail::str(crnet_ws_protocol(ws_)); }
+	std::string extensions() const { return detail::str(crnet_ws_extensions(ws_)); }
+	ResponseView handshake() const { return ResponseView(crnet_ws_handshake_response(ws_)); }
+	int close_code() const { return crnet_ws_close_code(ws_); }
+	std::string close_reason() const { return detail::str(crnet_ws_close_reason(ws_)); }
+
+	// Aborts an open connection (no closing handshake) and waits for
+	// on_close; call close() + wait_closed() first for a clean shutdown.
+	void reset()
+	{
+		if (ws_)
+			crnet_ws_free(std::exchange(ws_, nullptr));
+		h_.reset();
+	}
+
+	crnet_ws *get() const noexcept { return ws_; }
+
+private:
+	friend class Client;
+	WebSocket(crnet_ws *ws, std::unique_ptr<WsHandlers> h) : ws_(ws), h_(std::move(h)) {}
+
+	static void check(int rc)
+	{
+		if (rc != CRNET_OK)
+			throw Error(rc, crnet_strerror(rc));
+	}
+
+	crnet_ws *ws_ = nullptr;
+	std::unique_ptr<WsHandlers> h_;
+};
+
 class Client {
 public:
 	Client() : Client(nullptr) {}
@@ -307,6 +413,42 @@ public:
 
 	void clear_cookies() { crnet_client_clear_cookies(get()); }
 	void close_idle() { crnet_client_close_idle(get()); }
+
+	// Open a WebSocket (ws://, wss://). |protocols| is a comma separated
+	// subprotocol list. Returns immediately; see WebSocket::wait_open().
+	WebSocket websocket(const Request &req, const std::string &protocols = "",
+			    WsHandlers handlers = {})
+	{
+		auto h = std::make_unique<WsHandlers>(std::move(handlers));
+		crnet_ws_callbacks cb{};
+		if (h->on_open)
+			cb.on_open = [](crnet_ws *, const crnet_response *r, const char *p,
+					const char *e, void *ud) {
+				static_cast<WsHandlers *>(ud)->on_open(ResponseView(r), p, e);
+			};
+		if (h->on_message)
+			cb.on_message = [](crnet_ws *, crnet_ws_msg_type t, const void *d,
+					   size_t n, void *ud) {
+				static_cast<WsHandlers *>(ud)->on_message(
+					t, std::string_view(static_cast<const char *>(d), n));
+			};
+		if (h->on_close)
+			cb.on_close = [](crnet_ws *, int err, int code, const char *reason,
+					 void *ud) {
+				static_cast<WsHandlers *>(ud)->on_close(err, code, reason);
+			};
+		crnet_ws *ws = crnet_ws_connect(get(), req.get(),
+						protocols.empty() ? nullptr : protocols.c_str(),
+						&cb, h.get());
+		if (!ws)
+			throw Error(CRNET_E_INVAL, "crnet_ws_connect failed");
+		return WebSocket(ws, std::move(h));
+	}
+
+	WebSocket websocket(const std::string &url, const std::string &protocols = "")
+	{
+		return websocket(Request(url), protocols);
+	}
 
 	crnet_client *get() const noexcept { return c_.get(); }
 

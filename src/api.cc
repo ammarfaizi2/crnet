@@ -12,7 +12,9 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "crnet/internal.h"
+#include "crnet/websocket.h"
 #include "net/http/http_util.h"
+#include "url/url_constants.h"
 
 namespace {
 
@@ -339,7 +341,8 @@ CRNET_API int crnet_request_set_url(crnet_request *req, const char *url)
 	if (!req || !url)
 		return CRNET_E_INVAL;
 	GURL u(url);
-	if (!u.is_valid() || !u.SchemeIsHTTPOrHTTPS())
+	// ws:// and wss:// are for crnet_ws_connect() only.
+	if (!u.is_valid() || !(u.SchemeIsHTTPOrHTTPS() || u.SchemeIsWSOrWSS()))
 		return CRNET_E_INVAL;
 	req->spec.url = std::move(u);
 	return CRNET_OK;
@@ -450,7 +453,7 @@ static crnet_transfer *StartTransfer(crnet_client *client,
 				      const crnet_callbacks *cb,
 				      void *user_data, crnet_queue *q)
 {
-	if (!client || !req)
+	if (!client || !req || !req->spec.url.SchemeIsHTTPOrHTTPS())
 		return nullptr;
 	auto t = base::MakeRefCounted<crnet_transfer>(client, req->spec, cb,
 						       user_data, q);
@@ -479,6 +482,8 @@ CRNET_API int crnet_perform(crnet_client *client, const crnet_request *req,
 	if (resp)
 		*resp = nullptr;
 	if (!client || !req || !resp)
+		return CRNET_E_INVAL;
+	if (!req->spec.url.SchemeIsHTTPOrHTTPS())
 		return CRNET_E_INVAL;
 	if (crnet::OnNetworkThread())
 		return CRNET_E_WOULD_DEADLOCK;
@@ -582,7 +587,7 @@ CRNET_API int crnet_queue_fd(const crnet_queue *q)
 CRNET_API int crnet_queue_start(crnet_queue *q, crnet_client *client,
 				  const crnet_request *req, void *user_data)
 {
-	if (!q || !client || !req)
+	if (!q || !client || !req || !req->spec.url.SchemeIsHTTPOrHTTPS())
 		return CRNET_E_INVAL;
 	crnet_transfer *t = StartTransfer(client, req, nullptr, user_data, q);
 	if (!t)
@@ -604,6 +609,161 @@ CRNET_API int crnet_queue_pop(crnet_queue *q, crnet_transfer **t,
 CRNET_API size_t crnet_queue_pending(const crnet_queue *q)
 {
 	return q ? q->pending() : 0;
+}
+
+// ------------------------------------------------------------------
+// WebSocket
+// ------------------------------------------------------------------
+
+CRNET_API crnet_ws *crnet_ws_connect(crnet_client *client,
+				     const crnet_request *req,
+				     const char *protocols,
+				     const crnet_ws_callbacks *cb,
+				     void *user_data)
+{
+	if (!client || !req)
+		return nullptr;
+	GURL url = req->spec.url;
+	if (url.SchemeIsHTTPOrHTTPS()) {
+		GURL::Replacements r;
+		r.SetSchemeStr(url.SchemeIs(url::kHttpsScheme) ? url::kWssScheme
+								 : url::kWsScheme);
+		url = url.ReplaceComponents(r);
+	}
+	if (!url.SchemeIsWSOrWSS())
+		return nullptr;
+	std::optional<crnet::WsHeaders> headers =
+		crnet::BuildWsHeaders(client->config(), req->spec, url, protocols);
+	if (!headers)
+		return nullptr;
+
+	auto ws = base::MakeRefCounted<crnet_ws>(client, req->spec, url,
+						 std::move(*headers), cb,
+						 user_data);
+	if (!ws->ok() || !client->StartWebSocket(ws))
+		return nullptr;
+	// The caller's handle reference.
+	return ws.release();
+}
+
+CRNET_API int crnet_ws_wait_open(crnet_ws *ws, uint64_t timeout_ms)
+{
+	if (!ws)
+		return CRNET_E_INVAL;
+	if (timeout_ms && crnet::OnNetworkThread())
+		return CRNET_E_WOULD_DEADLOCK;
+	return ws->WaitOpen(timeout_ms);
+}
+
+CRNET_API int crnet_ws_send(crnet_ws *ws, crnet_ws_msg_type type,
+			    const void *data, size_t len)
+{
+	return ws ? ws->Send(type, data, len) : CRNET_E_INVAL;
+}
+
+CRNET_API uint64_t crnet_ws_buffered_amount(const crnet_ws *ws)
+{
+	return ws ? ws->buffered_amount() : 0;
+}
+
+CRNET_API int crnet_ws_recv(crnet_ws *ws, crnet_ws_msg_type *type,
+			    void **data, size_t *len, uint64_t timeout_ms)
+{
+	if (!ws || !data)
+		return CRNET_E_INVAL;
+	*data = nullptr;
+	if (timeout_ms && crnet::OnNetworkThread())
+		return CRNET_E_WOULD_DEADLOCK;
+	return ws->Recv(type, data, len, timeout_ms);
+}
+
+CRNET_API int crnet_ws_fd(const crnet_ws *ws)
+{
+	return ws ? ws->fd() : -1;
+}
+
+CRNET_API int crnet_ws_close(crnet_ws *ws, int code, const char *reason)
+{
+	if (!ws)
+		return CRNET_E_INVAL;
+	return ws->Close(code, reason ? reason : "");
+}
+
+CRNET_API void crnet_ws_pause(crnet_ws *ws)
+{
+	if (ws)
+		ws->Pause();
+}
+
+CRNET_API void crnet_ws_resume(crnet_ws *ws)
+{
+	if (ws)
+		ws->Resume();
+}
+
+CRNET_API int crnet_ws_wait_closed(crnet_ws *ws, uint64_t timeout_ms)
+{
+	if (!ws)
+		return CRNET_E_INVAL;
+	if (timeout_ms && !ws->done() && crnet::OnNetworkThread())
+		return CRNET_E_WOULD_DEADLOCK;
+	return ws->WaitClosed(timeout_ms);
+}
+
+CRNET_API crnet_ws_state crnet_ws_get_state(const crnet_ws *ws)
+{
+	return ws ? ws->state() : CRNET_WS_CLOSED;
+}
+
+CRNET_API const char *crnet_ws_protocol(const crnet_ws *ws)
+{
+	return ws && ws->state() != CRNET_WS_CONNECTING
+		       ? ws->protocol().c_str()
+		       : "";
+}
+
+CRNET_API const char *crnet_ws_extensions(const crnet_ws *ws)
+{
+	return ws && ws->state() != CRNET_WS_CONNECTING
+		       ? ws->extensions().c_str()
+		       : "";
+}
+
+CRNET_API const crnet_response *crnet_ws_handshake_response(
+	const crnet_ws *ws)
+{
+	if (!ws || (ws->state() == CRNET_WS_CONNECTING && !ws->done()))
+		return nullptr;
+	return ws->handshake();
+}
+
+CRNET_API int crnet_ws_close_code(const crnet_ws *ws)
+{
+	return ws && ws->done() ? ws->close_code() : 0;
+}
+
+CRNET_API const char *crnet_ws_close_reason(const crnet_ws *ws)
+{
+	return ws && ws->done() ? ws->close_reason().c_str() : "";
+}
+
+CRNET_API int crnet_ws_net_error(const crnet_ws *ws)
+{
+	return ws && ws->done() ? ws->net_error() : 0;
+}
+
+CRNET_API void crnet_ws_free(crnet_ws *ws)
+{
+	if (!ws)
+		return;
+	if (!ws->done()) {
+		ws->Abort(CRNET_E_CANCELED);
+		// As crnet_transfer_free(): wait for on_close unless we are
+		// on the network thread, where the abort was synchronous.
+		if (!crnet::OnNetworkThread())
+			ws->WaitClosed(UINT64_MAX);
+	}
+	ws->Release();
 }
 
 // ------------------------------------------------------------------

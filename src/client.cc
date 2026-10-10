@@ -17,6 +17,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "components/network_session_configurator/browser/network_session_configurator.h"
 #include "crnet/internal.h"
+#include "crnet/websocket.h"
 #include "net/base/features.h"
 #include "net/base/network_delegate_impl.h"
 #include "net/cert/cert_verifier.h"
@@ -292,10 +293,14 @@ void crnet_client::Destroy()
 
 void crnet_client::ShutdownOnNetworkThread(base::WaitableEvent *ev)
 {
-	// Fail everything still running; Finish() removes it from running_.
+	// Fail everything still running; Finish() removes it from running_
+	// and sockets_.
 	auto running = running_;
 	for (const auto &t : running)
 		t->FailOnNetworkThread(CRNET_E_SHUTDOWN, net::ERR_ABORTED);
+	auto sockets = sockets_;
+	for (const auto &ws : sockets)
+		ws->FailOnNetworkThread(CRNET_E_SHUTDOWN, net::ERR_ABORTED);
 
 	// URLRequests are deleted with DeleteSoon(); tear the context down
 	// in a later task so they are gone first.
@@ -343,6 +348,30 @@ bool crnet_client::Start(scoped_refptr<crnet_transfer> t)
 void crnet_client::TransferFinished(crnet_transfer *t)
 {
 	running_.erase(base::WrapRefCounted(t));
+}
+
+bool crnet_client::StartWebSocket(scoped_refptr<crnet_ws> ws)
+{
+	if (shutting_down_.load())
+		return false;
+	return runner_->PostTask(
+		FROM_HERE,
+		base::BindOnce(
+			[](crnet_client *c, scoped_refptr<crnet_ws> ws) {
+				c->sockets_.insert(ws);
+				if (!c->context_ || c->shutting_down_.load()) {
+					ws->FailOnNetworkThread(CRNET_E_SHUTDOWN,
+								net::ERR_ABORTED);
+					return;
+				}
+				ws->StartOnNetworkThread();
+			},
+			base::Unretained(this), std::move(ws)));
+}
+
+void crnet_client::WebSocketFinished(crnet_ws *ws)
+{
+	sockets_.erase(base::WrapRefCounted(ws));
 }
 
 // ------------------------------------------------------------------
