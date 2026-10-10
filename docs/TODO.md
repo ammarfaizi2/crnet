@@ -16,21 +16,9 @@ How to use it:
   (or series) that completes the work.** If only part of it is done,
   edit the item down to what is left. The git history keeps the record
   of finished items; this file lists open work only.
-- Every new public capability also gets a feature-test macro (see
-  `feature-test-macros`).
-
-## API conventions
-
-### feature-test-macros
-
-Feature-test macros for each new capability.
-
-- Wanted: for example `#define CRNET_HAS_CONNECT_TIMEOUT 1` in
-  `crnet.h`, plus a minor version bump with each addition.
-- Why: applications that build against several crnet versions can
-  gate code and tests on what the build is supposed to support at
-  compile time, instead of probing the library at run time.
-- Add the macro in the same commit as the feature it announces.
+- Every new public capability also gets a `CRNET_HAS_*` feature-test
+  macro and a minor version bump (see "Versions and feature tests" in
+  [api.md](api.md)).
 
 ## Errors and diagnostics
 

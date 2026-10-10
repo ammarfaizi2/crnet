@@ -361,6 +361,37 @@ crnet_response_redirect_count(r);
 
 Repeated headers (`Set-Cookie`, ...) appear once per line when iterating.
 
+## Versions and feature tests
+
+`CRNET_VERSION_MAJOR`, `CRNET_VERSION_MINOR` and `CRNET_VERSION_PATCH`
+describe the headers a program is compiled against, and
+`CRNET_VERSION_NUMBER` combines them for comparisons (0.2.0 is 200,
+1.10.3 is 11003). `crnet_version()` reports the library actually
+loaded, for example `"0.2.0 (Chromium 155.0.8059.39)"`.
+
+Every capability gets a `CRNET_HAS_*` macro, defined to 1 next to its
+declarations in `crnet.h`, and adding one bumps the minor version. Test
+the macro, not the version, to decide at compile time whether a
+feature can be used:
+
+```c
+#ifdef CRNET_HAS_WEBSOCKET
+	ws = crnet_ws_connect(client, req, NULL, &cb, NULL);
+#else
+	/* fall back, or refuse the option */
+#endif
+```
+
+| Macro | Since | Covers |
+|---|---|---|
+| `CRNET_HAS_STREAMING` | 0.2.0 | streamed request and response bodies |
+| `CRNET_HAS_WEBSOCKET` | 0.2.0 | the WebSocket client, `crnet_ws_*` |
+
+Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
+`libcrnet.so.0` while the major version is 0, so a program built
+against newer headers than the installed library fails to load with an
+undefined `crnet_*` symbol rather than misbehaving.
+
 ## Process-wide state
 
 Chromium needs some process-wide singletons. crnet creates them on the

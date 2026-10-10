@@ -58,9 +58,29 @@
 extern "C" {
 #endif
 
+/*
+ * Version and feature tests
+ * -------------------------
+ * CRNET_VERSION_* describe the headers being compiled against;
+ * crnet_version() reports the library loaded at run time. The minor
+ * version goes up whenever a capability is added, and each capability
+ * gets a CRNET_HAS_* macro next to its declarations, so one program can
+ * build against several crnet releases:
+ *
+ *	#ifdef CRNET_HAS_WEBSOCKET
+ *		...
+ *	#endif
+ *
+ * A CRNET_HAS_* macro is either defined to 1 or not defined at all.
+ * Releases before 0.2.0 define none of them.
+ */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 1
+#define CRNET_VERSION_MINOR 2
 #define CRNET_VERSION_PATCH 0
+/* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
+#define CRNET_VERSION_NUMBER \
+	(CRNET_VERSION_MAJOR * 10000 + CRNET_VERSION_MINOR * 100 + \
+	 CRNET_VERSION_PATCH)
 
 typedef struct crnet_client_config crnet_client_config;
 typedef struct crnet_client crnet_client;
@@ -110,7 +130,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.1.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.2.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -289,6 +309,13 @@ CRNET_API int crnet_request_set_header(crnet_request *req,
 /* Copy |len| bytes as the request body. NULL/0 clears the body. */
 CRNET_API int crnet_request_set_body(crnet_request *req, const void *data,
 				     size_t len);
+
+/*
+ * Streamed bodies: crnet_request_set_body_file(),
+ * crnet_request_set_body_stream(), crnet_request_set_response_stream()
+ * and the crnet_transfer_write()/read() family.
+ */
+#define CRNET_HAS_STREAMING 1
 
 /*
  * Stream the body from a file, without loading it into memory: Chromium
@@ -563,6 +590,9 @@ CRNET_API size_t crnet_queue_pending(const crnet_queue *q);
 /* ---------------------------------------------------------------- */
 /* WebSocket                                                        */
 /* ---------------------------------------------------------------- */
+
+/* The WebSocket client, crnet_ws_*. */
+#define CRNET_HAS_WEBSOCKET 1
 
 /*
  * A WebSocket connection (RFC 6455) made through Chromium's WebSocket

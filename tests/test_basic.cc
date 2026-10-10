@@ -19,6 +19,16 @@ TEST(Library, VersionStrings)
 	EXPECT_EQ(cr, CRNET_TEST_CHROMIUM_VERSION);
 	EXPECT_NE(std::string(crnet_version()).find(cr), std::string::npos);
 
+	// The library loaded is the one these headers describe.
+	std::string ver = std::to_string(CRNET_VERSION_MAJOR) + "." +
+			  std::to_string(CRNET_VERSION_MINOR) + "." +
+			  std::to_string(CRNET_VERSION_PATCH) + " ";
+	EXPECT_EQ(std::string(crnet_version()).rfind(ver, 0), 0u)
+		<< crnet_version();
+	EXPECT_EQ(CRNET_VERSION_NUMBER,
+		  CRNET_VERSION_MAJOR * 10000 + CRNET_VERSION_MINOR * 100 +
+			  CRNET_VERSION_PATCH);
+
 	std::string major = cr.substr(0, cr.find('.'));
 	std::string ua = crnet_default_user_agent();
 	EXPECT_EQ(ua, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
