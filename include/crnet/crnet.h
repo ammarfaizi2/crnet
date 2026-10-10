@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 4
+#define CRNET_VERSION_MINOR 5
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.4.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.5.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -395,7 +395,9 @@ CRNET_API int crnet_request_set_timeout(crnet_request *req,
 
 /*
  * Decode gzip/deflate/br/zstd bodies. Default on. When off, the body is
- * delivered exactly as received (Content-Encoding still applies).
+ * delivered as received (Content-Encoding still applies), except for a
+ * response carrying Use-As-Dictionary, which Chromium always decodes;
+ * crnet_response_content_decoded() tells.
  */
 CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable);
 
@@ -835,6 +837,25 @@ CRNET_API const char *crnet_response_remote_address(
 		const crnet_response *resp);
 /* Whether the response was obtained through a proxy. */
 CRNET_API int crnet_response_via_proxy(const crnet_response *resp);
+
+/*
+ * Whether crnet removed content codings from the body. When it did, the
+ * body is the decoded content while the Content-Encoding and
+ * Content-Length headers still describe the bytes as sent. Chromium
+ * decodes br, deflate, gzip (and x-gzip) and zstd; when Content-Encoding
+ * names anything else, "identity" included, it leaves the whole body
+ * as received. With crnet_request_set_decompress(req, 0) the body is
+ * left as received too, except that Chromium still decodes a response
+ * carrying Use-As-Dictionary. Known from the response headers on.
+ */
+#define CRNET_HAS_CONTENT_DECODED 1
+CRNET_API int crnet_response_content_decoded(const crnet_response *resp);
+/*
+ * The codings removed, in Content-Encoding order and by canonical name
+ * ("gzip", "deflate, br"); "" when the body is as received.
+ */
+CRNET_API const char *crnet_response_decoded_codings(
+		const crnet_response *resp);
 
 /*
  * Chromium net error code (0 = OK, e.g. -105 = ERR_NAME_NOT_RESOLVED)

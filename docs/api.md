@@ -119,8 +119,10 @@ crnet_request_set_timeout(req, 10000);
   itself instead of following it. With the default (20) the final
   response is returned and `crnet_response_redirect_count()` tells how
   many hops were followed; `crnet_response_url()` is the final URL.
-- `crnet_request_set_decompress(req, 0)` delivers the body exactly as
-  received (gzip/deflate/br/zstd stay encoded).
+- `crnet_request_set_decompress(req, 0)` delivers the body as received
+  (gzip/deflate/br/zstd stay encoded), except for a response carrying
+  `Use-As-Dictionary`, which Chromium always decodes; see
+  [Responses](#responses).
 - `crnet_request_set_max_body_size()` aborts with `CRNET_E_TOO_LARGE`.
 - `crnet_request_set_priority()` overrides the HTTP/2/3 priority.
 
@@ -372,6 +374,16 @@ crnet_response_redirect_count(r);
 
 Repeated headers (`Set-Cookie`, ...) appear once per line when iterating.
 
+By default crnet decodes the body (br, deflate, gzip, zstd, like
+Chrome), but the headers stay as the server sent them:
+`Content-Encoding` and `Content-Length` then describe the encoded bytes,
+not the body you get. `crnet_response_content_decoded(r)` tells which
+case you have, and `crnet_response_decoded_codings(r)` lists the codings
+removed (`"gzip"`, `"gzip, br"`). Both report what Chromium actually
+did: it leaves the whole body raw when `Content-Encoding` names a coding
+it does not know (`identity` included), and it decodes a response with
+`Use-As-Dictionary` even when decompression is off.
+
 ## Versions and feature tests
 
 `CRNET_VERSION_MAJOR`, `CRNET_VERSION_MINOR` and `CRNET_VERSION_PATCH`
@@ -399,6 +411,7 @@ feature can be used:
 | `CRNET_HAS_WEBSOCKET` | 0.2.0 | the WebSocket client, `crnet_ws_*` |
 | `CRNET_HAS_TRANSFER_RESULT` | 0.3.0 | `crnet_transfer_result()`, `CRNET_E_PENDING` |
 | `CRNET_HAS_PROXY_BYPASS` | 0.4.0 | `crnet_client_config_set_proxy_bypass()` |
+| `CRNET_HAS_CONTENT_DECODED` | 0.5.0 | `crnet_response_content_decoded()`, `crnet_response_decoded_codings()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

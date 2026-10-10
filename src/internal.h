@@ -214,6 +214,8 @@ struct crnet_response {
 	std::string protocol;
 	std::string remote;
 	bool via_proxy = false;
+	// Content codings removed from the body, "" when it is as received.
+	std::string decoded_codings;
 	int net_error = 0;
 	std::string net_error_str;
 };
@@ -288,6 +290,7 @@ private:
 	~crnet_transfer() override;
 
 	void FillResponseMeta(net::URLRequest *request);
+	static std::string DecodedCodings(net::URLRequest *request);
 	void ReadMore();
 	// Returns true if reading should continue.
 	bool HandleRead(int bytes);

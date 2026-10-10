@@ -996,6 +996,16 @@ CRNET_API int crnet_response_via_proxy(const crnet_response *r)
 	return r && r->via_proxy;
 }
 
+CRNET_API int crnet_response_content_decoded(const crnet_response *r)
+{
+	return r && !r->decoded_codings.empty();
+}
+
+CRNET_API const char *crnet_response_decoded_codings(const crnet_response *r)
+{
+	return r ? r->decoded_codings.c_str() : nullptr;
+}
+
 CRNET_API int crnet_response_net_error(const crnet_response *r)
 {
 	return r ? r->net_error : 0;

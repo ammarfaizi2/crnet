@@ -98,6 +98,8 @@ TEST_P(EncodingTest, DecodedTransparently)
 	ASSERT_EQ(r.status(), 200);
 	EXPECT_EQ(r.header("content-encoding"), GetParam());
 	EXPECT_EQ(r.body(), kPlain);
+	EXPECT_TRUE(crnet_response_content_decoded(r.resp));
+	EXPECT_STREQ(crnet_response_decoded_codings(r.resp), GetParam());
 }
 
 TEST_P(EncodingTest, RawWhenDecompressionDisabled)
@@ -112,6 +114,8 @@ TEST_P(EncodingTest, RawWhenDecompressionDisabled)
 	EXPECT_NE(b, kPlain);
 	EXPECT_LT(b.size(), kPlain.size()) << "compressed bytes expected";
 	EXPECT_EQ(std::to_string(b.size()), r.header("content-length"));
+	EXPECT_FALSE(crnet_response_content_decoded(r.resp));
+	EXPECT_STREQ(crnet_response_decoded_codings(r.resp), "");
 	if (!strcmp(GetParam(), "gzip")) {
 		EXPECT_EQ(b.substr(0, 2), "\x1f\x8b");
 	}
@@ -122,6 +126,69 @@ TEST_P(EncodingTest, RawWhenDecompressionDisabled)
 
 INSTANTIATE_TEST_SUITE_P(All, EncodingTest,
 			 ::testing::Values("gzip", "deflate", "br", "zstd"));
+
+namespace {
+
+// Compressed bytes of kPlain with |codings| applied in order.
+std::string Encoded(crnet_client *c, const std::string &codings)
+{
+	crnet_request *req = crnet_request_new(
+		"GET", HttpsUrl("/encoded/" + codings).c_str());
+	crnet_request_set_decompress(req, 0);
+	Result r = Perform(c, req);
+	crnet_request_free(req);
+	EXPECT_EQ(r.rc, CRNET_OK);
+	return r.body();
+}
+
+} // namespace
+
+TEST_F(ClientTest, DecodedCodingsStacked)
+{
+	Result r = Get(client_, HttpsUrl("/encoded/gzip,br"));
+	ASSERT_EQ(r.rc, CRNET_OK);
+	EXPECT_EQ(r.header("content-encoding"), "gzip, br");
+	EXPECT_EQ(r.body(), kPlain);
+	EXPECT_TRUE(crnet_response_content_decoded(r.resp));
+	EXPECT_STREQ(crnet_response_decoded_codings(r.resp), "gzip, br");
+}
+
+// One coding Chromium does not know makes it pass the whole body
+// through, including the codings it does know.
+TEST_F(ClientTest, UnknownCodingLeavesBodyRaw)
+{
+	for (const char *codings : {"gzip,x-unknown", "identity", "gzip,identity"}) {
+		SCOPED_TRACE(codings);
+		Result r = Get(client_, HttpsUrl(std::string("/encoded/") + codings));
+		ASSERT_EQ(r.rc, CRNET_OK);
+		EXPECT_FALSE(crnet_response_content_decoded(r.resp));
+		EXPECT_STREQ(crnet_response_decoded_codings(r.resp), "");
+		EXPECT_EQ(r.body(), Encoded(client_, codings));
+	}
+}
+
+TEST_F(ClientTest, NoCodingNothingDecoded)
+{
+	Result r = Get(client_, HttpsUrl("/echo"));
+	ASSERT_EQ(r.rc, CRNET_OK);
+	EXPECT_FALSE(crnet_response_content_decoded(r.resp));
+	EXPECT_STREQ(crnet_response_decoded_codings(r.resp), "");
+}
+
+// Chromium decodes a dictionary response even when asked for the raw
+// body; the flag must follow what it did, not what was asked.
+TEST_F(ClientTest, DictionaryResponseIsDecodedEvenWhenRawRequested)
+{
+	crnet_request *req = crnet_request_new(
+		"GET", HttpsUrl("/encoded/gzip?dict=1").c_str());
+	crnet_request_set_decompress(req, 0);
+	Result r = Perform(client_, req);
+	crnet_request_free(req);
+	ASSERT_EQ(r.rc, CRNET_OK);
+	EXPECT_EQ(r.body(), kPlain);
+	EXPECT_TRUE(crnet_response_content_decoded(r.resp));
+	EXPECT_STREQ(crnet_response_decoded_codings(r.resp), "gzip");
+}
 
 TEST_F(ClientTest, MaxBodySize)
 {

@@ -26,6 +26,8 @@
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/cookies/site_for_cookies.h"
+#include "net/filter/filter_source_stream.h"
+#include "net/filter/source_stream_type.h"
 #include "net/http/http_connection_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/ssl/ssl_cert_request_info.h"
@@ -293,6 +295,45 @@ int crnet_transfer::WaitResponse(uint64_t timeout_ms)
 	return resp_ && resp_->status > 0 ? CRNET_OK : result_;
 }
 
+// The content codings URLRequestHttpJob decodes, read back from it rather
+// than re-derived: every coding Chromium recognises in Content-Encoding,
+// unless it left them to the client (decompression off), in which case
+// it reports them as client-side codings instead. Valid once the
+// response has started, when the job has set up its source stream.
+std::string crnet_transfer::DecodedCodings(net::URLRequest *request)
+{
+	std::vector<net::SourceStreamType> undecoded;
+	request->GetClientSideContentDecodingTypes(&undecoded);
+	const net::HttpResponseHeaders *h = request->response_headers();
+	if (!undecoded.empty() || !h)
+		return std::string();
+	std::string out;
+	for (net::SourceStreamType t :
+	     net::FilterSourceStream::GetContentEncodingTypes(*h)) {
+		const char *name = nullptr;
+		switch (t) {
+		case net::SourceStreamType::kBrotli:
+			name = "br";
+			break;
+		case net::SourceStreamType::kDeflate:
+			name = "deflate";
+			break;
+		case net::SourceStreamType::kGzip:
+			name = "gzip";
+			break;
+		case net::SourceStreamType::kZstd:
+			name = "zstd";
+			break;
+		default:
+			continue;
+		}
+		if (!out.empty())
+			out += ", ";
+		out += name;
+	}
+	return out;
+}
+
 void crnet_transfer::FillResponseMeta(net::URLRequest *request)
 {
 	if (!resp_)
@@ -376,6 +417,7 @@ void crnet_transfer::OnResponseStarted(net::URLRequest *request,
 		return;
 	}
 	FillResponseMeta(request);
+	resp_->decoded_codings = DecodedCodings(request);
 	headers_.Signal();
 
 	if (cb_.on_response) {

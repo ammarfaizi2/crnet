@@ -60,21 +60,6 @@ Tell SOCKS5 failures apart.
   `tests/server/test_server.py` (each REP value, a refused method, a
   truncated reply, a close at each stage); today it only ever accepts.
 
-### content-decoded-flag
-
-Report whether the response body was decoded.
-
-- Today: with decompression on, the body arrives decoded but
-  `Content-Encoding` and `Content-Length` still describe the encoded
-  bytes. To know which applies, a caller has to mirror Chromium's rule
-  from `FilterSourceStream::GetContentEncodingTypes()`: if every coding
-  is br, deflate, gzip, x-gzip or zstd, the body was decoded; if any
-  coding is unknown (`identity` included), the body is raw. Such a
-  mirror can drift on a Chromium bump.
-- Wanted: `crnet_response_content_decoded(resp)`, ideally with the
-  list of codings applied, taken from what `URLRequestHttpJob` actually
-  did.
-
 ### connection-timing-info
 
 Connection and timing info on the response.

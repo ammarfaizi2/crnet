@@ -141,6 +141,8 @@ public:
 	std::string protocol() const { return detail::str(crnet_response_protocol(r_)); }
 	std::string remote_address() const { return detail::str(crnet_response_remote_address(r_)); }
 	bool via_proxy() const { return crnet_response_via_proxy(r_) != 0; }
+	bool content_decoded() const { return crnet_response_content_decoded(r_) != 0; }
+	std::string decoded_codings() const { return detail::str(crnet_response_decoded_codings(r_)); }
 	int net_error() const { return crnet_response_net_error(r_); }
 	std::string error_string() const { return detail::str(crnet_response_error_string(r_)); }
 
