@@ -189,6 +189,15 @@ release with `crnet_transfer_free()`:
 - The response returned by `crnet_transfer_response()` lives as long as
   the handle; `crnet_transfer_take_response()` moves it out to you.
 
+`crnet_transfer_done()` and `crnet_transfer_wait()` report a transfer
+finished only once `on_complete` has **returned**. When `on_complete`
+hands the transfer to another thread (a work queue, an event loop),
+that thread may run before the callback returns; there, use
+`crnet_transfer_result()`, which returns the result from the moment
+`on_complete` is **entered** and `CRNET_E_PENDING` before. From that
+moment the response is final: crnet never modifies it again, so the
+other thread may read it right away.
+
 ## Streaming bodies
 
 Large uploads and downloads should not be held in memory. crnet streams
@@ -335,6 +344,7 @@ client would send to that URL.
 | `CRNET_E_WOULD_DEADLOCK` | a blocking call was made on a crnet network thread |
 | `CRNET_E_STATE` | the operation does not apply in the current state |
 | `CRNET_E_CALLBACK` | `on_response` or `on_data` returned non-zero |
+| `CRNET_E_PENDING` | `crnet_transfer_result()`: the transfer is still running |
 
 Network errors carry Chromium's net error codes (`net/base/net_error_list.h`),
 for example `-105 ERR_NAME_NOT_RESOLVED`, `-102 ERR_CONNECTION_REFUSED`,
@@ -386,6 +396,7 @@ feature can be used:
 |---|---|---|
 | `CRNET_HAS_STREAMING` | 0.2.0 | streamed request and response bodies |
 | `CRNET_HAS_WEBSOCKET` | 0.2.0 | the WebSocket client, `crnet_ws_*` |
+| `CRNET_HAS_TRANSFER_RESULT` | 0.3.0 | `crnet_transfer_result()`, `CRNET_E_PENDING` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

@@ -492,6 +492,7 @@ void crnet_transfer::Finish(int err, int net_error)
 	if (upload_)
 		upload_->Close(err == CRNET_OK ? CRNET_E_STATE : err);
 	headers_.Signal();
+	completing_.Signal();
 	if (cb_.on_complete)
 		cb_.on_complete(this, err, resp_.get(), user_data_);
 	done_.Signal();

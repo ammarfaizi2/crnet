@@ -224,6 +224,8 @@ public:
 	void resume() { crnet_transfer_resume(t_); }
 	bool done() const { return crnet_transfer_done(t_) != 0; }
 	int wait(uint64_t timeout_ms = UINT64_MAX) { return crnet_transfer_wait(t_, timeout_ms); }
+	// CRNET_E_PENDING until on_complete has been entered, then the result.
+	int result() const { return crnet_transfer_result(t_); }
 	ResponseView response() const { return ResponseView(crnet_transfer_response(t_)); }
 	Response take_response() { return Response(crnet_transfer_take_response(t_)); }
 

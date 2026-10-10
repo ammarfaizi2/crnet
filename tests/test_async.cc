@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -243,6 +244,66 @@ TEST_F(ClientTest, FreeFromOnComplete)
 	for (int i = 0; i < 500 && !freed; i++)
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	EXPECT_TRUE(freed);
+}
+
+TEST_F(ClientTest, ResultIsPendingWhileRunning)
+{
+	crnet_transfer *t = StartGet(client_, HttpsUrl("/delay/300"), nullptr, nullptr);
+	ASSERT_NE(t, nullptr);
+	EXPECT_EQ(crnet_transfer_result(t), CRNET_E_PENDING);
+	EXPECT_EQ(crnet_transfer_wait(t, UINT64_MAX), CRNET_OK);
+	EXPECT_EQ(crnet_transfer_result(t), CRNET_OK);
+	crnet_transfer_free(t);
+
+	t = StartGet(client_, "https://127.0.0.1:1/", nullptr, nullptr);
+	ASSERT_NE(t, nullptr);
+	EXPECT_EQ(crnet_transfer_wait(t, UINT64_MAX), CRNET_E_NET);
+	EXPECT_EQ(crnet_transfer_result(t), CRNET_E_NET);
+	crnet_transfer_free(t);
+	EXPECT_EQ(crnet_transfer_result(nullptr), CRNET_E_INVAL);
+}
+
+// on_complete hands the transfer to another thread and stays inside the
+// callback until that thread is done with it: the result and the
+// response must already be readable there, although the transfer does
+// not count as done until on_complete returns.
+TEST_F(ClientTest, ResultIsReadableOnceOnCompleteIsEntered)
+{
+	struct HandOff {
+		std::mutex mu;
+		std::condition_variable cv;
+		crnet_transfer *t = nullptr;
+		int in_callback = 999;
+		bool checked = false;
+	} h;
+	crnet_callbacks cb = {};
+	cb.on_complete = [](crnet_transfer *t, int, const crnet_response *, void *ud) {
+		auto *h = static_cast<HandOff *>(ud);
+		std::unique_lock<std::mutex> lk(h->mu);
+		h->in_callback = crnet_transfer_result(t);
+		h->t = t;
+		h->cv.notify_all();
+		h->cv.wait(lk, [h] { return h->checked; });
+	};
+	crnet_transfer *t = StartGet(client_, HttpsUrl("/echo"), &cb, &h);
+	ASSERT_NE(t, nullptr);
+	{
+		std::unique_lock<std::mutex> lk(h.mu);
+		h.cv.wait(lk, [&h] { return h.t != nullptr; });
+	}
+	EXPECT_EQ(h.in_callback, CRNET_OK);
+	EXPECT_EQ(crnet_transfer_result(t), CRNET_OK);
+	EXPECT_EQ(crnet_response_status(crnet_transfer_response(t)), 200);
+	EXPECT_FALSE(crnet_transfer_done(t));
+	EXPECT_EQ(crnet_transfer_wait(t, 0), CRNET_E_TIMEOUT);
+	{
+		std::lock_guard<std::mutex> lk(h.mu);
+		h.checked = true;
+	}
+	h.cv.notify_all();
+	EXPECT_EQ(crnet_transfer_wait(t, UINT64_MAX), CRNET_OK);
+	EXPECT_TRUE(crnet_transfer_done(t));
+	crnet_transfer_free(t);
 }
 
 TEST_F(ClientTest, BlockingCallInsideCallbackIsRefused)

@@ -252,7 +252,11 @@ public:
 	bool ok() const;
 	// Any thread: continue a download stopped by a full buffer.
 	void ResumeDownload();
-	int result() const { return result_; }
+	// CRNET_E_PENDING until on_complete has been entered.
+	int result() const
+	{
+		return completing_.IsSignaled() ? result_ : CRNET_E_PENDING;
+	}
 	crnet_response *response() const { return resp_.get(); }
 	crnet_response *TakeResponse();
 	void *user_data() const { return user_data_; }
@@ -317,10 +321,12 @@ private:
 	scoped_refptr<crnet::UploadPipe> upload_;
 	std::unique_ptr<crnet::DownloadBuffer> download_;
 
-	// result_ and resp_ are written on the network thread before done_
-	// (or, for the response headers, headers_) is signalled and only read
-	// by other threads after it is.
+	// result_ and resp_ are written on the network thread before
+	// completing_ (on_complete is about to run) and done_ (it returned)
+	// are signalled, or for the response headers before headers_, and
+	// only read by other threads after that.
 	crnet::OneShotEvent headers_;
+	crnet::OneShotEvent completing_;
 	crnet::OneShotEvent done_;
 	int result_ = CRNET_E_STATE;
 };

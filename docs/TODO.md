@@ -273,18 +273,6 @@ A pollable "can write" signal for streamed uploads.
   readable while the upload pipe has free space, plus a non-blocking
   write that returns how much it accepted.
 
-### transfer-result-getter
-
-A non-blocking result getter.
-
-- Today: `Finish()` in `transfer.cc` signals `done_` only after
-  `on_complete` returns. So `crnet_transfer_wait(t, 0)` from another
-  thread, right after `on_complete` has handed the transfer off, can
-  still return `CRNET_E_TIMEOUT`.
-- Wanted: `crnet_transfer_result(t)`, valid once `on_complete` has
-  been entered, or signal before the callback. Also document that the
-  response object is immutable after `on_complete`.
-
 ## WebSocket
 
 ### websocket-parity

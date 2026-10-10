@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 2
+#define CRNET_VERSION_MINOR 3
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -100,6 +100,7 @@ typedef enum crnet_error {
 	CRNET_E_WOULD_DEADLOCK	= -8,	/* blocking call on network thread */
 	CRNET_E_STATE		= -9,	/* operation invalid in this state */
 	CRNET_E_CALLBACK	= -10,	/* a callback asked to abort */
+	CRNET_E_PENDING		= -11,	/* the transfer is still running */
 } crnet_error;
 
 /*
@@ -130,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.2.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.3.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -429,7 +430,9 @@ typedef struct crnet_callbacks {
 	/*
 	 * Optional. Called exactly once when the transfer ends for any
 	 * reason, including cancellation and client shutdown. |error| is as
-	 * for crnet_perform(). |resp| is owned by the transfer.
+	 * for crnet_perform(). |resp| is owned by the transfer and is final:
+	 * crnet does not modify it once on_complete has been entered, so it
+	 * may be handed to another thread from here.
 	 */
 	void (*on_complete)(crnet_transfer *t, int error,
 			    const crnet_response *resp, void *user_data);
@@ -471,10 +474,23 @@ CRNET_API int crnet_transfer_wait(crnet_transfer *t, uint64_t timeout_ms);
 CRNET_API int crnet_transfer_done(const crnet_transfer *t);
 
 /*
+ * The transfer's result without waiting: the value on_complete receives,
+ * available from the moment on_complete is entered (unlike
+ * crnet_transfer_wait() and crnet_transfer_done(), which only see the
+ * transfer finished once on_complete has returned), or CRNET_E_PENDING
+ * while it is still running. Thread-safe, also from inside on_complete.
+ * Once it returns anything but CRNET_E_PENDING the response is final and
+ * may be read from any thread.
+ */
+#define CRNET_HAS_TRANSFER_RESULT 1
+CRNET_API int crnet_transfer_result(const crnet_transfer *t);
+
+/*
  * The transfer's response; NULL before on_response would be invoked
  * (and after errors that happened before any response). Valid until
- * crnet_transfer_free(). Only safe to read from other threads after
- * the transfer is done.
+ * crnet_transfer_free(). Other threads may read it once
+ * crnet_transfer_result() returns anything but CRNET_E_PENDING (its
+ * status and headers already after crnet_transfer_wait_response()).
  */
 CRNET_API const crnet_response *crnet_transfer_response(
 		const crnet_transfer *t);

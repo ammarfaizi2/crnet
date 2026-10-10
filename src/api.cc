@@ -117,6 +117,7 @@ CRNET_API const char *crnet_strerror(int err)
 	case CRNET_E_WOULD_DEADLOCK:	return "blocking call on a crnet network thread";
 	case CRNET_E_STATE:		return "invalid state";
 	case CRNET_E_CALLBACK:		return "aborted by callback";
+	case CRNET_E_PENDING:		return "transfer still running";
 	}
 	return "unknown error";
 }
@@ -567,6 +568,11 @@ CRNET_API int crnet_transfer_wait(crnet_transfer *t, uint64_t timeout_ms)
 CRNET_API int crnet_transfer_done(const crnet_transfer *t)
 {
 	return t && t->done();
+}
+
+CRNET_API int crnet_transfer_result(const crnet_transfer *t)
+{
+	return t ? t->result() : CRNET_E_INVAL;
 }
 
 CRNET_API const crnet_response *crnet_transfer_response(
