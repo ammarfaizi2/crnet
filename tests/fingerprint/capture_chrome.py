@@ -28,6 +28,7 @@ PAGE = b"""<!doctype html><html><body><pre id=out></pre>
 <input name=a value=b></form>
 <script>
 async function go() {
+  document.cookie = 'pagecookie=1; path=/';
   const j = (u, o) => fetch(u, o).then(r => r.text());
   await j('/echo?kind=fetch_get');
   await j('/echo?kind=fetch_get_page_accept',
@@ -37,6 +38,14 @@ async function go() {
           body: '{"a":1}'});
   try { await fetch('https://127.0.0.1:' + location.port +
                     '/echo?kind=fetch_cross_site'); } catch (e) {}
+  await new Promise(done => {
+    const ws = new WebSocket('wss://' + location.host + '/ws/echo',
+                             ['chat', 'superchat']);
+    ws.onopen = () => ws.send('hi');
+    ws.onmessage = () => { ws.close(1000, 'bye'); done(); };
+    ws.onerror = done;
+    setTimeout(done, 3000);
+  });
   const x = new XMLHttpRequest();
   x.open('GET', '/echo?kind=xhr_get', false);
   x.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -62,8 +71,14 @@ def route(req):
     return ORIG_ROUTE(req)
 
 
+def ws_handshake(req):
+    CAPTURED.append({"kind": "websocket", "protocol": req.protocol,
+                     "headers": [list(h) for h in req.headers]})
+
+
 ORIG_ROUTE = ts.route
 ts.route = route
+ts.WS_HANDSHAKE_HOOK = ws_handshake
 
 
 async def run_chrome(chrome, url):
