@@ -22,7 +22,10 @@ Endpoints (all servers):
   /bytes/<n>            n bytes of a deterministic pattern
   /stream/<n>?chunk=C&delay_ms=D  n bytes in chunks with delays
   /delay/<ms>           waits, then answers like /echo
-  /encoded/<enc>        PLAINTEXT compressed with gzip|deflate|br|zstd
+  /encoded/<enc>[,<enc>...]  PLAINTEXT encoded with gzip|deflate|br|zstd,
+                        applied in the order given; "identity" and
+                        "x-unknown" leave the bytes alone but are listed
+                        in Content-Encoding; ?dict=1 adds Use-As-Dictionary
   /upload-digest        JSON with the body's length, SHA-256, and framing
                         headers (Content-Length / Transfer-Encoding)
   /slow-upload?pause_ms=  the same, but waits before reading the body
@@ -192,11 +195,19 @@ def route(req):
         r.delay = int(seg[1]) / 1000.0
         return r
     if seg[0] == "encoded" and len(seg) == 2:
-        data = compress(seg[1], PLAINTEXT)
-        if data is None:
-            return Response(501, [], b"unsupported encoding")
-        return Response(200, [("content-type", "text/plain"),
-                              ("content-encoding", seg[1])], data)
+        codings = seg[1].split(",")
+        data = PLAINTEXT
+        for enc in codings:
+            if enc in ("identity", "x-unknown"):
+                continue
+            data = compress(enc, data)
+            if data is None:
+                return Response(501, [], b"unsupported encoding")
+        headers = [("content-type", "text/plain"),
+                   ("content-encoding", ", ".join(codings))]
+        if q.get("dict") == "1":
+            headers.append(("use-as-dictionary", 'match="/encoded/*"'))
+        return Response(200, headers, data)
     if p in ("/upload-digest", "/slow-upload"):
         doc = {"len": len(req.body),
                "sha256": hashlib.sha256(req.body).hexdigest(),
