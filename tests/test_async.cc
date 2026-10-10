@@ -411,3 +411,28 @@ TEST_F(ClientTest, CompletionQueueFreeWithRunningTransfers)
 	crnet_queue_free(q);
 	EXPECT_LT(std::chrono::steady_clock::now() - t0, std::chrono::seconds(3));
 }
+
+TEST_F(ClientTest, ManyThreadsWaitOnOneTransfer)
+{
+	crnet_transfer *t = StartGet(client_, HttpsUrl("/delay/300"), nullptr, nullptr);
+	std::atomic<int> ok{0}, timed_out{0};
+	std::vector<std::thread> th;
+	for (int i = 0; i < 16; i++)
+		th.emplace_back([&, i] {
+			// Half wait forever, half poll with short timeouts first.
+			if (i % 2 && crnet_transfer_wait(t, 10) == CRNET_E_TIMEOUT)
+				timed_out++;
+			if (crnet_transfer_wait(t, i % 2 ? 5000 : UINT64_MAX) == CRNET_OK)
+				ok++;
+		});
+	for (auto &x : th)
+		x.join();
+	EXPECT_EQ(ok, 16);
+	EXPECT_EQ(timed_out, 8);
+	// Late waiters return immediately.
+	auto t0 = std::chrono::steady_clock::now();
+	EXPECT_EQ(crnet_transfer_wait(t, UINT64_MAX), CRNET_OK);
+	EXPECT_EQ(crnet_transfer_wait(t, 0), CRNET_OK);
+	EXPECT_LT(std::chrono::steady_clock::now() - t0, std::chrono::milliseconds(50));
+	crnet_transfer_free(t);
+}

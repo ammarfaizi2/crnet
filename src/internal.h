@@ -25,6 +25,7 @@
 #include "base/threading/thread.h"
 #include "base/timer/timer.h"
 #include "crnet/crnet.h"
+#include "crnet/event.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -213,7 +214,7 @@ struct crnet_ws;
 // One execution of a request. Ref-counted: the caller's handle, the
 // client's running set and a completion queue may each hold a
 // reference. All URLRequest work happens on the client's network
-// thread; the mutex only guards completion state read by other threads.
+// thread; other threads only see the result once done_ is signalled.
 struct crnet_transfer : public base::RefCountedThreadSafe<crnet_transfer>,
 			 public net::URLRequest::Delegate {
 public:
@@ -229,7 +230,7 @@ public:
 	void Pause();
 	void Resume();
 	int Wait(uint64_t timeout_ms);
-	bool done() const { return done_.load(std::memory_order_acquire); }
+	bool done() const { return done_.IsSignaled(); }
 	int result() const { return result_; }
 	crnet_response *response() const { return resp_.get(); }
 	crnet_response *TakeResponse();
@@ -289,9 +290,9 @@ private:
 
 	std::unique_ptr<crnet_response> resp_;
 
-	mutable std::mutex mu_;
-	std::condition_variable cv_;
-	std::atomic<bool> done_{false};
+	// result_ and resp_ are written on the network thread before done_
+	// is signalled and only read by other threads after it is.
+	crnet::OneShotEvent done_;
 	int result_ = CRNET_E_STATE;
 };
 

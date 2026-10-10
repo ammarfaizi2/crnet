@@ -346,16 +346,14 @@ bool WaitFor(std::condition_variable &cv, std::unique_lock<std::mutex> &lk,
 
 int crnet_ws::WaitOpen(uint64_t timeout_ms)
 {
-	std::unique_lock<std::mutex> lk(mu_);
-	if (!WaitFor(cv_, lk, timeout_ms, [this] { return opened_ || done(); }))
+	if (!settled_.Wait(timeout_ms))
 		return CRNET_E_TIMEOUT;
 	return opened_ ? CRNET_OK : result_;
 }
 
 int crnet_ws::WaitClosed(uint64_t timeout_ms)
 {
-	std::unique_lock<std::mutex> lk(mu_);
-	if (!WaitFor(cv_, lk, timeout_ms, [this] { return done(); }))
+	if (!closed_.Wait(timeout_ms))
 		return CRNET_E_TIMEOUT;
 	return result_;
 }
@@ -372,9 +370,10 @@ int crnet_ws::Recv(crnet_ws_msg_type *type, void **data, size_t *len,
 
 	Message m = std::move(queue_.front());
 	queue_.pop_front();
-	bool was_full = queued_bytes_ > kRecvQueueLimit;
-	queued_bytes_ -= m.data.size();
-	bool resume = was_full && queued_bytes_ <= kRecvQueueLimit;
+	size_t before = queued_bytes_.fetch_sub(m.data.size(),
+						std::memory_order_relaxed);
+	bool resume = before > kRecvQueueLimit &&
+		      before - m.data.size() <= kRecvQueueLimit;
 	UpdateFdLocked();
 	lk.unlock();
 
@@ -472,15 +471,12 @@ void crnet_ws::OnAddChannelResponse(
 		while (hdr->EnumerateHeaderLines(&iter, &name, &value))
 			h->headers.emplace_back(name, value);
 	}
-	{
-		std::lock_guard<std::mutex> lk(mu_);
-		protocol_ = protocol;
-		extensions_ = extensions;
-		handshake_ = std::move(h);
-		opened_ = true;
-		state_.store(CRNET_WS_OPEN);
-	}
-	cv_.notify_all();
+	protocol_ = protocol;
+	extensions_ = extensions;
+	handshake_ = std::move(h);
+	opened_ = true;
+	state_.store(CRNET_WS_OPEN);
+	settled_.Signal();
 
 	if (cb_.on_open)
 		cb_.on_open(this, handshake_.get(), protocol_.c_str(),
@@ -546,7 +542,7 @@ void crnet_ws::Deliver(crnet_ws_msg_type type, const char *data, size_t len)
 	{
 		std::lock_guard<std::mutex> lk(mu_);
 		queue_.push_back({type, std::string(data, len)});
-		queued_bytes_ += len;
+		queued_bytes_.fetch_add(len, std::memory_order_relaxed);
 		UpdateFdLocked();
 	}
 	cv_.notify_all();
@@ -556,11 +552,9 @@ bool crnet_ws::HasPendingDataFrames()
 {
 	if (finished_)
 		return true;
-	bool stop = paused_ || !held_.empty();
-	if (!stop && !cb_.on_message) {
-		std::lock_guard<std::mutex> lk(mu_);
-		stop = queued_bytes_ > kRecvQueueLimit;
-	}
+	bool stop = paused_ || !held_.empty() ||
+		    (!cb_.on_message &&
+		     queued_bytes_.load(std::memory_order_relaxed) > kRecvQueueLimit);
 	if (stop)
 		reading_stopped_ = true;
 	return stop;
@@ -576,11 +570,9 @@ void crnet_ws::ResumeOnNetworkThread()
 	}
 	if (finished_ || paused_ || !reading_stopped_)
 		return;
-	if (!cb_.on_message) {
-		std::lock_guard<std::mutex> lk(mu_);
-		if (queued_bytes_ > kRecvQueueLimit)
-			return;
-	}
+	if (!cb_.on_message &&
+	    queued_bytes_.load(std::memory_order_relaxed) > kRecvQueueLimit)
+		return;
 	ReadMore();
 }
 
@@ -631,7 +623,6 @@ void crnet_ws::OnFailChannel(const std::string &message, int net_error,
 			     std::optional<int> response_code)
 {
 	if (response_code && !handshake_) {
-		std::lock_guard<std::mutex> lk(mu_);
 		handshake_ = std::make_unique<crnet_response>();
 		handshake_->status = *response_code;
 		handshake_->url = url_.spec();
@@ -672,19 +663,20 @@ void crnet_ws::Finish(int err, int code, const std::string &reason,
 	buffered_.store(0);
 
 	scoped_refptr<crnet_ws> self(this);
-	{
-		std::lock_guard<std::mutex> lk(mu_);
-		close_code_ = code;
-		close_reason_ = reason;
-		net_error_ = err == CRNET_OK ? 0 : net_error;
-		result_ = err;
-		state_.store(CRNET_WS_CLOSED);
-	}
+	close_code_ = code;
+	close_reason_ = reason;
+	net_error_ = err == CRNET_OK ? 0 : net_error;
+	result_ = err;
+	state_.store(CRNET_WS_CLOSED);
+	settled_.Signal();
 	if (cb_.on_close)
 		cb_.on_close(this, err, code, close_reason_.c_str(), user_data_);
+	closed_.Signal();
 	{
+		// Wake Recv() callers and make the fd readable. Taking the lock
+		// after signalling means a Recv() that saw "not done" is
+		// already waiting on cv_ when we notify.
 		std::lock_guard<std::mutex> lk(mu_);
-		done_.store(true, std::memory_order_release);
 		UpdateFdLocked();
 	}
 	cv_.notify_all();

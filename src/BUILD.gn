@@ -31,6 +31,8 @@ shared_library("crnet") {
     "$crnet_root/include/crnet/crnet.h",
     "api.cc",
     "client.cc",
+    "event.cc",
+    "event.h",
     "global.cc",
     "internal.h",
     "profile.cc",

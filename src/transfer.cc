@@ -147,18 +147,8 @@ void crnet_transfer::Resume()
 
 int crnet_transfer::Wait(uint64_t timeout_ms)
 {
-	std::unique_lock<std::mutex> lk(mu_);
-	auto pred = [this] { return done(); };
-	if (timeout_ms == UINT64_MAX) {
-		cv_.wait(lk, pred);
-	} else if (timeout_ms > 0) {
-		// Clamp to avoid overflow in the clock arithmetic.
-		uint64_t ms = std::min<uint64_t>(timeout_ms, 1ull << 40);
-		if (!cv_.wait_for(lk, std::chrono::milliseconds(ms), pred))
-			return CRNET_E_TIMEOUT;
-	} else if (!pred()) {
+	if (!done_.Wait(timeout_ms))
 		return CRNET_E_TIMEOUT;
-	}
 	return result_;
 }
 
@@ -440,17 +430,10 @@ void crnet_transfer::Finish(int err, int net_error)
 
 	// Keep ourselves alive through the callback and the hand-offs below.
 	scoped_refptr<crnet_transfer> self(this);
-	{
-		std::lock_guard<std::mutex> lk(mu_);
-		result_ = err;
-	}
+	result_ = err;
 	if (cb_.on_complete)
 		cb_.on_complete(this, err, resp_.get(), user_data_);
-	{
-		std::lock_guard<std::mutex> lk(mu_);
-		done_.store(true, std::memory_order_release);
-	}
-	cv_.notify_all();
+	done_.Signal();
 
 	if (queue_)
 		queue_->Completed(this);

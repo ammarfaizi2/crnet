@@ -44,7 +44,7 @@ public:
 		return static_cast<crnet_ws_state>(state_.load());
 	}
 	uint64_t buffered_amount() const { return buffered_.load(); }
-	bool done() const { return done_.load(std::memory_order_acquire); }
+	bool done() const { return closed_.IsSignaled(); }
 
 	// Valid once open / once done (read-only from then on).
 	const std::string &protocol() const { return protocol_; }
@@ -122,7 +122,7 @@ private:
 	std::atomic<int> state_{CRNET_WS_CONNECTING};
 	std::atomic<uint64_t> buffered_{0};
 
-	// Written on the network thread before done_/opened is published.
+	// Written on the network thread before settled_/closed_ is signalled.
 	std::string protocol_;
 	std::string extensions_;
 	std::unique_ptr<crnet_response> handshake_;
@@ -130,14 +130,20 @@ private:
 	std::string close_reason_;
 	int net_error_ = 0;
 
+	bool opened_ = false;
+	int result_ = CRNET_E_STATE;
+	// Signalled when open or finished, whichever comes first.
+	crnet::OneShotEvent settled_;
+	crnet::OneShotEvent closed_;
+
+	// The receive queue (queue mode) is shared with Recv() callers.
 	mutable std::mutex mu_;
 	std::condition_variable cv_;
 	std::deque<Message> queue_;
-	size_t queued_bytes_ = 0;
 	bool fd_readable_ = false;
-	bool opened_ = false;
-	std::atomic<bool> done_{false};
-	int result_ = CRNET_E_STATE;
+	// Changed under mu_, read without it by the network thread's
+	// flow-control checks.
+	std::atomic<size_t> queued_bytes_{0};
 };
 
 #endif // CRNET_SRC_WEBSOCKET_H
