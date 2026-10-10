@@ -128,7 +128,14 @@ struct BrowserHeaders {
 BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 				   const RequestSpec &spec);
 
-// Final rewrite right before the transaction starts: merge cookies,
+// Drop |suppressed| headers (lower-case names) that //net added back
+// and merge a caller-supplied Cookie value with the jar's, keeping the
+// order of |in|.
+net::HttpRequestHeaders FilterHeaders(
+	const net::HttpRequestHeaders &in, const std::set<std::string> &suppressed,
+	const std::optional<std::string> &user_cookie);
+
+// Final rewrite right before the transaction starts: FilterHeaders(),
 // refresh sec-fetch-site for the current URL chain and put everything
 // in Chrome's order. Returns the headers to send.
 net::HttpRequestHeaders FinalizeHeaders(const RequestSpec &spec,
@@ -142,8 +149,20 @@ net::HttpRequestHeaders FinalizeHeaders(const RequestSpec &spec,
 
 std::string NetErrorName(int net_error);
 
-// The transfer driving |req|, or nullptr (transfer.cc).
-crnet_transfer *TransferForRequest(const net::URLRequest *req);
+// Attached to every URLRequest whose headers crnet controls. The
+// NetworkDelegate asks it for the final request headers right before
+// each transaction (including after redirects), once //net has added
+// everything of its own.
+class HeaderHook : public base::SupportsUserData::Data {
+public:
+	virtual net::HttpRequestHeaders Finalize(
+		const net::URLRequest &req,
+		const net::HttpRequestHeaders &in) = 0;
+
+	static void Attach(net::URLRequest *req,
+			   std::unique_ptr<HeaderHook> hook);
+	static HeaderHook *Get(const net::URLRequest *req);
+};
 
 } // namespace crnet
 

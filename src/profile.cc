@@ -310,6 +310,27 @@ BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 	return bh;
 }
 
+net::HttpRequestHeaders FilterHeaders(
+	const net::HttpRequestHeaders &in, const std::set<std::string> &suppressed,
+	const std::optional<std::string> &user_cookie)
+{
+	net::HttpRequestHeaders out;
+	for (const auto &kv : in.GetHeaderVector()) {
+		if (suppressed.count(base::ToLowerASCII(kv.key)))
+			continue;
+		// The cookie jar replaces a caller-supplied Cookie header; keep
+		// both, the caller's values winning on name clashes.
+		if (user_cookie &&
+		    base::EqualsCaseInsensitiveASCII(kv.key, "Cookie") &&
+		    kv.value != *user_cookie) {
+			out.SetHeader(kv.key, MergeCookies(*user_cookie, kv.value));
+			continue;
+		}
+		out.SetHeader(kv.key, kv.value);
+	}
+	return out;
+}
+
 net::HttpRequestHeaders FinalizeHeaders(const RequestSpec &spec,
 					const BrowserHeaders &bh,
 					const net::URLRequest &req,
@@ -321,12 +342,9 @@ net::HttpRequestHeaders FinalizeHeaders(const RequestSpec &spec,
 		bool used = false;
 	};
 	std::vector<Entry> entries;
-	for (const auto &kv : in.GetHeaderVector()) {
-		std::string lower = base::ToLowerASCII(kv.key);
-		if (bh.suppressed.count(lower))
-			continue;
+	for (const auto &kv :
+	     FilterHeaders(in, bh.suppressed, bh.user_cookie).GetHeaderVector())
 		entries.push_back({kv.key, kv.value});
-	}
 
 	auto find = [&](std::string_view name) -> Entry * {
 		for (auto &e : entries)
@@ -335,14 +353,6 @@ net::HttpRequestHeaders FinalizeHeaders(const RequestSpec &spec,
 				return &e;
 		return nullptr;
 	};
-
-	// The cookie jar replaces a caller-supplied Cookie header; keep both,
-	// the caller's values winning on name clashes.
-	if (bh.user_cookie) {
-		Entry *c = find("Cookie");
-		if (c && c->value != *bh.user_cookie)
-			c->value = MergeCookies(*bh.user_cookie, c->value);
-	}
 
 	if (bh.auto_fetch_site) {
 		if (Entry *s = find("Sec-Fetch-Site"))

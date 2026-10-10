@@ -50,11 +50,22 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
 			policy_exception_justification: "Library."
 		})");
 
-// Ties a URLRequest back to its transfer for the NetworkDelegate.
-const void *const kTransferKey = &kTransferKey;
-struct TransferLink : public base::SupportsUserData::Data {
-	explicit TransferLink(crnet_transfer *t) : t(t) {}
-	crnet_transfer *t;
+// Applies the transfer's header policy (crnet::FinalizeHeaders).
+class TransferHeaderHook : public crnet::HeaderHook {
+public:
+	explicit TransferHeaderHook(crnet_transfer *t) : t_(t) {}
+
+	net::HttpRequestHeaders Finalize(
+		const net::URLRequest &req,
+		const net::HttpRequestHeaders &in) override
+	{
+		return crnet::FinalizeHeaders(t_->spec(), t_->browser_headers(),
+					      req, in);
+	}
+
+private:
+	// The URLRequest (owner of this hook) never outlives its transfer.
+	crnet_transfer *t_;
 };
 
 // Marks the current thread as running a callback of |t| for the
@@ -77,11 +88,18 @@ private:
 
 namespace crnet {
 
-crnet_transfer *TransferForRequest(const net::URLRequest *req)
+namespace {
+const void *const kHeaderHookKey = &kHeaderHookKey;
+} // namespace
+
+void HeaderHook::Attach(net::URLRequest *req, std::unique_ptr<HeaderHook> hook)
 {
-	auto *link =
-		static_cast<TransferLink *>(req->GetUserData(kTransferKey));
-	return link ? link->t : nullptr;
+	req->SetUserData(kHeaderHookKey, std::move(hook));
+}
+
+HeaderHook *HeaderHook::Get(const net::URLRequest *req)
+{
+	return static_cast<HeaderHook *>(req->GetUserData(kHeaderHookKey));
 }
 
 } // namespace crnet
@@ -187,8 +205,8 @@ void crnet_transfer::StartOnNetworkThread()
 	request_ = client_->context()->CreateRequest(
 		spec_.url, bh_.priority, this, kTrafficAnnotation,
 		net::handles::kInvalidNetworkHandle);
-	request_->SetUserData(kTransferKey,
-			      std::make_unique<TransferLink>(this));
+	crnet::HeaderHook::Attach(request_.get(),
+				  std::make_unique<TransferHeaderHook>(this));
 	request_->set_method(spec_.method);
 	request_->SetExtraRequestHeaders(bh_.extra);
 	if (bh_.referrer) {

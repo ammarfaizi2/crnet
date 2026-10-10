@@ -122,12 +122,11 @@ public:
 		net::URLRequest *request, const net::HttpRequestHeaders &headers,
 		OnBeforeStartTransactionCallback callback) override
 	{
-		crnet_transfer *t = crnet::TransferForRequest(request);
-		if (!t)
+		crnet::HeaderHook *hook = crnet::HeaderHook::Get(request);
+		if (!hook)
 			return net::OK;
 		std::optional<net::HttpRequestHeaders> out =
-			crnet::FinalizeHeaders(t->spec(), t->browser_headers(),
-						*request, headers);
+			hook->Finalize(*request, headers);
 		// Modified headers can only be returned through the callback.
 		// It is bound to a weak pointer of the job, so running it after
 		// a cancellation is harmless.
