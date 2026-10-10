@@ -45,7 +45,6 @@ public:
 	}
 	uint64_t buffered_amount() const { return buffered_.load(); }
 	bool done() const { return done_.load(std::memory_order_acquire); }
-	bool in_callback_on_this_thread() const;
 
 	// Valid once open / once done (read-only from then on).
 	const std::string &protocol() const { return protocol_; }
@@ -139,8 +138,6 @@ private:
 	bool opened_ = false;
 	std::atomic<bool> done_{false};
 	int result_ = CRNET_E_STATE;
-	std::atomic<base::PlatformThreadId> callback_thread_{
-		base::kInvalidThreadId};
 };
 
 #endif // CRNET_SRC_WEBSOCKET_H

@@ -234,7 +234,6 @@ public:
 	crnet_response *response() const { return resp_.get(); }
 	crnet_response *TakeResponse();
 	void *user_data() const { return user_data_; }
-	bool in_callback_on_this_thread() const;
 
 	// Network thread.
 	void StartOnNetworkThread();
@@ -294,9 +293,6 @@ private:
 	std::condition_variable cv_;
 	std::atomic<bool> done_{false};
 	int result_ = CRNET_E_STATE;
-	// Thread currently running one of this transfer's callbacks.
-	std::atomic<base::PlatformThreadId> callback_thread_{
-		base::kInvalidThreadId};
 };
 
 // A network context bound to its own IO thread.

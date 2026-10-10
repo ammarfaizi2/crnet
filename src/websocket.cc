@@ -24,7 +24,6 @@
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/platform_thread.h"
 #include "net/base/auth.h"
 #include "net/base/isolation_info.h"
 #include "net/base/transport_info.h"
@@ -62,19 +61,6 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
 			policy_exception_justification: "Library."
 		})");
 
-class CallbackScope {
-public:
-	explicit CallbackScope(std::atomic<base::PlatformThreadId> *slot)
-		: slot_(slot),
-		  prev_(slot->exchange(base::PlatformThread::CurrentId()))
-	{
-	}
-	~CallbackScope() { slot_->store(prev_); }
-
-private:
-	std::atomic<base::PlatformThreadId> *slot_;
-	base::PlatformThreadId prev_;
-};
 
 // Handshake requests keep //net's (Chrome's) order; only removals and
 // the Cookie merge apply.
@@ -235,10 +221,6 @@ crnet_ws::~crnet_ws()
 		close(efd_);
 }
 
-bool crnet_ws::in_callback_on_this_thread() const
-{
-	return callback_thread_.load() == base::PlatformThread::CurrentId();
-}
 
 void crnet_ws::UpdateFdLocked()
 {
@@ -500,11 +482,9 @@ void crnet_ws::OnAddChannelResponse(
 	}
 	cv_.notify_all();
 
-	if (cb_.on_open) {
-		CallbackScope scope(&callback_thread_);
+	if (cb_.on_open)
 		cb_.on_open(this, handshake_.get(), protocol_.c_str(),
 			    extensions_.c_str(), user_data_);
-	}
 	if (finished_)
 		return;
 	// Start receiving outside the channel's own callback.
@@ -560,7 +540,6 @@ void crnet_ws::Deliver(crnet_ws_msg_type type, const char *data, size_t len)
 		return;
 	}
 	if (cb_.on_message) {
-		CallbackScope scope(&callback_thread_);
 		cb_.on_message(this, type, data, len, user_data_);
 		return;
 	}
@@ -701,10 +680,8 @@ void crnet_ws::Finish(int err, int code, const std::string &reason,
 		result_ = err;
 		state_.store(CRNET_WS_CLOSED);
 	}
-	if (cb_.on_close) {
-		CallbackScope scope(&callback_thread_);
+	if (cb_.on_close)
 		cb_.on_close(this, err, code, close_reason_.c_str(), user_data_);
-	}
 	{
 		std::lock_guard<std::mutex> lk(mu_);
 		done_.store(true, std::memory_order_release);

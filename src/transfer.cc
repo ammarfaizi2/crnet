@@ -14,7 +14,6 @@
 
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/platform_thread.h"
 #include "crnet/internal.h"
 #include "net/base/auth.h"
 #include "net/base/elements_upload_data_stream.h"
@@ -68,21 +67,6 @@ private:
 	crnet_transfer *t_;
 };
 
-// Marks the current thread as running a callback of |t| for the
-// duration of the scope (re-entrancy detection in crnet_transfer_free).
-class CallbackScope {
-public:
-	explicit CallbackScope(std::atomic<base::PlatformThreadId> *slot)
-		: slot_(slot),
-		  prev_(slot->exchange(base::PlatformThread::CurrentId()))
-	{
-	}
-	~CallbackScope() { slot_->store(prev_); }
-
-private:
-	std::atomic<base::PlatformThreadId> *slot_;
-	base::PlatformThreadId prev_;
-};
 
 } // namespace
 
@@ -120,10 +104,6 @@ crnet_transfer::crnet_transfer(crnet_client *client,
 
 crnet_transfer::~crnet_transfer() = default;
 
-bool crnet_transfer::in_callback_on_this_thread() const
-{
-	return callback_thread_.load() == base::PlatformThread::CurrentId();
-}
 
 // ------------------------------------------------------------------
 // Any thread
@@ -356,11 +336,7 @@ void crnet_transfer::OnResponseStarted(net::URLRequest *request,
 	FillResponseMeta(request);
 
 	if (cb_.on_response) {
-		int rc;
-		{
-			CallbackScope scope(&callback_thread_);
-			rc = cb_.on_response(this, resp_.get(), user_data_);
-		}
+		int rc = cb_.on_response(this, resp_.get(), user_data_);
 		if (finished_)
 			return;
 		if (rc) {
@@ -416,11 +392,7 @@ bool crnet_transfer::HandleRead(int n)
 	}
 
 	if (cb_.on_data) {
-		int rc;
-		{
-			CallbackScope scope(&callback_thread_);
-			rc = cb_.on_data(this, buf_->data(), n, user_data_);
-		}
+		int rc = cb_.on_data(this, buf_->data(), n, user_data_);
 		if (finished_)
 			return false;
 		if (rc) {
@@ -472,10 +444,8 @@ void crnet_transfer::Finish(int err, int net_error)
 		std::lock_guard<std::mutex> lk(mu_);
 		result_ = err;
 	}
-	if (cb_.on_complete) {
-		CallbackScope scope(&callback_thread_);
+	if (cb_.on_complete)
 		cb_.on_complete(this, err, resp_.get(), user_data_);
-	}
 	{
 		std::lock_guard<std::mutex> lk(mu_);
 		done_.store(true, std::memory_order_release);
