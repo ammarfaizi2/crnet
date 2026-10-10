@@ -746,12 +746,15 @@ async def main():
 
     loop = asyncio.get_event_loop()
     stop = loop.create_future()
-    loop.add_signal_handler(signal.SIGTERM, stop.set_result, None)
-    loop.add_signal_handler(signal.SIGINT, stop.set_result, None)
+    def request_stop():
+        if not stop.done():
+            stop.set_result(None)
+    loop.add_signal_handler(signal.SIGTERM, request_stop)
+    loop.add_signal_handler(signal.SIGINT, request_stop)
 
     def stdin_closed():
-        if not sys.stdin.buffer.read1(4096) and not stop.done():
-            stop.set_result(None)
+        if not sys.stdin.buffer.read1(4096):
+            request_stop()
     try:
         loop.add_reader(sys.stdin.fileno(), stdin_closed)
     except (PermissionError, OSError):
