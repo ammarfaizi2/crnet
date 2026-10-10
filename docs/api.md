@@ -189,6 +189,87 @@ release with `crnet_transfer_free()`:
 - The response returned by `crnet_transfer_response()` lives as long as
   the handle; `crnet_transfer_take_response()` moves it out to you.
 
+## Streaming bodies
+
+Large uploads and downloads should not be held in memory. crnet streams
+bodies in both directions, independently of the wire format. A body of
+known size is sent with `Content-Length`. Only an open-ended body on
+HTTP/1.1 uses `Transfer-Encoding: chunked`; on HTTP/2 and HTTP/3 it is
+simply a sequence of DATA frames.
+
+### Uploading a file
+
+```c
+crnet_request *req = crnet_request_new("PUT", "https://example.com/upload");
+crnet_request_set_body_file(req, "/data/video.mp4", 0, UINT64_MAX);
+crnet_perform(client, req, &resp);              /* or crnet_start() */
+```
+
+Chromium reads the file in the background while the upload proceeds.
+Memory use does not depend on the file size. `offset`/`length` select a
+slice, e.g. for resumable or ranged uploads. Because the file can be
+read again, redirects that resend the body (307/308) and
+authentication retries work.
+
+### Writing the body yourself
+
+```c
+crnet_request_set_body_stream(req, size);        /* or CRNET_LENGTH_UNKNOWN */
+crnet_transfer *t = crnet_start(client, req, NULL, NULL);
+
+while ((n = produce(buf, sizeof(buf))) > 0)
+	crnet_transfer_write(t, buf, n, NULL, UINT64_MAX);
+crnet_transfer_write_end(t);
+
+crnet_transfer_wait(t, UINT64_MAX);
+```
+
+- `crnet_transfer_write()` copies into a 1 MiB send buffer and blocks
+  while it is full, so a fast producer is paced by the network. With a
+  timeout (0 = never block) it returns `CRNET_E_TIMEOUT` and reports in
+  `*written` how much it accepted, for event-loop style producers.
+- Writing may start before the transfer reached the network, from any
+  thread.
+- With a declared size, writing more fails with `CRNET_E_INVAL`, and
+  ending early fails the transfer with `CRNET_E_INVAL`.
+- If the transfer fails or the server answers without reading the
+  whole body, blocked writers return with the transfer's error (or
+  `CRNET_E_STATE`).
+- Such a body is consumed once. A redirect or auth retry that must
+  resend it fails with `net::ERR_UPLOAD_STREAM_REWIND_NOT_SUPPORTED`.
+
+### Reading the response as it arrives
+
+Pull style:
+
+```c
+crnet_request_set_response_stream(req, 1);
+crnet_transfer *t = crnet_start(client, req, NULL, NULL);
+
+if (crnet_transfer_wait_response(t, UINT64_MAX) == CRNET_OK) {
+	const crnet_response *r = crnet_transfer_response(t);
+	/* status and headers are available here */
+	size_t n;
+	while (crnet_transfer_read(t, buf, sizeof(buf), &n, UINT64_MAX) == CRNET_OK && n)
+		consume(buf, n);
+}
+```
+
+`crnet_transfer_read()` returns `CRNET_OK` with `n == 0` at the end of
+the body, or the transfer's error once the data received before the
+error has been read. crnet stops reading from the network while more
+than 1 MiB is unread, so the server sees TCP flow control.
+`crnet_transfer_fd()` is readable while a read would not block, for
+`poll`/`epoll`.
+
+Push style: set an `on_data` callback (see above) and use
+`crnet_transfer_pause()`/`_resume()` for flow control.
+
+Streamed requests need a transfer handle to write or read with, so
+`crnet_perform()` and `crnet_queue_start()` reject them with
+`CRNET_E_INVAL`. `build/examples/crget` streams both ways (`-T file`,
+`-T -` for stdin, `-o file`).
+
 ## Completion queue
 
 A queue lets one application thread run many transfers and collect the

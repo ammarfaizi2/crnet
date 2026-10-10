@@ -46,6 +46,9 @@ std::cout << r.status() << " " << r.protocol() << "\n" << r.body();
 - **Three ways to run requests**: blocking, asynchronous callbacks with
   streaming and flow control, or a completion queue with a pollable fd
   for your own event loop.
+- **Streamed bodies** for big files: upload from a file or from your own
+  writes, read responses as they arrive. Memory stays constant whatever
+  the size.
 - **WebSockets** through Chromium's implementation: Chrome's handshake,
   permessage-deflate, cookies and proxies; messages via callbacks or a
   pollable queue.

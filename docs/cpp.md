@@ -103,6 +103,30 @@ for (auto &t : ts) {
 }
 ```
 
+## Streaming bodies
+
+```cpp
+// Upload a file without loading it into memory.
+crnet::Request up("https://example.com/upload", "PUT");
+up.body_file("/data/video.mp4");
+client.perform(up);
+
+// Produce the body yourself.
+crnet::Request req("https://example.com/ingest", "POST");
+req.body_stream().stream_response();     // unknown length, pull the answer
+crnet::Transfer t = client.start(req);
+for (auto &piece : pieces)
+	t.write(piece);                      // blocks while the 1 MiB buffer is full
+t.write_end();
+std::cout << t.wait_response().status() << "\n";
+std::string chunk;
+while (!(chunk = t.read()).empty())      // "" at the end of the body
+	sink(chunk);
+```
+
+`read(void *buf, size_t len)` reads into your own buffer; both overloads
+take an optional timeout and throw `crnet::Error` on failure or timeout.
+
 ## WebSockets
 
 ```cpp

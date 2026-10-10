@@ -17,6 +17,8 @@ src/                      the library; linked into Chromium as //crnet
   websocket.{h,cc}        crnet_ws: one WebSocketChannel per WebSocket
   profile.cc              browser headers, sec-ch-ua, header ordering
   queue.cc                crnet_queue: completion queue on an eventfd
+  stream.{h,cc}           streamed bodies: UploadPipe + UploadDataStream,
+                          DownloadBuffer
 cmake/                    args.gn template, pkg-config, CMake package
 scripts/                  fetch-chromium.sh, apply-patches.sh
 chromium/VERSION          pinned Chromium release
@@ -88,6 +90,26 @@ handle, the client's running set until `Finish`, a completion queue
 until popped, and the task that deletes the `URLRequest`. That last
 reference matters: `URLRequest::Cancel()` can still queue a delegate
 notification, so the delegate must outlive its request.
+
+## Streamed bodies
+
+Both directions use a bounded byte pipe (1 MiB) between the
+application's threads and the network thread; those mutexes are needed
+because both sides touch the same bytes.
+
+- **Upload**: `UploadPipe` is filled by `crnet_transfer_write()` and
+  drained by `PipeUploadDataStream`, a `net::UploadDataStream` (chunked
+  when the length is unknown). A read that finds the pipe empty returns
+  `ERR_IO_PENDING` and marks the pipe; the next write posts one wake-up
+  task, immediately, before the writer may block on a full buffer.
+  Completing a read can synchronously start the next one, so the
+  pending state is taken out before completing.
+- **File upload** is Chromium's `UploadFileElementReader` on a
+  ThreadPool task runner. It is rewindable.
+- **Download**: `DownloadBuffer` receives what `URLRequest::Read()`
+  produced. When it is full, the transfer stops calling `Read()`, and a
+  reader that frees half of it posts a resume. An eventfd mirrors
+  "a read would not block".
 
 ## WebSockets
 

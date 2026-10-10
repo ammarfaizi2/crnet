@@ -36,12 +36,13 @@ program.
 - A C/C++ compiler for your own code and the tests (gcc or clang; any
   version that supports C99/C++17).
 - For the tests: GoogleTest (`libgtest-dev`), nlohmann-json
-  (`nlohmann-json3-dev`), `python3-h2`, and optionally `python3-brotli`
-  and `zstd` for the content-encoding tests.
+  (`nlohmann-json3-dev`), OpenSSL headers (`libssl-dev`), `python3-h2`,
+  and optionally `python3-brotli` and `zstd` for the content-encoding
+  tests.
 
 ```bash
 sudo apt install git python3 cmake ninja-build g++ \
-    libgtest-dev nlohmann-json3-dev python3-h2 python3-brotli zstd
+    libgtest-dev nlohmann-json3-dev libssl-dev python3-h2 python3-brotli zstd
 ```
 
 ## 1. Fetch Chromium
