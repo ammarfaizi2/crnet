@@ -28,7 +28,8 @@ Endpoints (all servers):
 
 WebSocket endpoints (HTTP/1.1 upgrade, any server):
   /ws/echo              echoes messages; "close-me" makes the server close,
-                        "stats" returns server counters
+                        "stats" returns server counters; ?emptyclose=1
+                        answers a Close with an empty payload
   /ws/headers           first message: the handshake request as JSON
   /ws/close?code=&reason=  server closes right after opening
   /ws/drop              server drops the TCP connection after opening
@@ -309,6 +310,7 @@ class WsConn:
             self.inflater = zlib.decompressobj(-15)
             self.deflater = zlib.compressobj(6, zlib.DEFLATED, -15)
         self.close_sent = False
+        self.empty_close = False
 
     async def send_frame(self, op, payload, fin=True, rsv1=False):
         b0 = (0x80 if fin else 0) | (0x40 if rsv1 else 0) | op
@@ -370,7 +372,9 @@ class WsConn:
                                                                "replace")]
                 if not self.close_sent:
                     self.close_sent = True
-                    await self.send_frame(OP_CLOSE, data[:2])
+                    await self.send_frame(OP_CLOSE,
+                                          b"" if self.empty_close
+                                          else data[:2])
                 raise WsClosed()
             if fop != OP_CONT:
                 op, compressed = fop, rsv1
@@ -423,6 +427,7 @@ async def serve_websocket(req, reader, writer):
     STATS["ws_connects"] += 1
 
     ws = WsConn(reader, writer, deflate)
+    ws.empty_close = q.get("emptyclose") == "1"
     try:
         if path == "/ws/headers":
             doc = {"path": req.target, "headers": [list(h) for h in

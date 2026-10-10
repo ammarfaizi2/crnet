@@ -119,3 +119,64 @@ TEST(Cpp, Cookies)
 	c.clear_cookies();
 	EXPECT_EQ(c.cookies(HttpsUrl("/")), "");
 }
+
+TEST(Cpp, WebSocketQueueMode)
+{
+	crnet::Client c = TestClient();
+	std::string url = "wss://localhost:" + std::to_string(ServerPorts().https_h1) +
+			  "/ws/echo";
+	crnet::WebSocket ws = c.websocket(url, "chat");
+	ws.wait_open(5000);
+	EXPECT_EQ(ws.state(), CRNET_WS_OPEN);
+	EXPECT_EQ(ws.protocol(), "chat");
+	EXPECT_EQ(ws.handshake().status(), 101);
+	ws.send_text("hi");
+	ws.send_binary(std::string("\x00\x01", 2));
+	auto m1 = ws.recv(5000);
+	auto m2 = ws.recv(5000);
+	ASSERT_TRUE(m1 && m2);
+	EXPECT_TRUE(m1->is_text());
+	EXPECT_EQ(m1->data, "hi");
+	EXPECT_EQ(m2->type, CRNET_WS_BINARY);
+	EXPECT_EQ(m2->data, std::string("\x00\x01", 2));
+	ws.close(1000, "bye");
+	EXPECT_EQ(ws.wait_closed(5000), CRNET_OK);
+	EXPECT_FALSE(ws.recv(0).has_value());
+	EXPECT_THROW(ws.send_text("late"), crnet::Error);
+}
+
+TEST(Cpp, WebSocketHandlers)
+{
+	crnet::Client c = TestClient();
+	std::string url = "ws://localhost:" + std::to_string(ServerPorts().http) +
+			  "/ws/close?code=4002&reason=done";
+	std::atomic<int> opened{0}, closed{0}, code{0};
+	crnet::WsHandlers h;
+	h.on_open = [&](const crnet::ResponseView &r, const std::string &, const std::string &) {
+		opened = r.status();
+	};
+	h.on_close = [&](int err, int c2, const std::string &reason) {
+		code = err == CRNET_OK && reason == "done" ? c2 : -1;
+		closed++;
+	};
+	crnet::WebSocket ws = c.websocket(crnet::Request(url), "", std::move(h));
+	EXPECT_EQ(ws.wait_closed(5000), CRNET_OK);
+	EXPECT_EQ(opened, 101);
+	EXPECT_EQ(closed, 1);
+	EXPECT_EQ(code, 4002);
+}
+
+TEST(Cpp, WebSocketOpenFailureThrows)
+{
+	crnet::Client c = TestClient();
+	std::string url = "wss://localhost:" + std::to_string(ServerPorts().https_h1) +
+			  "/ws/reject";
+	crnet::WebSocket ws = c.websocket(url);
+	try {
+		ws.wait_open(5000);
+		FAIL() << "expected crnet::Error";
+	} catch (const crnet::Error &e) {
+		EXPECT_EQ(e.code(), CRNET_E_NET);
+		EXPECT_NE(std::string(e.what()).find("403"), std::string::npos) << e.what();
+	}
+}

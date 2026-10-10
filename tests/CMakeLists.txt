@@ -17,7 +17,8 @@ add_executable(crnet_tests
   test_cpp.cc
   test_headers.cc
   test_http.cc
-  test_proxy.cc)
+  test_proxy.cc
+  test_websocket.cc)
 target_compile_features(crnet_tests PRIVATE cxx_std_17)
 target_compile_options(crnet_tests PRIVATE -Wall -Wextra)
 target_compile_definitions(crnet_tests PRIVATE
