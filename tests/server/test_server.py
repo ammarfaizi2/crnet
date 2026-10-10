@@ -232,13 +232,15 @@ async def read_h1_request(reader):
     if "content-length" in lower:
         body = await reader.readexactly(int(lower["content-length"]))
     elif lower.get("transfer-encoding", "").lower() == "chunked":
+        parts = []  # joined once: += would be quadratic for big bodies
         while True:
             size = int((await reader.readline()).split(b";")[0], 16)
             if size == 0:
                 await reader.readline()
                 break
-            body += await reader.readexactly(size)
+            parts.append(await reader.readexactly(size))
             await reader.readline()
+        body = b"".join(parts)
     return method, target, headers, body
 
 
@@ -536,14 +538,15 @@ class H2Session:
                     headers.append((k, v))
             if at is not None:
                 headers[at] = ("cookie", "; ".join(crumbs))
-            self.streams[ev.stream_id] = [headers, b""]
+            self.streams[ev.stream_id] = [headers, bytearray()]
         elif isinstance(ev, h2.events.DataReceived):
             self.streams[ev.stream_id][1] += ev.data
             self.conn.acknowledge_received_data(ev.flow_controlled_length,
                                                 ev.stream_id)
         elif isinstance(ev, h2.events.StreamEnded):
             headers, body = self.streams.pop(ev.stream_id)
-            asyncio.ensure_future(self.respond(ev.stream_id, headers, body))
+            asyncio.ensure_future(self.respond(ev.stream_id, headers,
+                                               bytes(body)))
         elif isinstance(ev, h2.events.WindowUpdated):
             for sid, fut in list(self.window_waiters.items()):
                 if not fut.done():
