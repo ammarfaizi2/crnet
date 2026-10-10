@@ -139,7 +139,7 @@ CRNET_API const char *crnet_default_sec_ch_ua(void);
  * Chromium cannot be torn down and re-initialised within a process.
  */
 CRNET_API int crnet_global_init(const char *enable_features,
-				  const char *disable_features);
+				const char *disable_features);
 
 /* ---------------------------------------------------------------- */
 /* Client configuration                                             */
@@ -157,25 +157,25 @@ CRNET_API void crnet_client_config_free(crnet_client_config *cfg);
  * authentication is not supported by Chromium. NULL means direct.
  */
 CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
-					      const char *proxy_url);
+					    const char *proxy_url);
 
 /* Override the browser identity. NULL restores the build default. */
 CRNET_API int crnet_client_config_set_user_agent(crnet_client_config *cfg,
-						   const char *ua);
+						 const char *ua);
 CRNET_API int crnet_client_config_set_sec_ch_ua(crnet_client_config *cfg,
-						  const char *sec_ch_ua);
+						const char *sec_ch_ua);
 /* Value of sec-ch-ua-platform without quotes, default "Linux". */
 CRNET_API int crnet_client_config_set_platform(crnet_client_config *cfg,
-						 const char *platform);
+					       const char *platform);
 /* Default "en-US,en;q=0.9". */
 CRNET_API int crnet_client_config_set_accept_language(
 		crnet_client_config *cfg, const char *accept_language);
 
 /* Protocol switches. HTTP/2 and QUIC (HTTP/3) default on, as in Chrome. */
 CRNET_API void crnet_client_config_set_http2(crnet_client_config *cfg,
-					       int enable);
+					     int enable);
 CRNET_API void crnet_client_config_set_quic(crnet_client_config *cfg,
-					      int enable);
+					    int enable);
 
 /*
  * Use Chromium's built-in DNS client (as Chrome does on Linux) so that
@@ -184,36 +184,36 @@ CRNET_API void crnet_client_config_set_quic(crnet_client_config *cfg,
  * resolves names.
  */
 CRNET_API void crnet_client_config_set_builtin_dns(crnet_client_config *cfg,
-						     int enable);
+						   int enable);
 
 /* In-memory cookie jar shared by all requests of the client. Default on. */
 CRNET_API void crnet_client_config_set_cookies(crnet_client_config *cfg,
-						 int enable);
+					       int enable);
 
 /*
  * Accept any server certificate. For testing only: the TLS handshake
  * itself is unchanged, but the connection is no longer authenticated.
  */
 CRNET_API void crnet_client_config_set_insecure(crnet_client_config *cfg,
-						  int enable);
+						int enable);
 
 /*
  * Host resolver rules, same syntax as Chrome's --host-resolver-rules,
  * e.g. "MAP example.com 127.0.0.1:8443, EXCLUDE localhost".
  */
 CRNET_API int crnet_client_config_set_host_rules(crnet_client_config *cfg,
-						   const char *rules);
+						 const char *rules);
 
 /* Default per-request timeout in milliseconds, 0 = none (default). */
 CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
-						 uint64_t timeout_ms);
+					       uint64_t timeout_ms);
 
 /*
  * Write a Chromium NetLog (JSON, viewable with netlog-viewer) to |path|
  * for the lifetime of the client. Debugging aid. NULL disables.
  */
 CRNET_API int crnet_client_config_set_netlog(crnet_client_config *cfg,
-					       const char *path);
+					     const char *path);
 
 /* ---------------------------------------------------------------- */
 /* Client                                                           */
@@ -241,14 +241,14 @@ CRNET_API void crnet_client_free(crnet_client *client);
  * were received from |url|.
  */
 CRNET_API int crnet_client_set_cookie(crnet_client *client, const char *url,
-					const char *set_cookie);
+				      const char *set_cookie);
 /*
  * Cookie header value the client would send to |url|. The returned
  * string is malloc()ed and must be released with crnet_free(). It is
  * "" when there are no cookies.
  */
 CRNET_API char *crnet_client_get_cookies(crnet_client *client,
-					   const char *url);
+					 const char *url);
 CRNET_API int crnet_client_clear_cookies(crnet_client *client);
 
 /* Close idle connections in the pool. */
@@ -268,7 +268,7 @@ CRNET_API void crnet_request_free(crnet_request *req);
 
 CRNET_API int crnet_request_set_url(crnet_request *req, const char *url);
 CRNET_API int crnet_request_set_method(crnet_request *req,
-					 const char *method);
+				       const char *method);
 
 /*
  * Set a header, replacing any value of the same name (case-insensitive)
@@ -279,7 +279,7 @@ CRNET_API int crnet_request_set_method(crnet_request *req,
  * matching cookies from the client's jar.
  */
 CRNET_API int crnet_request_set_header(crnet_request *req,
-					 const char *name, const char *value);
+				       const char *name, const char *value);
 
 /*
  * Request body. The three ways to provide one are exclusive; the last
@@ -288,7 +288,7 @@ CRNET_API int crnet_request_set_header(crnet_request *req,
 
 /* Copy |len| bytes as the request body. NULL/0 clears the body. */
 CRNET_API int crnet_request_set_body(crnet_request *req, const void *data,
-				       size_t len);
+				     size_t len);
 
 /*
  * Stream the body from a file, without loading it into memory: Chromium
@@ -333,18 +333,18 @@ CRNET_API int crnet_request_set_response_stream(crnet_request *req,
 
 CRNET_API int crnet_request_set_mode(crnet_request *req, crnet_mode mode);
 CRNET_API int crnet_request_set_priority(crnet_request *req,
-					   crnet_priority priority);
+					 crnet_priority priority);
 
 /*
  * Maximum redirects to follow, default 20 (Chromium's limit). 0 returns
  * the 3xx response itself without following it.
  */
 CRNET_API int crnet_request_set_max_redirects(crnet_request *req,
-						int max_redirects);
+					      int max_redirects);
 
 /* Overrides the client default; 0 = no timeout. */
 CRNET_API int crnet_request_set_timeout(crnet_request *req,
-					  uint64_t timeout_ms);
+					uint64_t timeout_ms);
 
 /*
  * Decode gzip/deflate/br/zstd bodies. Default on. When off, the body is
@@ -354,7 +354,7 @@ CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable);
 
 /* Fail with CRNET_E_TOO_LARGE past this many body bytes. 0 = no limit. */
 CRNET_API int crnet_request_set_max_body_size(crnet_request *req,
-						uint64_t max_bytes);
+					      uint64_t max_bytes);
 
 /* ---------------------------------------------------------------- */
 /* Blocking API                                                     */
@@ -373,7 +373,7 @@ CRNET_API int crnet_request_set_max_body_size(crnet_request *req,
  * be called from a crnet callback.
  */
 CRNET_API int crnet_perform(crnet_client *client, const crnet_request *req,
-			      crnet_response **resp);
+			    crnet_response **resp);
 
 /* ---------------------------------------------------------------- */
 /* Asynchronous API                                                 */
@@ -544,7 +544,7 @@ CRNET_API int crnet_queue_fd(const crnet_queue *q);
  * CRNET_OK or a negative crnet_error.
  */
 CRNET_API int crnet_queue_start(crnet_queue *q, crnet_client *client,
-				  const crnet_request *req, void *user_data);
+				const crnet_request *req, void *user_data);
 
 /*
  * Pop one completed transfer, waiting up to |timeout_ms| (0 = poll,
@@ -555,7 +555,7 @@ CRNET_API int crnet_queue_start(crnet_queue *q, crnet_client *client,
  * or CRNET_E_STATE when no transfer is pending or running at all.
  */
 CRNET_API int crnet_queue_pop(crnet_queue *q, crnet_transfer **t,
-				void **user_data, uint64_t timeout_ms);
+			      void **user_data, uint64_t timeout_ms);
 
 /* Transfers started on |q| and not yet popped (running + completed). */
 CRNET_API size_t crnet_queue_pending(const crnet_queue *q);
@@ -750,18 +750,18 @@ CRNET_API int crnet_response_redirect_count(const crnet_response *resp);
 /* Header lines in received order; names as sent by the server. */
 CRNET_API size_t crnet_response_header_count(const crnet_response *resp);
 CRNET_API int crnet_response_header_at(const crnet_response *resp,
-					 size_t index, const char **name,
+				       size_t index, const char **name,
 					 const char **value);
 /*
  * First value of header |name| (case-insensitive) or NULL. Use
  * crnet_response_header_at() for repeated headers such as Set-Cookie.
  */
 CRNET_API const char *crnet_response_header(const crnet_response *resp,
-					      const char *name);
+					    const char *name);
 
 /* Accumulated body (NULL-terminated for convenience; *len excludes it). */
 CRNET_API const char *crnet_response_body(const crnet_response *resp,
-					    size_t *len);
+					  size_t *len);
 
 /* Negotiated protocol: "h2", "http/1.1", "h3", ... */
 CRNET_API const char *crnet_response_protocol(const crnet_response *resp);

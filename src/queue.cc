@@ -50,7 +50,7 @@ void crnet_queue::Completed(crnet_transfer *t)
 }
 
 int crnet_queue::Pop(crnet_transfer **t, void **user_data,
-		      uint64_t timeout_ms)
+		     uint64_t timeout_ms)
 {
 	std::unique_lock<std::mutex> lk(mu_);
 	auto ready = [this] { return !done_.empty() || running_.empty(); };

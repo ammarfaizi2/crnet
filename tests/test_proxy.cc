@@ -64,7 +64,7 @@ TEST(Proxy, HttpConnectProxyWithCredentials)
 {
 	const Ports &p = ServerPorts();
 	crnet_client *c = ProxyClient("http://crnet:secret@127.0.0.1:" +
-				       std::to_string(p.http_proxy));
+				      std::to_string(p.http_proxy));
 	Result r = Get(c, RemoteOnlyUrl(p.https, "/echo"));
 	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
 	EXPECT_EQ(r.status(), 200);
@@ -77,7 +77,7 @@ TEST(Proxy, HttpConnectProxyWrongCredentialsFails)
 {
 	const Ports &p = ServerPorts();
 	crnet_client *c = ProxyClient("http://crnet:wrong@127.0.0.1:" +
-				       std::to_string(p.http_proxy));
+				      std::to_string(p.http_proxy));
 	Result r = Get(c, RemoteOnlyUrl(p.https, "/echo"));
 	EXPECT_NE(r.rc, CRNET_OK);
 	EXPECT_NE(r.status(), 200);

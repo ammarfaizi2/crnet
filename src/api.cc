@@ -128,11 +128,11 @@ CRNET_API const char *crnet_default_sec_ch_ua(void)
 }
 
 CRNET_API int crnet_global_init(const char *enable_features,
-				  const char *disable_features)
+				const char *disable_features)
 {
 	bool already = false;
 	if (!crnet::EnsureGlobalInit(enable_features, disable_features,
-				      &already))
+				     &already))
 		return CRNET_E_STATE;
 	return already ? CRNET_E_STATE : CRNET_OK;
 }
@@ -157,7 +157,7 @@ CRNET_API void crnet_client_config_free(crnet_client_config *cfg)
 }
 
 CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
-					      const char *proxy_url)
+					    const char *proxy_url)
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
@@ -169,7 +169,7 @@ CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
 }
 
 CRNET_API int crnet_client_config_set_user_agent(crnet_client_config *cfg,
-						   const char *ua)
+						 const char *ua)
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
@@ -177,7 +177,7 @@ CRNET_API int crnet_client_config_set_user_agent(crnet_client_config *cfg,
 }
 
 CRNET_API int crnet_client_config_set_sec_ch_ua(crnet_client_config *cfg,
-						  const char *v)
+						const char *v)
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
@@ -185,7 +185,7 @@ CRNET_API int crnet_client_config_set_sec_ch_ua(crnet_client_config *cfg,
 }
 
 CRNET_API int crnet_client_config_set_platform(crnet_client_config *cfg,
-						 const char *v)
+					       const char *v)
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
@@ -201,42 +201,42 @@ CRNET_API int crnet_client_config_set_accept_language(
 }
 
 CRNET_API void crnet_client_config_set_http2(crnet_client_config *cfg,
-					       int enable)
+					     int enable)
 {
 	if (cfg)
 		cfg->cfg.http2 = !!enable;
 }
 
 CRNET_API void crnet_client_config_set_quic(crnet_client_config *cfg,
-					      int enable)
+					    int enable)
 {
 	if (cfg)
 		cfg->cfg.quic = !!enable;
 }
 
 CRNET_API void crnet_client_config_set_builtin_dns(crnet_client_config *cfg,
-						     int enable)
+						   int enable)
 {
 	if (cfg)
 		cfg->cfg.builtin_dns = !!enable;
 }
 
 CRNET_API void crnet_client_config_set_cookies(crnet_client_config *cfg,
-						 int enable)
+					       int enable)
 {
 	if (cfg)
 		cfg->cfg.cookies = !!enable;
 }
 
 CRNET_API void crnet_client_config_set_insecure(crnet_client_config *cfg,
-						  int enable)
+						int enable)
 {
 	if (cfg)
 		cfg->cfg.insecure = !!enable;
 }
 
 CRNET_API int crnet_client_config_set_host_rules(crnet_client_config *cfg,
-						   const char *rules)
+						 const char *rules)
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
@@ -244,14 +244,14 @@ CRNET_API int crnet_client_config_set_host_rules(crnet_client_config *cfg,
 }
 
 CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
-						 uint64_t timeout_ms)
+					       uint64_t timeout_ms)
 {
 	if (cfg)
 		cfg->cfg.timeout_ms = timeout_ms;
 }
 
 CRNET_API int crnet_client_config_set_netlog(crnet_client_config *cfg,
-					       const char *path)
+					     const char *path)
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
@@ -278,7 +278,7 @@ CRNET_API void crnet_client_free(crnet_client *client)
 }
 
 CRNET_API int crnet_client_set_cookie(crnet_client *client, const char *url,
-					const char *set_cookie)
+				      const char *set_cookie)
 {
 	if (!client || !url || !set_cookie)
 		return CRNET_E_INVAL;
@@ -288,7 +288,7 @@ CRNET_API int crnet_client_set_cookie(crnet_client *client, const char *url,
 }
 
 CRNET_API char *crnet_client_get_cookies(crnet_client *client,
-					   const char *url)
+					 const char *url)
 {
 	if (!client || !url || crnet::OnNetworkThread())
 		return nullptr;
@@ -350,7 +350,7 @@ CRNET_API int crnet_request_set_url(crnet_request *req, const char *url)
 }
 
 CRNET_API int crnet_request_set_method(crnet_request *req,
-					 const char *method)
+				       const char *method)
 {
 	if (!req || !ValidToken(method))
 		return CRNET_E_INVAL;
@@ -360,7 +360,7 @@ CRNET_API int crnet_request_set_method(crnet_request *req,
 }
 
 CRNET_API int crnet_request_set_header(crnet_request *req,
-					 const char *name, const char *value)
+				       const char *name, const char *value)
 {
 	if (!req || !ValidToken(name))
 		return CRNET_E_INVAL;
@@ -381,7 +381,7 @@ CRNET_API int crnet_request_set_header(crnet_request *req,
 }
 
 CRNET_API int crnet_request_set_body(crnet_request *req, const void *data,
-				       size_t len)
+				     size_t len)
 {
 	if (!req || (!data && len))
 		return CRNET_E_INVAL;
@@ -431,7 +431,7 @@ CRNET_API int crnet_request_set_mode(crnet_request *req, crnet_mode mode)
 }
 
 CRNET_API int crnet_request_set_priority(crnet_request *req,
-					   crnet_priority priority)
+					 crnet_priority priority)
 {
 	if (!req || priority < CRNET_PRIORITY_DEFAULT ||
 	    priority > CRNET_PRIORITY_HIGHEST)
@@ -441,7 +441,7 @@ CRNET_API int crnet_request_set_priority(crnet_request *req,
 }
 
 CRNET_API int crnet_request_set_max_redirects(crnet_request *req,
-						int max_redirects)
+					      int max_redirects)
 {
 	if (!req || max_redirects < 0)
 		return CRNET_E_INVAL;
@@ -450,7 +450,7 @@ CRNET_API int crnet_request_set_max_redirects(crnet_request *req,
 }
 
 CRNET_API int crnet_request_set_timeout(crnet_request *req,
-					  uint64_t timeout_ms)
+					uint64_t timeout_ms)
 {
 	if (!req)
 		return CRNET_E_INVAL;
@@ -467,7 +467,7 @@ CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable)
 }
 
 CRNET_API int crnet_request_set_max_body_size(crnet_request *req,
-						uint64_t max_bytes)
+					      uint64_t max_bytes)
 {
 	if (!req)
 		return CRNET_E_INVAL;
@@ -480,14 +480,14 @@ CRNET_API int crnet_request_set_max_body_size(crnet_request *req,
 // ------------------------------------------------------------------
 
 static crnet_transfer *StartTransfer(crnet_client *client,
-				      const crnet_request *req,
+				     const crnet_request *req,
 				      const crnet_callbacks *cb,
 				      void *user_data, crnet_queue *q)
 {
 	if (!client || !req || !req->spec.url.SchemeIsHTTPOrHTTPS())
 		return nullptr;
 	auto t = base::MakeRefCounted<crnet_transfer>(client, req->spec, cb,
-						       user_data, q);
+						      user_data, q);
 	if (!t->ok())
 		return nullptr;
 	if (q)
@@ -510,7 +510,7 @@ CRNET_API crnet_transfer *crnet_start(crnet_client *client,
 }
 
 CRNET_API int crnet_perform(crnet_client *client, const crnet_request *req,
-			      crnet_response **resp)
+			    crnet_response **resp)
 {
 	if (resp)
 		*resp = nullptr;
@@ -524,7 +524,7 @@ CRNET_API int crnet_perform(crnet_client *client, const crnet_request *req,
 	if (crnet::OnNetworkThread())
 		return CRNET_E_WOULD_DEADLOCK;
 	crnet_transfer *t = StartTransfer(client, req, nullptr, nullptr,
-					   nullptr);
+					  nullptr);
 	if (!t)
 		return CRNET_E_SHUTDOWN;
 	int rc = t->Wait(UINT64_MAX);
@@ -685,7 +685,7 @@ CRNET_API int crnet_queue_fd(const crnet_queue *q)
 }
 
 CRNET_API int crnet_queue_start(crnet_queue *q, crnet_client *client,
-				  const crnet_request *req, void *user_data)
+				const crnet_request *req, void *user_data)
 {
 	if (!q || !client || !req || !req->spec.url.SchemeIsHTTPOrHTTPS() ||
 	    req->spec.body_stream || req->spec.stream_response)
@@ -699,7 +699,7 @@ CRNET_API int crnet_queue_start(crnet_queue *q, crnet_client *client,
 }
 
 CRNET_API int crnet_queue_pop(crnet_queue *q, crnet_transfer **t,
-				void **user_data, uint64_t timeout_ms)
+			      void **user_data, uint64_t timeout_ms)
 {
 	if (!q || !t)
 		return CRNET_E_INVAL;
@@ -902,7 +902,7 @@ CRNET_API size_t crnet_response_header_count(const crnet_response *r)
 }
 
 CRNET_API int crnet_response_header_at(const crnet_response *r,
-					 size_t index, const char **name,
+				       size_t index, const char **name,
 					 const char **value)
 {
 	if (!r || index >= r->headers.size())
@@ -915,7 +915,7 @@ CRNET_API int crnet_response_header_at(const crnet_response *r,
 }
 
 CRNET_API const char *crnet_response_header(const crnet_response *r,
-					      const char *name)
+					    const char *name)
 {
 	if (!r || !name)
 		return nullptr;
@@ -926,7 +926,7 @@ CRNET_API const char *crnet_response_header(const crnet_response *r,
 }
 
 CRNET_API const char *crnet_response_body(const crnet_response *r,
-					    size_t *len)
+					  size_t *len)
 {
 	if (!r) {
 		if (len)

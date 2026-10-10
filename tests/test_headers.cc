@@ -26,7 +26,7 @@ json EchoOf(crnet_client *c, crnet_request *req)
 }
 
 crnet_request *Req(const char *method, const std::string &url,
-		    crnet_mode mode = CRNET_MODE_NAVIGATE)
+		   crnet_mode mode = CRNET_MODE_NAVIGATE)
 {
 	crnet_request *r = crnet_request_new(method, url.c_str());
 	crnet_request_set_mode(r, mode);
@@ -106,7 +106,7 @@ TEST_F(ClientTest, NavigateFormPostMatchesChrome)
 	crnet_request *req = Req("POST", HttpsUrl("/echo"));
 	crnet_request_set_header(req, "Referer", HttpsUrl("/form.html").c_str());
 	crnet_request_set_header(req, "Content-Type",
-				  "application/x-www-form-urlencoded");
+				 "application/x-www-form-urlencoded");
 	crnet_request_set_body(req, "a=b", 3);
 	json e = EchoOf(client_, req);
 	crnet_request_free(req);

@@ -83,7 +83,7 @@ const crnet_callbacks kAll = {OnResponse, OnData, OnComplete};
 const crnet_callbacks kNoData = {OnResponse, nullptr, OnComplete};
 
 crnet_transfer *StartGet(crnet_client *c, const std::string &url,
-			  const crnet_callbacks *cb, void *ud)
+			 const crnet_callbacks *cb, void *ud)
 {
 	crnet_request *req = crnet_request_new("GET", url.c_str());
 	crnet_transfer *t = crnet_start(c, req, cb, ud);

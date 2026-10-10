@@ -223,7 +223,7 @@ TEST_F(ClientTest, CookieJarRoundTrip)
 TEST_F(ClientTest, InjectedCookieIsSent)
 {
 	ASSERT_EQ(crnet_client_set_cookie(client_, HttpsUrl("/").c_str(),
-					   "cf_clearance=xyz; Path=/; Secure"),
+					  "cf_clearance=xyz; Path=/; Secure"),
 		  CRNET_OK);
 	Result r = Get(client_, HttpsUrl("/echo"));
 	EXPECT_EQ(EchoHeader(r.echo(), "cookie"), "cf_clearance=xyz");

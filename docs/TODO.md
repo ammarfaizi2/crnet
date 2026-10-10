@@ -364,12 +364,6 @@ over the C ABI, no compiler needed at install time). Many crawlers are
 written in Python, and the C ABI was designed so that this needs no
 C++ on the binding side. Optional.
 
-### header-alignment
-
-Continuation lines in `include/crnet/crnet.h` and `crnet.hpp` are off
-by one column since the crhttp -> crnet rename (a sed that changed the
-prefix length). Cosmetic; re-align them in one whitespace-only commit.
-
 ## Not planned
 
 ### verbatim-path

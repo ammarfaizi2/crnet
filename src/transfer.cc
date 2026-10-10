@@ -93,7 +93,7 @@ HeaderHook *HeaderHook::Get(const net::URLRequest *req)
 } // namespace crnet
 
 crnet_transfer::crnet_transfer(crnet_client *client,
-				 crnet::RequestSpec spec,
+			       crnet::RequestSpec spec,
 				 const crnet_callbacks *cb, void *user_data,
 				 crnet_queue *queue)
 	: client_(client),
@@ -318,7 +318,7 @@ void crnet_transfer::FillResponseMeta(net::URLRequest *request)
 }
 
 void crnet_transfer::OnReceivedRedirect(net::URLRequest *request,
-					 const net::RedirectInfo &redirect_info,
+					const net::RedirectInfo &redirect_info,
 					 bool *defer_redirect)
 {
 	if (resp_->redirects >= spec_.max_redirects) {
@@ -332,7 +332,7 @@ void crnet_transfer::OnReceivedRedirect(net::URLRequest *request,
 }
 
 void crnet_transfer::OnAuthRequired(net::URLRequest *request,
-				     const net::AuthChallengeInfo &auth_info)
+				    const net::AuthChallengeInfo &auth_info)
 {
 	const crnet::ClientConfig &cfg = client_->config();
 	if (auth_info.is_proxy && !proxy_auth_tried_ &&
@@ -355,7 +355,7 @@ void crnet_transfer::OnCertificateRequested(
 }
 
 void crnet_transfer::OnSSLCertificateError(net::URLRequest *request,
-					    int net_error,
+					   int net_error,
 					    const net::SSLInfo &ssl_info,
 					    bool fatal)
 {
@@ -367,7 +367,7 @@ void crnet_transfer::OnSSLCertificateError(net::URLRequest *request,
 }
 
 void crnet_transfer::OnResponseStarted(net::URLRequest *request,
-					int net_error)
+				       int net_error)
 {
 	if (finished_)
 		return;
@@ -408,7 +408,7 @@ void crnet_transfer::ReadMore()
 }
 
 void crnet_transfer::OnReadCompleted(net::URLRequest *request,
-				      int bytes_read)
+				     int bytes_read)
 {
 	read_pending_ = false;
 	if (finished_)
