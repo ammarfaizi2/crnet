@@ -98,9 +98,15 @@ TEST(Proxy, HeadersUnchangedThroughProxy)
 {
 	const Ports &p = ServerPorts();
 	crnet_client *direct = NewTestClient();
-	crnet_client *proxied = ProxyClient("socks5h://127.0.0.1:" + std::to_string(p.socks5));
+	// <-loopback>: the server is on localhost, which would otherwise
+	// bypass the proxy and compare two direct requests.
+	crnet_client *proxied = ProxyClient("socks5h://127.0.0.1:" + std::to_string(p.socks5),
+					    "<-loopback>");
 	Result a = Get(direct, HttpsUrl("/echo"));
 	Result b = Get(proxied, HttpsUrl("/echo"));
+	ASSERT_EQ(b.rc, CRNET_OK) << crnet_response_error_string(b.resp);
+	EXPECT_FALSE(crnet_response_via_proxy(a.resp));
+	EXPECT_TRUE(crnet_response_via_proxy(b.resp));
 	EXPECT_EQ(HeaderNames(a.echo()), HeaderNames(b.echo()));
 	crnet_client_free(direct);
 	crnet_client_free(proxied);
