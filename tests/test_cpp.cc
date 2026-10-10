@@ -180,3 +180,42 @@ TEST(Cpp, WebSocketOpenFailureThrows)
 		EXPECT_NE(std::string(e.what()).find("403"), std::string::npos) << e.what();
 	}
 }
+
+TEST(Cpp, StreamedUploadAndDownload)
+{
+	crnet::Client c = TestClient();
+	std::string data(3 * 1024 * 1024 + 1, 'q');
+
+	crnet::Request up(HttpsUrl("/upload-digest"), "POST");
+	up.body_stream(data.size()).stream_response();
+	crnet::Transfer t = c.start(up);
+	for (size_t off = 0; off < data.size(); off += 100000)
+		t.write(std::string_view(data).substr(off, 100000));
+	t.write_end();
+	EXPECT_EQ(t.wait_response(10000).status(), 200);
+	std::string body, chunk;
+	while (!(chunk = t.read(4096, 10000)).empty())
+		body += chunk;
+	EXPECT_EQ(json::parse(body)["len"], data.size());
+
+	crnet::Transfer d = c.start(crnet::Request(HttpsUrl("/bytes/1000000")).stream_response());
+	size_t total = 0;
+	char buf[50000];
+	while (size_t n = d.read(buf, sizeof(buf)))
+		total += n;
+	EXPECT_EQ(total, 1000000u);
+}
+
+TEST(Cpp, StreamingErrorsThrow)
+{
+	crnet::Client c = TestClient();
+	crnet::Transfer t = c.start(crnet::Request(HttpsUrl("/delay/2000")).stream_response());
+	try {
+		t.read(16, 10);
+		FAIL() << "expected a timeout";
+	} catch (const crnet::Error &e) {
+		EXPECT_EQ(e.code(), CRNET_E_TIMEOUT);
+	}
+	EXPECT_THROW(t.write("x"), crnet::Error);  // not a streamed body
+	EXPECT_THROW(crnet::Request(HttpsUrl("/")).body_stream(-5), crnet::Error);
+}

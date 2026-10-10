@@ -7,6 +7,7 @@
 find_package(GTest REQUIRED)
 find_package(nlohmann_json 3 REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_package(OpenSSL REQUIRED)
 
 include(GoogleTest)
 
@@ -18,6 +19,7 @@ add_executable(crnet_tests
   test_headers.cc
   test_http.cc
   test_proxy.cc
+  test_stream.cc
   test_websocket.cc)
 target_compile_features(crnet_tests PRIVATE cxx_std_17)
 target_compile_options(crnet_tests PRIVATE -Wall -Wextra)
@@ -25,7 +27,8 @@ target_compile_definitions(crnet_tests PRIVATE
   CRNET_TEST_SERVER="${CMAKE_CURRENT_SOURCE_DIR}/server/test_server.py"
   CRNET_TEST_CHROMIUM_VERSION="${CRNET_CHECKOUT_CR}")
 target_link_libraries(crnet_tests PRIVATE
-  crnet::crnet GTest::gtest GTest::gtest_main nlohmann_json::nlohmann_json)
+  crnet::crnet GTest::gtest GTest::gtest_main nlohmann_json::nlohmann_json
+  OpenSSL::Crypto)
 
 # Each test runs in its own process with its own test server.
 gtest_discover_tests(crnet_tests
