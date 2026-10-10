@@ -12,13 +12,17 @@
 //
 #include <limits>
 
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/task/thread_pool.h"
 #include "base/strings/utf_string_conversions.h"
 #include "crnet/internal.h"
+#include "crnet/stream.h"
 #include "net/base/auth.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
 #include "net/base/upload_bytes_element_reader.h"
+#include "net/base/upload_file_element_reader.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/cookies/site_for_cookies.h"
@@ -100,9 +104,21 @@ crnet_transfer::crnet_transfer(crnet_client *client,
 {
 	if (cb)
 		cb_ = *cb;
+	// Created up front: the application may write before the transfer
+	// reaches the network thread.
+	if (spec_.body_stream)
+		upload_ = base::MakeRefCounted<crnet::UploadPipe>(*spec_.body_stream,
+								  runner_);
+	if (spec_.stream_response && !cb_.on_data)
+		download_ = std::make_unique<crnet::DownloadBuffer>();
 }
 
 crnet_transfer::~crnet_transfer() = default;
+
+bool crnet_transfer::ok() const
+{
+	return !download_ || download_->ok();
+}
 
 
 // ------------------------------------------------------------------
@@ -203,6 +219,19 @@ void crnet_transfer::StartOnNetworkThread()
 		request_->set_upload(net::ElementsUploadDataStream::CreateWithReader(
 			net::UploadOwnedBytesElementReader::CreateWithString(
 				*spec_.body)));
+	} else if (spec_.body_file) {
+		// Read on the ThreadPool as the upload proceeds.
+		file_runner_ = base::ThreadPool::CreateTaskRunner(
+			{base::MayBlock(), base::TaskPriority::USER_VISIBLE});
+		request_->set_upload(net::ElementsUploadDataStream::CreateWithReader(
+			std::make_unique<net::UploadFileElementReader>(
+				file_runner_.get(),
+				base::FilePath(spec_.body_file->path),
+				spec_.body_file->offset, spec_.body_file->length,
+				base::Time())));
+	} else if (upload_) {
+		request_->set_upload(std::make_unique<crnet::PipeUploadDataStream>(
+			upload_, *spec_.body_stream));
 	}
 
 	uint64_t timeout = spec_.timeout_ms.value_or(cfg.timeout_ms);
@@ -239,6 +268,29 @@ void crnet_transfer::ResumeOnNetworkThread()
 	paused_ = false;
 	if (started_reading_ && !read_pending_ && !finished_)
 		ReadMore();
+}
+
+void crnet_transfer::ResumeDownload()
+{
+	runner_->PostTask(FROM_HERE,
+			  base::BindOnce(&crnet_transfer::ResumeDownloadOnNetworkThread,
+					 base::WrapRefCounted(this)));
+}
+
+void crnet_transfer::ResumeDownloadOnNetworkThread()
+{
+	if (!download_full_)
+		return;
+	download_full_ = false;
+	if (started_reading_ && !read_pending_ && !finished_ && !paused_)
+		ReadMore();
+}
+
+int crnet_transfer::WaitResponse(uint64_t timeout_ms)
+{
+	if (!headers_.Wait(timeout_ms))
+		return CRNET_E_TIMEOUT;
+	return resp_ && resp_->status > 0 ? CRNET_OK : result_;
 }
 
 void crnet_transfer::FillResponseMeta(net::URLRequest *request)
@@ -324,6 +376,7 @@ void crnet_transfer::OnResponseStarted(net::URLRequest *request,
 		return;
 	}
 	FillResponseMeta(request);
+	headers_.Signal();
 
 	if (cb_.on_response) {
 		int rc = cb_.on_response(this, resp_.get(), user_data_);
@@ -343,7 +396,7 @@ void crnet_transfer::OnResponseStarted(net::URLRequest *request,
 
 void crnet_transfer::ReadMore()
 {
-	while (!finished_ && !paused_) {
+	while (!finished_ && !paused_ && !download_full_) {
 		int n = request_->Read(buf_.get(), buf_->size());
 		if (n == net::ERR_IO_PENDING) {
 			read_pending_ = true;
@@ -389,6 +442,9 @@ bool crnet_transfer::HandleRead(int n)
 			Finish(CRNET_E_CALLBACK, net::ERR_ABORTED);
 			return false;
 		}
+	} else if (download_) {
+		if (download_->Push(buf_->data(), n))
+			download_full_ = true;	// ReadMore() stops until resumed
 	} else {
 		resp_->body.append(buf_->data(), n);
 	}
@@ -431,6 +487,11 @@ void crnet_transfer::Finish(int err, int net_error)
 	// Keep ourselves alive through the callback and the hand-offs below.
 	scoped_refptr<crnet_transfer> self(this);
 	result_ = err;
+	if (download_)
+		download_->Finish(err);
+	if (upload_)
+		upload_->Close(err == CRNET_OK ? CRNET_E_STATE : err);
+	headers_.Signal();
 	if (cb_.on_complete)
 		cb_.on_complete(this, err, resp_.get(), user_data_);
 	done_.Signal();

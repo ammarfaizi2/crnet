@@ -281,9 +281,55 @@ CRNET_API int crnet_request_set_method(crnet_request *req,
 CRNET_API int crnet_request_set_header(crnet_request *req,
 					 const char *name, const char *value);
 
+/*
+ * Request body. The three ways to provide one are exclusive; the last
+ * call wins. All of them send Content-Length when the size is known.
+ */
+
 /* Copy |len| bytes as the request body. NULL/0 clears the body. */
 CRNET_API int crnet_request_set_body(crnet_request *req, const void *data,
 				       size_t len);
+
+/*
+ * Stream the body from a file, without loading it into memory: Chromium
+ * reads it in the background as the upload proceeds. |length| bytes
+ * starting at |offset|; UINT64_MAX means up to the end of the file. The
+ * file is opened when the transfer starts (a missing file fails it with
+ * net::ERR_FILE_NOT_FOUND). Rewindable: redirects that resend the body
+ * (307/308) and authentication retries work.
+ */
+CRNET_API int crnet_request_set_body_file(crnet_request *req,
+					  const char *path, uint64_t offset,
+					  uint64_t length);
+
+#define CRNET_LENGTH_UNKNOWN (-1)
+
+/*
+ * Stream the body from the application: after starting the transfer,
+ * feed it with crnet_transfer_write() and finish with
+ * crnet_transfer_write_end(). With a known |length| the request carries
+ * Content-Length and exactly that many bytes must be written. With
+ * CRNET_LENGTH_UNKNOWN the size is open-ended: HTTP/1.1 then uses
+ * Transfer-Encoding: chunked, HTTP/2 and HTTP/3 simply send DATA frames
+ * until the end.
+ *
+ * Such a body is consumed once: a redirect or authentication retry that
+ * must resend it fails with net::ERR_UPLOAD_STREAM_REWIND_NOT_SUPPORTED.
+ * Only crnet_start() accepts these requests.
+ */
+CRNET_API int crnet_request_set_body_stream(crnet_request *req,
+					    int64_t length);
+
+/*
+ * Deliver the response body through crnet_transfer_read() (pull) instead
+ * of accumulating it in the response. Reading from the network pauses
+ * while the application has more than 1 MiB unread, so arbitrarily large
+ * bodies stream in constant memory. Ignored when an on_data callback is
+ * set (that is the push-style equivalent). Only crnet_start() accepts
+ * these requests.
+ */
+CRNET_API int crnet_request_set_response_stream(crnet_request *req,
+						int enable);
 
 CRNET_API int crnet_request_set_mode(crnet_request *req, crnet_mode mode);
 CRNET_API int crnet_request_set_priority(crnet_request *req,
@@ -411,6 +457,53 @@ CRNET_API const crnet_response *crnet_transfer_response(
  * frees it with crnet_response_free(). Only after completion.
  */
 CRNET_API crnet_response *crnet_transfer_take_response(crnet_transfer *t);
+
+/*
+ * Wait until the response headers have arrived (CRNET_OK; status and
+ * headers of crnet_transfer_response() may then be read from any
+ * thread) or the transfer failed before that (its error). Returns
+ * CRNET_E_TIMEOUT if neither happened within |timeout_ms|.
+ */
+CRNET_API int crnet_transfer_wait_response(crnet_transfer *t,
+					   uint64_t timeout_ms);
+
+/*
+ * Streaming upload (crnet_request_set_body_stream()): append |len| bytes
+ * to the request body. Thread-safe. Blocks while the transfer's 1 MiB
+ * send buffer is full, at most |timeout_ms| (0 = never block). *written
+ * (may be NULL) receives how much was accepted. Returns CRNET_OK once
+ * all |len| bytes are accepted, CRNET_E_TIMEOUT if the wait expired
+ * first, CRNET_E_INVAL if a declared length would be exceeded,
+ * CRNET_E_STATE if the transfer has no streamed body, its end was
+ * already written or it finished (or the transfer's error if it failed).
+ */
+CRNET_API int crnet_transfer_write(crnet_transfer *t, const void *data,
+				   size_t len, size_t *written,
+				   uint64_t timeout_ms);
+
+/*
+ * End a streamed request body. With a declared length, fewer bytes than
+ * declared fail the transfer with CRNET_E_INVAL.
+ */
+CRNET_API int crnet_transfer_write_end(crnet_transfer *t);
+
+/*
+ * Streaming download (crnet_request_set_response_stream()): read up to
+ * |len| body bytes, waiting at most |timeout_ms| for some to arrive.
+ * Returns CRNET_OK with *nread > 0 for data, CRNET_OK with *nread == 0 at
+ * the end of the body, CRNET_E_TIMEOUT when nothing arrived in time, or
+ * the transfer's error once the data received before it was read.
+ * Thread-safe; blocking reads are not allowed on a network thread.
+ */
+CRNET_API int crnet_transfer_read(crnet_transfer *t, void *buf, size_t len,
+				  size_t *nread, uint64_t timeout_ms);
+
+/*
+ * Streaming download: a file descriptor that is readable while
+ * crnet_transfer_read() would not block (data buffered, or the transfer
+ * finished). -1 for other transfers.
+ */
+CRNET_API int crnet_transfer_fd(const crnet_transfer *t);
 
 /*
  * Release the handle. If the transfer is still running it is canceled

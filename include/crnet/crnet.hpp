@@ -96,6 +96,16 @@ public:
 	Request &header(const std::string &name, const std::string &value) { check(crnet_request_set_header(get(), name.c_str(), value.c_str())); return *this; }
 	Request &remove_header(const std::string &name) { check(crnet_request_set_header(get(), name.c_str(), nullptr)); return *this; }
 	Request &body(std::string_view data) { check(crnet_request_set_body(get(), data.data(), data.size())); return *this; }
+	// Upload a file (or a slice of it) without loading it into memory.
+	Request &body_file(const std::string &path, uint64_t offset = 0, uint64_t length = UINT64_MAX)
+	{
+		check(crnet_request_set_body_file(get(), path.c_str(), offset, length));
+		return *this;
+	}
+	// Body written later with Transfer::write(); see crnet_request_set_body_stream().
+	Request &body_stream(int64_t length = CRNET_LENGTH_UNKNOWN) { check(crnet_request_set_body_stream(get(), length)); return *this; }
+	// Response body read with Transfer::read() instead of being buffered.
+	Request &stream_response(bool on = true) { check(crnet_request_set_response_stream(get(), on)); return *this; }
 	Request &mode(crnet_mode m) { check(crnet_request_set_mode(get(), m)); return *this; }
 	Request &priority(crnet_priority p) { check(crnet_request_set_priority(get(), p)); return *this; }
 	Request &max_redirects(int n) { check(crnet_request_set_max_redirects(get(), n)); return *this; }
@@ -217,6 +227,40 @@ public:
 	ResponseView response() const { return ResponseView(crnet_transfer_response(t_)); }
 	Response take_response() { return Response(crnet_transfer_take_response(t_)); }
 
+	// Waits for the response headers; throws crnet::Error on failure or
+	// timeout. response() may then be inspected (status, headers).
+	ResponseView wait_response(uint64_t timeout_ms = UINT64_MAX)
+	{
+		check(crnet_transfer_wait_response(t_, timeout_ms));
+		return response();
+	}
+
+	// Streamed request body (Request::body_stream()). Blocks while the
+	// send buffer is full; throws crnet::Error on failure or timeout.
+	void write(std::string_view data, uint64_t timeout_ms = UINT64_MAX)
+	{
+		check(crnet_transfer_write(t_, data.data(), data.size(), nullptr, timeout_ms));
+	}
+	void write_end() { check(crnet_transfer_write_end(t_)); }
+
+	// Streamed response body (Request::stream_response()). Returns the
+	// number of bytes read, 0 at the end of the body; throws
+	// crnet::Error on failure or timeout.
+	size_t read(void *buf, size_t len, uint64_t timeout_ms = UINT64_MAX)
+	{
+		size_t n = 0;
+		check(crnet_transfer_read(t_, buf, len, &n, timeout_ms));
+		return n;
+	}
+	// Up to |max| bytes as a string; empty at the end of the body.
+	std::string read(size_t max = 64 * 1024, uint64_t timeout_ms = UINT64_MAX)
+	{
+		std::string s(max, '\0');
+		s.resize(read(s.data(), s.size(), timeout_ms));
+		return s;
+	}
+	int fd() const { return crnet_transfer_fd(t_); }
+
 	// Cancels if still running and waits for on_complete.
 	void reset()
 	{
@@ -230,6 +274,12 @@ public:
 private:
 	friend class Client;
 	Transfer(crnet_transfer *t, std::unique_ptr<Handlers> h) : t_(t), h_(std::move(h)) {}
+
+	static void check(int rc)
+	{
+		if (rc != CRNET_OK)
+			throw Error(rc, crnet_strerror(rc));
+	}
 
 	crnet_transfer *t_ = nullptr;
 	// Owned here so it outlives every callback: crnet_transfer_free()

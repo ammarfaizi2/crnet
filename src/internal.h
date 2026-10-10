@@ -90,7 +90,16 @@ struct RequestSpec {
 	// User headers in the order they were first set. A nullopt value
 	// means "remove / suppress the default".
 	std::vector<std::pair<std::string, std::optional<std::string>>> headers;
+	// At most one of body, body_file and body_stream is set.
 	std::optional<std::string> body;
+	struct File {
+		std::string path;
+		uint64_t offset = 0;
+		uint64_t length = UINT64_MAX;
+	};
+	std::optional<File> body_file;
+	std::optional<int64_t> body_stream;	// declared length, -1 unknown
+	bool stream_response = false;
 	crnet_mode mode = CRNET_MODE_NAVIGATE;
 	crnet_priority priority = CRNET_PRIORITY_DEFAULT;
 	int max_redirects = 20;
@@ -211,6 +220,11 @@ struct crnet_response {
 struct crnet_queue;
 struct crnet_ws;
 
+namespace crnet {
+class DownloadBuffer;
+class UploadPipe;
+}
+
 // One execution of a request. Ref-counted: the caller's handle, the
 // client's running set and a completion queue may each hold a
 // reference. All URLRequest work happens on the client's network
@@ -231,6 +245,13 @@ public:
 	void Resume();
 	int Wait(uint64_t timeout_ms);
 	bool done() const { return done_.IsSignaled(); }
+	int WaitResponse(uint64_t timeout_ms);
+	// Streamed bodies (stream.h); null unless requested.
+	crnet::UploadPipe *upload() const { return upload_.get(); }
+	crnet::DownloadBuffer *download() const { return download_.get(); }
+	bool ok() const;
+	// Any thread: continue a download stopped by a full buffer.
+	void ResumeDownload();
 	int result() const { return result_; }
 	crnet_response *response() const { return resp_.get(); }
 	crnet_response *TakeResponse();
@@ -268,6 +289,7 @@ private:
 	void Finish(int err, int net_error);
 	void OnTimeout();
 	void ResumeOnNetworkThread();
+	void ResumeDownloadOnNetworkThread();
 
 	crnet_client *client_;
 	scoped_refptr<base::SingleThreadTaskRunner> runner_;
@@ -286,12 +308,19 @@ private:
 	bool paused_ = false;
 	bool finished_ = false;
 	bool proxy_auth_tried_ = false;
+	bool download_full_ = false;
 	uint64_t body_bytes_ = 0;
+	scoped_refptr<base::TaskRunner> file_runner_;
 
 	std::unique_ptr<crnet_response> resp_;
 
+	scoped_refptr<crnet::UploadPipe> upload_;
+	std::unique_ptr<crnet::DownloadBuffer> download_;
+
 	// result_ and resp_ are written on the network thread before done_
-	// is signalled and only read by other threads after it is.
+	// (or, for the response headers, headers_) is signalled and only read
+	// by other threads after it is.
+	crnet::OneShotEvent headers_;
 	crnet::OneShotEvent done_;
 	int result_ = CRNET_E_STATE;
 };

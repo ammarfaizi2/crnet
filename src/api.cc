@@ -12,6 +12,7 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "crnet/internal.h"
+#include "crnet/stream.h"
 #include "crnet/websocket.h"
 #include "net/http/http_util.h"
 #include "url/url_constants.h"
@@ -384,10 +385,40 @@ CRNET_API int crnet_request_set_body(crnet_request *req, const void *data,
 {
 	if (!req || (!data && len))
 		return CRNET_E_INVAL;
-	if (!data)
-		req->spec.body.reset();
-	else
+	req->spec.body.reset();
+	req->spec.body_file.reset();
+	req->spec.body_stream.reset();
+	if (data)
 		req->spec.body.emplace(static_cast<const char *>(data), len);
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_request_set_body_file(crnet_request *req, const char *path,
+					  uint64_t offset, uint64_t length)
+{
+	if (!req || !path || !*path)
+		return CRNET_E_INVAL;
+	req->spec.body.reset();
+	req->spec.body_stream.reset();
+	req->spec.body_file = crnet::RequestSpec::File{path, offset, length};
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_request_set_body_stream(crnet_request *req, int64_t length)
+{
+	if (!req || length < CRNET_LENGTH_UNKNOWN)
+		return CRNET_E_INVAL;
+	req->spec.body.reset();
+	req->spec.body_file.reset();
+	req->spec.body_stream = length;
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_request_set_response_stream(crnet_request *req, int enable)
+{
+	if (!req)
+		return CRNET_E_INVAL;
+	req->spec.stream_response = !!enable;
 	return CRNET_OK;
 }
 
@@ -457,6 +488,8 @@ static crnet_transfer *StartTransfer(crnet_client *client,
 		return nullptr;
 	auto t = base::MakeRefCounted<crnet_transfer>(client, req->spec, cb,
 						       user_data, q);
+	if (!t->ok())
+		return nullptr;
 	if (q)
 		q->Started(t.get());
 	if (!client->Start(t)) {
@@ -483,7 +516,10 @@ CRNET_API int crnet_perform(crnet_client *client, const crnet_request *req,
 		*resp = nullptr;
 	if (!client || !req || !resp)
 		return CRNET_E_INVAL;
-	if (!req->spec.url.SchemeIsHTTPOrHTTPS())
+	// Streamed bodies need the transfer handle, which perform never
+	// exposes; they would stall forever.
+	if (!req->spec.url.SchemeIsHTTPOrHTTPS() || req->spec.body_stream ||
+	    req->spec.stream_response)
 		return CRNET_E_INVAL;
 	if (crnet::OnNetworkThread())
 		return CRNET_E_WOULD_DEADLOCK;
@@ -540,6 +576,70 @@ CRNET_API crnet_response *crnet_transfer_take_response(crnet_transfer *t)
 	return t ? t->TakeResponse() : nullptr;
 }
 
+CRNET_API int crnet_transfer_wait_response(crnet_transfer *t,
+					   uint64_t timeout_ms)
+{
+	if (!t)
+		return CRNET_E_INVAL;
+	if (timeout_ms && !t->done() && crnet::OnNetworkThread())
+		return CRNET_E_WOULD_DEADLOCK;
+	return t->WaitResponse(timeout_ms);
+}
+
+CRNET_API int crnet_transfer_write(crnet_transfer *t, const void *data,
+				   size_t len, size_t *written,
+				   uint64_t timeout_ms)
+{
+	if (written)
+		*written = 0;
+	if (!t || (!data && len))
+		return CRNET_E_INVAL;
+	if (!t->upload())
+		return CRNET_E_STATE;
+	if (timeout_ms && crnet::OnNetworkThread())
+		return CRNET_E_WOULD_DEADLOCK;
+	return t->upload()->Write(static_cast<const char *>(data), len, written,
+				  timeout_ms);
+}
+
+CRNET_API int crnet_transfer_write_end(crnet_transfer *t)
+{
+	if (!t)
+		return CRNET_E_INVAL;
+	if (!t->upload())
+		return CRNET_E_STATE;
+	int rc = t->upload()->End();
+	if (rc == CRNET_E_INVAL)
+		t->Cancel(CRNET_E_INVAL);	// fewer bytes than declared
+	return rc;
+}
+
+CRNET_API int crnet_transfer_read(crnet_transfer *t, void *buf, size_t len,
+				  size_t *nread, uint64_t timeout_ms)
+{
+	size_t dummy;
+	if (!nread)
+		nread = &dummy;
+	*nread = 0;
+	if (!t || (!buf && len))
+		return CRNET_E_INVAL;
+	if (!t->download())
+		return CRNET_E_STATE;
+	if (timeout_ms && crnet::OnNetworkThread())
+		return CRNET_E_WOULD_DEADLOCK;
+	bool resume = false;
+	int rc = t->download()->Read(static_cast<char *>(buf), len, nread,
+				     timeout_ms, &resume);
+	if (resume)
+		t->ResumeDownload();
+	return rc;
+}
+
+CRNET_API int crnet_transfer_fd(const crnet_transfer *t)
+{
+	return t && t->download() ? t->download()->fd() : -1;
+}
+
 CRNET_API void crnet_transfer_free(crnet_transfer *t)
 {
 	if (!t)
@@ -587,7 +687,8 @@ CRNET_API int crnet_queue_fd(const crnet_queue *q)
 CRNET_API int crnet_queue_start(crnet_queue *q, crnet_client *client,
 				  const crnet_request *req, void *user_data)
 {
-	if (!q || !client || !req || !req->spec.url.SchemeIsHTTPOrHTTPS())
+	if (!q || !client || !req || !req->spec.url.SchemeIsHTTPOrHTTPS() ||
+	    req->spec.body_stream || req->spec.stream_response)
 		return CRNET_E_INVAL;
 	crnet_transfer *t = StartTransfer(client, req, nullptr, user_data, q);
 	if (!t)

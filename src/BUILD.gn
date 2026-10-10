@@ -37,6 +37,8 @@ shared_library("crnet") {
     "internal.h",
     "profile.cc",
     "queue.cc",
+    "stream.cc",
+    "stream.h",
     "transfer.cc",
     "websocket.cc",
     "websocket.h",
