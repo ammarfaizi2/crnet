@@ -56,6 +56,7 @@ public:
 	}
 
 	ClientConfig &proxy(const std::string &url) { check(crnet_client_config_set_proxy(get(), url.c_str())); return *this; }
+	ClientConfig &proxy_bypass(const std::string &rules) { check(crnet_client_config_set_proxy_bypass(get(), rules.c_str())); return *this; }
 	ClientConfig &user_agent(const std::string &ua) { check(crnet_client_config_set_user_agent(get(), ua.c_str())); return *this; }
 	ClientConfig &sec_ch_ua(const std::string &v) { check(crnet_client_config_set_sec_ch_ua(get(), v.c_str())); return *this; }
 	ClientConfig &platform(const std::string &v) { check(crnet_client_config_set_platform(get(), v.c_str())); return *this; }

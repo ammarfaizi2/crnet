@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 3
+#define CRNET_VERSION_MINOR 4
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.3.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.4.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -179,6 +179,25 @@ CRNET_API void crnet_client_config_free(crnet_client_config *cfg);
  */
 CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
 					    const char *proxy_url);
+
+/*
+ * Destinations that bypass the proxy, in Chrome's --proxy-bypass-list
+ * syntax: rules separated by ',' or ';', each a host pattern with an
+ * optional scheme and port ("*.example.com", "http://intranet:8080",
+ * ".internal"), an IP literal or CIDR block ("10.0.0.0/8", "[::1]"),
+ * "<local>" (host names without a dot) or "<-loopback>".
+ *
+ * Like Chrome, crnet always sends requests to localhost, *.localhost,
+ * loopback and link-local addresses (127/8, ::1, 169.254/16,
+ * fe80::/10) direct, even with a proxy and no bypass rules.
+ * "<-loopback>" removes that implicit bypass, so those destinations go
+ * through the proxy too.
+ *
+ * NULL or "" means no rules. CRNET_E_INVAL if any rule is malformed.
+ */
+#define CRNET_HAS_PROXY_BYPASS 1
+CRNET_API int crnet_client_config_set_proxy_bypass(crnet_client_config *cfg,
+						   const char *rules);
 
 /* Override the browser identity. NULL restores the build default. */
 CRNET_API int crnet_client_config_set_user_agent(crnet_client_config *cfg,

@@ -176,6 +176,7 @@ std::unique_ptr<net::ProxyConfigService> MakeProxyConfigService(
 		pc = net::ProxyConfig::CreateDirect();
 	else
 		pc.proxy_rules().ParseFromString(cfg.proxy);
+	pc.proxy_rules().bypass_rules.ParseFromString(cfg.proxy_bypass);
 	return std::make_unique<net::ProxyConfigServiceFixed>(
 		net::ProxyConfigWithAnnotation(pc, kProxyAnnotation));
 }

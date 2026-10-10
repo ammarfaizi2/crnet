@@ -70,6 +70,7 @@ struct ClientConfig {
 	std::string proxy;		// Chromium proxy rules, "" = direct
 	std::string proxy_user;
 	std::string proxy_pass;
+	std::string proxy_bypass;	// Chromium bypass rules, "" = none
 	std::string user_agent;		// "" = build default
 	std::string sec_ch_ua;		// "" = build default
 	std::string platform = "Linux";

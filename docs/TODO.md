@@ -117,24 +117,6 @@ A connect timeout, separate from the whole-request timeout.
 - Check that it behaves correctly on a reused pooled socket and that
   it applies on each redirect hop.
 
-### proxy-bypass-rules
-
-A proxy bypass list, or a way to disable the implicit loopback bypass.
-
-- Today: Chromium's `ProxyHostMatchingRules::MatchesImplicitRules`
-  sends these destinations direct even with a proxy configured:
-  `localhost` and `*.localhost`; 127/8, `::1` and IPv4-mapped
-  loopback; 169.254/16 and `fe80::/10`.
-  `crnet_client_config_set_proxy()` takes no bypass list, so
-  `<-loopback>` cannot be expressed: a proxied request to `localhost`
-  succeeds without the proxy ever seeing a connection.
-- Impact: proxy tests against a loopback server must use a fake
-  hostname that the proxy maps to 127.0.0.1 (the test server's
-  `.crnet-test` names).
-- Wanted: `crnet_client_config_set_proxy_bypass(cfg, rules)` in
-  Chromium's bypass syntax, or a boolean meaning "proxy every
-  destination". Chrome's behaviour stays the default.
-
 ### per-request-proxy
 
 Choose the proxy per request instead of per client.

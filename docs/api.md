@@ -82,6 +82,7 @@ crnet_client_config_free(cfg);
 | Setting | Default | Notes |
 |---|---|---|
 | `proxy` | direct | `socks5://`, `socks5h://` (same thing: SOCKS5 always resolves names on the proxy), `socks4://`, `http://[user:pass@]host:port`, `https://...`, `direct://`. Chromium supports no SOCKS authentication. |
+| `proxy_bypass` | none | destinations sent direct, in Chrome's `--proxy-bypass-list` syntax: `*.example.com, 10.0.0.0/8, <local>`. Like Chrome, localhost, loopback and link-local destinations always go direct unless the list contains `<-loopback>`. |
 | `user_agent`, `sec_ch_ua`, `platform`, `accept_language` | Chrome on Linux, `en-US,en;q=0.9` | the browser identity, see [browser-emulation.md](browser-emulation.md) |
 | `http2`, `quic` | on | QUIC is used for HTTP/3 when the server advertises it (Alt-Svc or DNS). Through a proxy Chromium never uses QUIC. |
 | `builtin_dns` | on | Chromium's own DNS client, as Chrome on Linux, including HTTPS records (ECH, HTTP/3 hints) |
@@ -397,6 +398,7 @@ feature can be used:
 | `CRNET_HAS_STREAMING` | 0.2.0 | streamed request and response bodies |
 | `CRNET_HAS_WEBSOCKET` | 0.2.0 | the WebSocket client, `crnet_ws_*` |
 | `CRNET_HAS_TRANSFER_RESULT` | 0.3.0 | `crnet_transfer_result()`, `CRNET_E_PENDING` |
+| `CRNET_HAS_PROXY_BYPASS` | 0.4.0 | `crnet_client_config_set_proxy_bypass()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

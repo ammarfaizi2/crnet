@@ -10,8 +10,11 @@
 
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
 #include "crnet/internal.h"
+#include "net/base/scheme_host_port_matcher.h"
+#include "net/proxy_resolution/proxy_host_matching_rules.h"
 #include "crnet/stream.h"
 #include "crnet/websocket.h"
 #include "net/http/http_util.h"
@@ -77,6 +80,24 @@ int ParseProxy(const char *url, ClientConfig *cfg)
 	if (u.has_port())
 		base::StrAppend(&cfg->proxy, {":", u.port()});
 	return CRNET_OK;
+}
+
+// Every rule must parse: ProxyHostMatchingRules::ParseFromString() drops
+// the ones that do not, which would silently send through the proxy what
+// was meant to bypass it.
+bool ValidBypassRules(const std::string &raw)
+{
+	net::ProxyHostMatchingRules rules;
+	base::StringTokenizer t(
+		raw, net::SchemeHostPortMatcher::kParseRuleListDelimiterList);
+	while (t.GetNext()) {
+		if (base::TrimWhitespaceASCII(t.token_piece(), base::TRIM_ALL)
+			    .empty())
+			continue;
+		if (!rules.AddRuleFromString(t.token_piece()))
+			return false;
+	}
+	return true;
 }
 
 int StoreString(std::string *dst, const char *src, const std::string &def)
@@ -171,6 +192,18 @@ CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
 	if (rc == CRNET_OK)
 		cfg->cfg = std::move(tmp);
 	return rc;
+}
+
+CRNET_API int crnet_client_config_set_proxy_bypass(crnet_client_config *cfg,
+						    const char *rules)
+{
+	if (!cfg)
+		return CRNET_E_INVAL;
+	std::string r = rules ? rules : "";
+	if (!ValidBypassRules(r))
+		return CRNET_E_INVAL;
+	cfg->cfg.proxy_bypass = std::move(r);
+	return CRNET_OK;
 }
 
 CRNET_API int crnet_client_config_set_user_agent(crnet_client_config *cfg,
