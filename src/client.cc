@@ -204,22 +204,17 @@ crnet_client *crnet_client::Create(const ClientConfig &cfg)
 	}
 	c->runner_ = c->thread_.task_runner();
 
-	bool ok = false;
-	base::WaitableEvent ev;
-	c->runner_->PostTask(
-		FROM_HERE,
-		base::BindOnce(
-			[](crnet_client *c, bool *ok, base::WaitableEvent *ev) {
-				crnet::MarkNetworkThread();
-				*ok = c->InitOnNetworkThread();
-				ev->Signal();
-			},
-			c, &ok, &ev));
-	ev.Wait();
-	if (!ok) {
-		c->Destroy();
-		return nullptr;
-	}
+	// No need to wait for the context: everything later posted to this
+	// thread (requests, cookie calls, shutdown) runs after this task. A
+	// context that failed to build fails those with CRNET_E_SHUTDOWN.
+	c->runner_->PostTask(FROM_HERE,
+			     base::BindOnce(
+				     [](crnet_client *c) {
+					     crnet::MarkNetworkThread();
+					     if (!c->InitOnNetworkThread())
+						     c->context_.reset();
+				     },
+				     c));
 	return c;
 }
 
@@ -393,6 +388,11 @@ int crnet_client::SetCookie(const std::string &url, const std::string &line)
 		base::BindOnce(
 			[](crnet_client *c, GURL u, std::string line, int *result,
 			   base::WaitableEvent *ev) {
+				if (!c->context_) {
+					*result = CRNET_E_SHUTDOWN;
+					ev->Signal();
+					return;
+				}
 				net::CookieInclusionStatus status;
 				auto cc = net::CanonicalCookie::Create(
 					u, line, base::Time::Now(), std::nullopt,
@@ -436,6 +436,10 @@ std::optional<std::string> crnet_client::GetCookies(const std::string &url)
 		base::BindOnce(
 			[](crnet_client *c, GURL u, std::string *line,
 			   base::WaitableEvent *ev) {
+				if (!c->context_) {
+					ev->Signal();
+					return;
+				}
 				c->context_->cookie_store()->GetCookieListWithOptionsAsync(
 					u, net::CookieOptions::MakeAllInclusive(),
 					net::CookiePartitionKeyCollection(),
@@ -464,6 +468,10 @@ int crnet_client::ClearCookies()
 		FROM_HERE,
 		base::BindOnce(
 			[](crnet_client *c, base::WaitableEvent *ev) {
+				if (!c->context_) {
+					ev->Signal();
+					return;
+				}
 				c->context_->cookie_store()->DeleteAllAsync(
 					base::BindOnce(
 						[](base::WaitableEvent *ev, uint32_t) {

@@ -221,7 +221,9 @@ CRNET_API int crnet_client_config_set_netlog(crnet_client_config *cfg,
 
 /*
  * Create a client. |cfg| may be NULL for defaults and may be freed
- * right after this returns. Returns NULL on failure.
+ * right after this returns. Does not wait for the network context to be
+ * set up; requests may be started immediately. Returns NULL if the
+ * network thread cannot be started.
  */
 CRNET_API crnet_client *crnet_client_new(const crnet_client_config *cfg);
 
