@@ -13,6 +13,7 @@ function. This guide explains how the pieces fit together.
 | `crnet_transfer` | `crnet_start()`, `crnet_queue_pop()` | `crnet_transfer_free()` | yes | one running or finished execution of a request |
 | `crnet_response` | `crnet_perform()`, `crnet_transfer_take_response()` | `crnet_response_free()` | read-only | status, headers, body, connection info |
 | `crnet_queue` | `crnet_queue_new()` | `crnet_queue_free()` | yes | completion queue with a pollable fd |
+| `crnet_ws` | `crnet_ws_connect()` | `crnet_ws_free()` | yes | a WebSocket connection, see [websocket.md](websocket.md) |
 
 Create **few clients and share them**. A client is a full network
 context (like a browser profile): it has its own thread, connection
@@ -123,7 +124,9 @@ crnet_request_set_timeout(req, 10000);
 - `crnet_request_set_priority()` overrides the HTTP/2/3 priority.
 
 A request object is plain data and can be reused and modified after it
-was started; each start copies it.
+was started; each start copies it. Requests with `ws://`/`wss://` URLs
+are only accepted by `crnet_ws_connect()` ([websocket.md](websocket.md));
+`crnet_perform()` and `crnet_start()` reject them with `CRNET_E_INVAL`.
 
 ## Asynchronous requests
 

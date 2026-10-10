@@ -36,6 +36,8 @@ int main()
 | `crnet::ResponseView` | borrowed `const crnet_response *` | what callbacks receive |
 | `crnet::Transfer` | `crnet_transfer` | move-only; destructor cancels and waits |
 | `crnet::Handlers` | `crnet_callbacks` | `std::function` callbacks |
+| `crnet::WebSocket` | `crnet_ws` | move-only; destructor aborts an open connection and waits |
+| `crnet::WsHandlers`, `crnet::WsMessage` | `crnet_ws_callbacks`, a received message | |
 | `crnet::Error` | `std::runtime_error` + `code()` | a `crnet_error` value |
 
 ## Blocking requests
@@ -100,6 +102,34 @@ for (auto &t : ts) {
 	// ...
 }
 ```
+
+## WebSockets
+
+```cpp
+crnet::WebSocket ws = client.websocket("wss://example.com/chat", "chat");
+ws.wait_open();                        // throws crnet::Error on failure
+ws.send_text("hello");
+ws.send_binary(std::string_view(buf, n));
+while (auto m = ws.recv(5000))         // queue mode: no on_message
+	std::cout << (m->is_text() ? m->data : "[binary]") << "\n";
+ws.close(1000, "bye");
+ws.wait_closed();
+```
+
+With handlers (network thread):
+
+```cpp
+crnet::WsHandlers h;
+h.on_open = [](const crnet::ResponseView &resp, const std::string &proto,
+	       const std::string &ext) { /* ... */ };
+h.on_message = [](crnet_ws_msg_type type, std::string_view data) { /* ... */ };
+h.on_close = [](int err, int code, const std::string &reason) { /* ... */ };
+crnet::WebSocket ws = client.websocket(crnet::Request(url), "", std::move(h));
+```
+
+Pass a `crnet::Request` to set an `Origin`, extra headers, a handshake
+timeout or a message size limit. See [websocket.md](websocket.md) for
+the semantics.
 
 ## Mixing with the C API
 

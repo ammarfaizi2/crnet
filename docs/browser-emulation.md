@@ -110,6 +110,13 @@ Names use Chrome's HTTP/1.1 spelling: client hints in lower case
 (`sec-ch-ua`), the rest capitalised (`User-Agent`, `Sec-Fetch-Site`).
 HTTP/2 and HTTP/3 lower-case all names.
 
+### WebSocket handshakes
+
+WebSocket handshakes don't follow these modes: they use exactly what
+Chrome sends for `new WebSocket(...)`. That means no client hints and no
+fetch metadata; `User-Agent` comes before `Upgrade` and the rest is in
+`//net`'s order. See [websocket.md](websocket.md#what-chrome-sends).
+
 ## Header rules
 
 - **Overriding**: `crnet_request_set_header()` replaces a default

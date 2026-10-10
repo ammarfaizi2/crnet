@@ -27,6 +27,7 @@ which is asked about a `.invalid` name.
 | `tests/test_http.cc` | bodies (binary, large up/downloads, chunked), gzip/deflate/br/zstd decoding, raw bodies, size limit, redirects (limits, 303/307 method handling), cookie jar, injected and merged cookies, cookies disabled, per-client jars |
 | `tests/test_async.cc` | callback order, streaming, cancellation, abort from callbacks, pause/resume, release while running and from `on_complete`, deadlock refusal, 200 concurrent requests multiplexed on one HTTP/2 connection, parallelism, multi-threaded `perform`, client shutdown with transfers in flight, completion queue |
 | `tests/test_proxy.cc` | SOCKS5 with remote name resolution, HTTP CONNECT proxy with authentication, failures, headers unchanged through proxies |
+| `tests/test_websocket.cc` | WebSockets: Chrome's handshake headers, both delivery modes, pollable fd, subprotocols, Origin/header overrides, cookies both ways, deflate on/off, client/server/abrupt closes, close codes, fragmentation, large messages, size limit, backpressure, pause, pings, invalid UTF-8, refused/slow handshakes, release semantics, shutdown, proxies, 50 concurrent sockets |
 | `tests/test_cpp.cc` | the C++ wrapper |
 | `tests/c_api_smoke.c` | `crnet.h` compiles as strict C99 (`-pedantic -Werror`) and works from C |
 
@@ -47,6 +48,11 @@ which is asked about a `.invalid` name.
   `/redirect-to?url=&code=`, `/set-cookie?k=v`, `/bytes/N`,
   `/stream/N?chunk=&delay_ms=`, `/delay/MS`, `/encoded/{gzip,deflate,br,zstd}`,
   `/dup-headers`, `/drop`.
+- WebSocket endpoints under `/ws/` (any port, HTTP/1.1 upgrade): echo,
+  handshake report (`/ws/headers`), server close/drop, fragmentation,
+  bursts, big messages, pings, invalid UTF-8, refused, slow or
+  cookie-setting handshakes. The full list is in the server's
+  docstring.
 
 HTTP/2 cookie crumbs are joined at the position of the first crumb.
 python-h2's default would move them to the end, which would hide
@@ -73,7 +79,8 @@ tests/fingerprint/capture_chrome.py --json     # machine readable
 
 It covers typed and script navigations, a form POST, `fetch()` GET with
 and without a page-set `Accept`, a JSON POST with a custom header, a
-cross-site `fetch()` and an XHR, each over HTTP/2 and HTTP/1.1. Compare
+cross-site `fetch()`, an XHR and a WebSocket handshake, over HTTP/2 and
+HTTP/1.1. Compare
 its output with the expectations whenever the Chromium version changes
 (see [updating-chromium.md](updating-chromium.md)).
 

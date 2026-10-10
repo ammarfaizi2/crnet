@@ -13,6 +13,7 @@ src/                      the library; linked into Chromium as //crnet
   global.cc               process-wide Chromium initialisation
   client.cc               crnet_client: network thread + URLRequestContext
   transfer.cc             crnet_transfer: one URLRequest state machine
+  websocket.{h,cc}        crnet_ws: one WebSocketChannel per WebSocket
   profile.cc              browser headers, sec-ch-ua, header ordering
   queue.cc                crnet_queue: completion queue on an eventfd
 cmake/                    args.gn template, pkg-config, CMake package
@@ -81,6 +82,32 @@ handle, the client's running set until `Finish`, a completion queue
 until popped, and the task that deletes the `URLRequest`. That last
 reference matters: `URLRequest::Cancel()` can still queue a delegate
 notification, so the delegate must outlive its request.
+
+## WebSockets
+
+A `crnet_ws` owns a `net::WebSocketChannel` on its client's thread and
+implements `net::WebSocketEventInterface` (through a small adapter the
+channel owns). It plays the role of Chrome's network service
+(`services/network/websocket.cc`):
+
+- the handshake gets the renderer's single extra header (`User-Agent`),
+  an `Origin`, and a first-party `IsolationInfo` of request type
+  `kOther`. A `HeaderHook` on the handshake's `URLRequest` (created via
+  `OnCreateURLRequest`) applies header removals and the Cookie merge
+  without reordering;
+- received frames are reassembled into messages. `HasPendingDataFrames()`
+  is the backpressure valve: returning true makes the channel stop
+  reading (and delay answering a server Close) until `ReadFrames()` is
+  called again on resume;
+- `OnSendDataFrameDone()` arrives once per `SendFrame()`, in order,
+  which drives `bufferedAmount`;
+- proxy credentials must be handed over through the auth callback
+  (`ERR_IO_PENDING`), because `WebSocketStream` ignores synchronously
+  returned ones. The callback is bound to the handshake delegate, so it
+  only runs while the socket is still unfinished;
+- as with transfers, the channel is deleted on a later task that holds
+  a reference to the `crnet_ws`. `on_close` runs exactly once from
+  `Finish()`.
 
 ## Matching Chrome's network configuration
 

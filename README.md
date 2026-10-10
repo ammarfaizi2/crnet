@@ -1,9 +1,9 @@
 # crnet
 
 crnet is a C/C++ network client library built on Chromium's own network
-stack (`//net`). It currently provides an HTTP(S) client: HTTP/1.1,
-HTTP/2 and HTTP/3, with BoringSSL TLS, connection pooling and
-certificate verification against the Chrome Root Store.
+stack (`//net`). It provides an HTTP(S) client (HTTP/1.1, HTTP/2 and
+HTTP/3) and a WebSocket client, with BoringSSL TLS, connection pooling
+and certificate verification against the Chrome Root Store.
 
 Requests go through the same code Chrome uses, so the TLS ClientHello
 (JA3/JA4), the HTTP/2 connection preface (SETTINGS, WINDOW_UPDATE,
@@ -46,6 +46,9 @@ std::cout << r.status() << " " << r.protocol() << "\n" << r.body();
 - **Three ways to run requests**: blocking, asynchronous callbacks with
   streaming and flow control, or a completion queue with a pollable fd
   for your own event loop.
+- **WebSockets** through Chromium's implementation: Chrome's handshake,
+  permessage-deflate, cookies and proxies; messages via callbacks or a
+  pollable queue.
 - **Proxies**: SOCKS5 (with remote DNS), SOCKS4, HTTP and HTTPS proxies,
   with proxy authentication for HTTP(S) proxies.
 - **A stable C ABI**: `libcrnet.so` exports only `crnet_*` C symbols.
@@ -71,6 +74,7 @@ See [docs/](docs/README.md):
 
 - [Building and linking](docs/building.md)
 - [C API guide](docs/api.md) and [C++ wrapper](docs/cpp.md)
+- [WebSockets](docs/websocket.md)
 - [Browser emulation](docs/browser-emulation.md)
 - [Architecture](docs/architecture.md)
 - [Testing](docs/testing.md)

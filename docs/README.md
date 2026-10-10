@@ -1,6 +1,7 @@
 # crnet documentation
 
-crnet is a network client library built on Chromium's network stack.
+crnet is a network client library (HTTP and WebSocket) built on
+Chromium's network stack.
 These documents describe how to build it, how to use it and how it
 works.
 
@@ -9,6 +10,7 @@ works.
 | [building.md](building.md) | Prerequisites, fetching Chromium, building with CMake, build options, installing, linking from your project, deployment |
 | [api.md](api.md) | The C API: objects, lifetimes, threading rules, blocking/async/queue usage, errors, reference |
 | [cpp.md](cpp.md) | The header-only C++17 wrapper |
+| [websocket.md](websocket.md) | WebSocket client: opening, messaging, flow control, closing semantics, Chrome's handshake |
 | [browser-emulation.md](browser-emulation.md) | What crnet makes look like Chrome, request modes, header rules, cookies, limits |
 | [architecture.md](architecture.md) | Internals: threads, request state machine, Chromium integration, design decisions |
 | [testing.md](testing.md) | Running and extending the test suite, the local test server, capturing Chrome's headers |
@@ -24,6 +26,7 @@ your program (any compiler, any C++ stdlib)
 | api.cc       argument checks, handles                      |
 | client.cc    URLRequestContext configured like Chrome      |
 | transfer.cc  one URLRequest state machine per request      |
+| websocket.cc one WebSocketChannel per WebSocket            |
 | profile.cc   Chrome's browser-level headers and their order|
 | queue.cc     completion queue (eventfd)                    |
 |------------------------------------------------------------|
