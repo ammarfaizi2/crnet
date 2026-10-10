@@ -323,18 +323,6 @@ cover it.
 
 ## Build and tooling
 
-### stale-src-symlink
-
-The `chromium/src/crnet` symlink survives copying a checkout.
-
-- Today: `CMakeLists.txt` creates `chromium/src/crnet -> <absolute
-  path>/src` only if it is missing. A copied checkout (`cp`, or a
-  reflink copy) keeps the old absolute link, so it silently compiles
-  the other tree's sources into its own library.
-- Fix: on configure, compare the link's resolved path with
-  `${CMAKE_CURRENT_SOURCE_DIR}/src`, then re-point it or fail. Or use
-  a relative link.
-
 ### tsan-build
 
 ThreadSanitizer support.

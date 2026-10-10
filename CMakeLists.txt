@@ -59,10 +59,9 @@ if(NOT CRNET_CHECKOUT_CR STREQUAL CRNET_PINNED_CR)
 endif()
 message(STATUS "crnet: Chromium ${CRNET_CHECKOUT_CR} at ${CR_SRC}")
 
-# //crnet must point at our src/.
-if(NOT EXISTS "${CR_SRC}/crnet/BUILD.gn")
-  file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CR_SRC}/crnet" SYMBOLIC)
-endif()
+# //crnet must point at our src/; checked again before every build.
+set(CRNET_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/link-src.cmake")
 
 # ---------------------------------------------------------------------------
 # GN configuration
@@ -90,7 +89,8 @@ set(_old_args "")
 if(EXISTS "${CR_OUT}/args.gn")
   file(READ "${CR_OUT}/args.gn" _old_args)
 endif()
-if(NOT _new_args STREQUAL _old_args OR NOT EXISTS "${CR_OUT}/build.ninja")
+if(NOT _new_args STREQUAL _old_args OR NOT EXISTS "${CR_OUT}/build.ninja"
+   OR CRNET_SRC_RELINKED)
   file(WRITE "${CR_OUT}/args.gn" "${_new_args}")
   message(STATUS "crnet: gn gen ${CR_OUT}")
   execute_process(COMMAND "${CR_GN}" gen "${CR_OUT}"
@@ -117,6 +117,9 @@ if(CRNET_NINJA_JOBS)
 endif()
 
 add_custom_target(crnet_chromium_build ALL
+  COMMAND "${CMAKE_COMMAND}" "-DCR_SRC=${CR_SRC}" "-DCR_OUT=${CR_OUT}"
+          "-DCR_GN=${CR_GN}" "-DCRNET_SRC=${CRNET_SRC}"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/link-src.cmake"
   COMMAND "${CR_NINJA}" -C "${CR_OUT}" ${_ninja_jobs} crnet:crnet
   COMMAND "${CMAKE_COMMAND}" -E make_directory "${CRNET_LIB_DIR}"
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different

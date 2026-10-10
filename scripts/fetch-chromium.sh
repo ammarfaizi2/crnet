@@ -82,6 +82,8 @@ log "gclient runhooks"
 "${ROOT_DIR}/scripts/apply-patches.sh" "${SRC_DIR}"
 
 # 5) Expose the crnet GN target as //crnet.
-ln -sfn "${ROOT_DIR}/src" "${SRC_DIR}/crnet"
+# Relative, so that copying the whole tree keeps a valid link; the CMake
+# build re-points it if it still names another tree.
+ln -sfnr "${ROOT_DIR}/src" "${SRC_DIR}/crnet"
 
 log "done: ${SRC_DIR} @ ${VERSION} (${SRC_SHA})"

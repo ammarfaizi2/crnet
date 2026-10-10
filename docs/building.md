@@ -55,7 +55,10 @@ This clones depot_tools and does a shallow checkout of the release in
 `chromium/VERSION` into `chromium/src`. It then syncs the dependencies
 needed for a Linux build and runs the hooks, which download Chromium's
 clang, sysroot, gn and ninja. Finally it links `src/` to
-`chromium/src/crnet`. `CRNET_INSTALL_DEPS=1` additionally runs Chromium's
+`chromium/src/crnet` (a relative link). The CMake build checks that
+link before every build and re-points it if it names another crnet
+tree, as it can after copying a checkout or sharing one Chromium
+checkout between trees; it then recompiles crnet's own sources. `CRNET_INSTALL_DEPS=1` additionally runs Chromium's
 `build/install-build-deps.sh` (it needs sudo); this is only required
 once per machine.
 
