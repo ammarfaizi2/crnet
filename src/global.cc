@@ -29,8 +29,8 @@
 namespace crnet {
 namespace {
 
-std::mutex g_init_mu;
-bool g_init_done = false;
+std::once_flag g_init_once;
+// Written once inside call_once, which orders it before every return.
 bool g_init_ok = false;
 
 thread_local bool tls_network_thread = false;
@@ -108,13 +108,14 @@ bool DoInit(const char *enable_features, const char *disable_features)
 bool EnsureGlobalInit(const char *enable_features,
 		      const char *disable_features, bool *already)
 {
-	std::lock_guard<std::mutex> lk(g_init_mu);
-	if (already)
-		*already = g_init_done;
-	if (!g_init_done) {
+	// After the first call this is a single atomic load.
+	bool ran = false;
+	std::call_once(g_init_once, [&] {
+		ran = true;
 		g_init_ok = DoInit(enable_features, disable_features);
-		g_init_done = true;
-	}
+	});
+	if (already)
+		*already = !ran;
 	return g_init_ok;
 }
 
