@@ -324,3 +324,17 @@ TEST(Identity, ConfiguredBrowserIdentity)
 	}
 	crnet_client_free(c);
 }
+
+TEST_F(ClientTest, RawModeHonoursRemovalAndCookieMerge)
+{
+	crnet_client_set_cookie(client_, HttpsUrl("/").c_str(), "jar=1");
+	crnet_request *req = Req("GET", HttpsUrl("/echo"), CRNET_MODE_RAW);
+	crnet_request_set_header(req, "User-Agent", nullptr);
+	crnet_request_set_header(req, "Accept-Language", nullptr);
+	crnet_request_set_header(req, "Cookie", "mine=2");
+	json e = EchoOf(client_, req);
+	crnet_request_free(req);
+	EXPECT_FALSE(EchoHasHeader(e, "user-agent"));
+	EXPECT_FALSE(EchoHasHeader(e, "accept-language"));
+	EXPECT_EQ(EchoHeader(e, "cookie"), "mine=2; jar=1");
+}

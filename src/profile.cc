@@ -350,8 +350,13 @@ net::HttpRequestHeaders FinalizeHeaders(const RequestSpec &spec,
 						       req.url_chain());
 	}
 
-	if (spec.mode == CRNET_MODE_RAW)
-		return in;
+	if (spec.mode == CRNET_MODE_RAW) {
+		// No browser order to restore: keep //net's.
+		net::HttpRequestHeaders out;
+		for (const auto &e : entries)
+			out.SetHeader(e.name, e.value);
+		return out;
+	}
 
 	base::span<const std::string_view> order =
 		spec.mode == CRNET_MODE_FETCH ? base::span(kFetchOrder)
