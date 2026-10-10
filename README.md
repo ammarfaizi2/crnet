@@ -78,5 +78,9 @@ See [docs/](docs/README.md):
 
 ## License
 
-BSD-3-Clause, the same as Chromium. libcrnet.so contains Chromium code,
-so its third-party notices apply to binary distributions.
+BSD-3-Clause, the same license as Chromium; see [LICENSE](LICENSE).
+
+libcrnet.so statically links Chromium and the third-party code it uses
+(BoringSSL, QUICHE, ICU, zlib, brotli, zstd, ...). Binary distributions
+must also carry their notices; Chromium can generate them with
+`tools/licenses/licenses.py`.
