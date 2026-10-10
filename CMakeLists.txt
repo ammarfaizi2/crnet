@@ -17,7 +17,14 @@
 #   ctest --test-dir build
 #
 cmake_minimum_required(VERSION 3.16)
-project(crnet VERSION 0.1.0 LANGUAGES C CXX)
+# The version lives in crnet.h only.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/include/crnet/crnet.h" _crnet_ver
+     REGEX "^#define CRNET_VERSION_(MAJOR|MINOR|PATCH) [0-9]+$")
+string(REGEX REPLACE ".*MAJOR ([0-9]+).*MINOR ([0-9]+).*PATCH ([0-9]+).*"
+       "\\1.\\2.\\3" _crnet_ver "${_crnet_ver}")
+project(crnet VERSION ${_crnet_ver} LANGUAGES C CXX)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${CMAKE_CURRENT_SOURCE_DIR}/include/crnet/crnet.h")
 
 include(GNUInstallDirs)
 

@@ -21,7 +21,11 @@ namespace {
 
 using crnet::ClientConfig;
 
-#define CRNET_VERSION_STRING "0.1.0"
+#define CRNET_STR2(x) #x
+#define CRNET_STR(x) CRNET_STR2(x)
+#define CRNET_VERSION_STRING                                            \
+	CRNET_STR(CRNET_VERSION_MAJOR) "." CRNET_STR(CRNET_VERSION_MINOR) "." \
+	CRNET_STR(CRNET_VERSION_PATCH)
 
 bool ValidToken(const char *s)
 {
