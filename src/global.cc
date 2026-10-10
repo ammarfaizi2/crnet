@@ -19,10 +19,10 @@
 #include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/logging/logging_settings.h"
-#include "base/message_loop/message_pump_type.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
-#include "base/threading/thread.h"
 #include "crnet/internal.h"
 #include "net/base/network_change_notifier.h"
 
@@ -85,13 +85,16 @@ bool DoInit(const char *enable_features, const char *disable_features)
 
 	// The NetworkChangeNotifier feeds the system DNS configuration to the
 	// built-in resolver and lets //net react to network changes, as in
-	// Chrome. It lives on a dedicated IO thread for the process lifetime.
-	auto *ncn_thread = new base::Thread("crnet-ncn");
-	base::Thread::Options opts(base::MessagePumpType::IO, 0);
-	if (!ncn_thread->StartWithOptions(std::move(opts)))
-		return false;
+	// Chrome. It needs a sequence to live on, not a thread of its own
+	// (its netlink watcher already runs on the ThreadPool), so it gets a
+	// ThreadPool sequence, kept alive for the process lifetime. It must
+	// exist before the first HostResolverManager, hence the wait.
+	scoped_refptr<base::SequencedTaskRunner> ncn_runner =
+		base::ThreadPool::CreateSequencedTaskRunner(
+			{base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN});
+	ncn_runner->AddRef();	// leaked with the notifier
 	base::WaitableEvent ev;
-	ncn_thread->task_runner()->PostTask(
+	ncn_runner->PostTask(
 		FROM_HERE, base::BindOnce(
 				   [](base::WaitableEvent *ev) {
 					   net::NetworkChangeNotifier::CreateIfNeeded()
