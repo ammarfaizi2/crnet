@@ -164,6 +164,11 @@ install(FILES "${CRNET_LIB_SONAME}" "${CRNET_LIB_LINK}"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 install(DIRECTORY include/crnet DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
+# Relocatable: the prefix is derived from where the .pc file ends up, so
+# `cmake --install --prefix ...` works without reconfiguring.
+file(RELATIVE_PATH CRNET_PC_TO_PREFIX
+     "/prefix/${CMAKE_INSTALL_LIBDIR}/pkgconfig" "/prefix")
+string(REGEX REPLACE "/$" "" CRNET_PC_TO_PREFIX "${CRNET_PC_TO_PREFIX}")
 configure_file(cmake/crnet.pc.in "${CMAKE_CURRENT_BINARY_DIR}/crnet.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/crnet.pc"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
