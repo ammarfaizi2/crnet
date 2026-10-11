@@ -38,6 +38,7 @@ Endpoints (all servers):
   /cache/<key>?max_age=N  cacheable response (Cache-Control: max-age=N,
                         an ETag); answers If-None-Match with 304
   /cache-stats/<key>    {"requests", "conditional"} seen for /cache/<key>
+  /response-headers?Name=value&...  200 with those response headers
   /dns-query            DNS over HTTPS (RFC 8484, GET and POST): names
                         under .crnet-test (and Chromium's DoH probe name)
                         are 127.0.0.1, others NXDOMAIN
@@ -271,6 +272,9 @@ def route(req):
         if q.get("dict") == "1":
             headers.append(("use-as-dictionary", 'match="/encoded/*"'))
         return Response(200, headers, data)
+    if p == "/response-headers":
+        return Response(200, [("content-type", "text/plain")] +
+                        [(k.lower(), v) for k, v in req.query], b"ok")
     if p == "/dns-query":
         if req.method == "POST":
             query = req.body
