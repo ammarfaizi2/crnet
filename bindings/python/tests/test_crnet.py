@@ -80,7 +80,7 @@ class ClientTest(unittest.TestCase):
 class Library(unittest.TestCase):
     def test_versions(self):
         major, minor, _ = (int(x) for x in crnet.version().split("."))
-        self.assertGreaterEqual((major, minor), (0, 25))
+        self.assertGreaterEqual((major, minor), (0, 26))
         self.assertRegex(crnet.chromium_version(), r"^\d+\.\d+\.\d+\.\d+$")
         self.assertIn("Chrome/", crnet.default_user_agent())
         self.assertIn("Windows NT 10.0",
@@ -254,6 +254,16 @@ class Configuration(unittest.TestCase):
         with crnet.Client(local_address="127.0.0.2") as c:
             e = c.get(url("/echo", "http", host="127.0.0.1")).json()
         self.assertEqual(e["peer_addr"], "127.0.0.2")
+
+    def test_request_proxy(self):
+        remote = "https://www.crnet-test:%d/echo" % ports["https"]
+        socks = "socks5h://127.0.0.1:%d" % ports["socks5"]
+        with crnet.Client(insecure=True) as c:
+            self.assertTrue(c.get(remote, proxy=socks).via_proxy)
+            with self.assertRaises(crnet.Error):
+                c.get(remote)
+            with self.assertRaises(ValueError):
+                c.get(remote, proxy="ftp://proxy")
 
     def test_bind_interface(self):
         with crnet.Client(bind_interface="lo") as c:

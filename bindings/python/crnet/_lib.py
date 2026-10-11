@@ -12,7 +12,7 @@ from ctypes import (POINTER, c_char_p, c_int, c_int64, c_size_t, c_uint64,
                     c_void_p)
 
 # The oldest library with every function declared below.
-MIN_VERSION = (0, 25, 0)
+MIN_VERSION = (0, 26, 0)
 
 FOREVER = 2**64 - 1     # UINT64_MAX: wait without a time limit
 
@@ -108,6 +108,7 @@ _fn("crnet_request_set_connect_timeout", c_int, _P, c_uint64)
 _fn("crnet_request_set_decompress", c_int, _P, c_int)
 _fn("crnet_request_set_max_body_size", c_int, _P, c_uint64)
 _fn("crnet_request_set_ws_compression", c_int, _P, c_int)
+_fn("crnet_request_set_proxy", c_int, _P, c_char_p)
 
 # Transfers
 _fn("crnet_start", _P, _P, _P, c_void_p, c_void_p)
