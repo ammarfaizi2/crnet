@@ -22,7 +22,7 @@ src/                      the library; linked into Chromium as //crnet
 cmake/                    args.gn template, pkg-config, CMake package
 scripts/                  fetch-chromium.sh, apply-patches.sh
 chromium/VERSION          pinned Chromium release
-chromium/patches/         optional Chromium patches (none needed today)
+chromium/patches/         the few patches crnet applies to Chromium
 examples/, tests/         built with the system toolchain
 ```
 
@@ -151,8 +151,9 @@ reproduces them in `client.cc`:
 | `services/network/...` CertNetFetcher | AIA fetching of missing intermediates | `CertNetFetcherURLRequest` |
 | Blink + network service (`sec_header_helpers.cc`, frame accept header, UA client hints) | browser request headers | `profile.cc` |
 
-No Chromium source is patched. `chromium/patches/` and
-`scripts/apply-patches.sh` are there for when a release needs one.
+Where //net offers no hook, crnet patches Chromium, as little as
+possible: see `chromium/patches/`, applied by
+`scripts/apply-patches.sh` and checked at configure time.
 
 ## Process-wide initialisation (`global.cc`)
 
@@ -196,11 +197,13 @@ different moments. Ordering headers once, right before each
 transaction (`OnBeforeStartTransaction`), is the only point where the
 final set is known, also after redirects.
 
-**No Chromium patches.** Earlier designs (chnet) patched Chromium to
+**Few Chromium patches.** Earlier designs (chnet) patched Chromium to
 keep `Referer`, disable decompression and so on. Current `//net` offers
 proper hooks for all of this: `URLRequest::SetReferrer()` with
 `NEVER_CLEAR`, `set_client_side_content_decoding_enabled()`, the
-NetworkDelegate. Fewer patches make upgrades cheap.
+NetworkDelegate. crnet patches only what has no hook (such as a race
+on a global that only multi-threaded use exposes), and keeps each
+patch small, since every patch makes upgrades costlier.
 
 **Allocator.** PartitionAlloc's malloc shim is disabled
 (`use_allocator_shim=false`). A library must not take over the host

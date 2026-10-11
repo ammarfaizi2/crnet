@@ -1,0 +1,51 @@
+net: Make the URLRequest started flag atomic
+
+URLRequest::Start() records in a global that a request was started, so
+that SetDefaultCookiePolicyToBlock() can CHECK it runs first. Chrome
+starts requests on one thread only; crnet runs one network thread per
+client, so several threads store to the flag at once. The stores all
+write true, but ThreadSanitizer rightly reports them as a data race.
+
+Make the flag a relaxed std::atomic<bool>.
+
+diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
+index 42f1b1a31b..c7ec9cc67b 100644
+--- a/net/url_request/url_request.cc
++++ b/net/url_request/url_request.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "net/url_request/url_request.h"
+ 
++#include <atomic>
+ #include <utility>
+ 
+ #include "base/compiler_specific.h"
+@@ -62,7 +63,9 @@ namespace net {
+ namespace {
+ 
+ // True once the first URLRequest was started.
+-bool g_url_requests_started = false;
++// crnet: atomic, since crnet runs URLRequests on several threads (one
++// per client); Chrome only ever starts them on one.
++std::atomic<bool> g_url_requests_started{false};
+ 
+ // True if cookies are accepted by default.
+ bool g_default_can_use_cookies = true;
+@@ -502,7 +505,7 @@ void URLRequest::SetSecureDnsPolicy(SecureDnsPolicy secure_dns_policy) {
+ 
+ // static
+ void URLRequest::SetDefaultCookiePolicyToBlock() {
+-  CHECK(!g_url_requests_started);
++  CHECK(!g_url_requests_started.load(std::memory_order_relaxed));
+   g_default_can_use_cookies = false;
+ }
+ 
+@@ -621,7 +624,7 @@ void URLRequest::Start() {
+   // itself.
+   DCHECK(blocked_by_.empty());
+ 
+-  g_url_requests_started = true;
++  g_url_requests_started.store(true, std::memory_order_relaxed);
+   response_info_.request_time = base::Time::Now();
+ 
+   load_timing_info_ = LoadTimingInfo();

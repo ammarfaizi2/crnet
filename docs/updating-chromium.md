@@ -69,8 +69,10 @@ N+2, that is an outlier. Follow Chrome Stable.
 
 ## Chromium patches
 
-None are needed today. If a release ever requires one, put a
-`git format-patch`-style file in `chromium/patches/*.patch`.
+crnet keeps a few small patches in `chromium/patches/*.patch`, each
+explaining at its top what it changes and why. When moving to a new
+release, check that each still applies, and whether the new release
+made it unnecessary.
 `scripts/fetch-chromium.sh` applies it through `scripts/apply-patches.sh`,
 which first restores the touched files, so it can be re-run safely.
 Configuring the CMake build checks that every patch is applied and
