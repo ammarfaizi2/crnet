@@ -22,13 +22,16 @@ which is asked about a `.invalid` name.
 
 | File | Area |
 |---|---|
-| `tests/test_basic.cc` | version/identity strings, argument validation, HTTP/1.1, HTTP/2 and plain HTTP, TLS errors, status codes, response headers, network errors, timeouts, host rules, NetLog |
+| `tests/test_basic.cc` | version/identity strings and feature macros, argument validation, HTTP/1.1, HTTP/2 and plain HTTP, TLS errors, status codes, response headers, network errors, timeouts, host rules, NetLog |
 | `tests/test_headers.cc` | browser emulation: header order, values and casing for navigation, form POST, `fetch()`, XHR, cross-site, redirects, overrides, removal, identity configuration |
-| `tests/test_http.cc` | bodies (binary, large up/downloads, chunked), gzip/deflate/br/zstd decoding, raw bodies, size limit, redirects (limits, 303/307 method handling), cookie jar, injected and merged cookies, cookies disabled, per-client jars |
-| `tests/test_async.cc` | callback order, streaming, cancellation, abort from callbacks, pause/resume, release while running and from `on_complete`, deadlock refusal, 200 concurrent requests multiplexed on one HTTP/2 connection, parallelism, multi-threaded `perform`, client shutdown with transfers in flight, completion queue |
-| `tests/test_proxy.cc` | SOCKS5 with remote name resolution, HTTP CONNECT proxy with authentication, failures, headers unchanged through proxies |
-| `tests/test_stream.cc` | streamed bodies: uploads with known and unknown length over HTTP/1.1 and HTTP/2 (Content-Length vs chunked framing), empty bodies, writes from other threads, upload backpressure, length mismatches, writers released on failure, no rewind on 307, file uploads (whole, slices, resent on 307, missing file), streamed downloads (40 MiB both protocols, backpressure, headers before body, pollable fd, timeouts, errors after data, failure before headers), on_data precedence, upload and download together, 16 concurrent streamed transfers |
+| `tests/test_http.cc` | bodies (binary, large up/downloads, chunked), gzip/deflate/br/zstd decoding and what was decoded (stacked, unknown and dictionary codings), raw bodies, size limit, redirects (limits, 303/307 method handling), cookie jar, injected and merged cookies, cookies disabled, per-client jars, connection reuse and load timing, the connect timeout (TLS, proxy handshake, each redirect hop, reused connections) |
+| `tests/test_async.cc` | callback order, `crnet_transfer_result()` from the moment `on_complete` is entered, streaming, cancellation, abort from callbacks, pause/resume, release while running and from `on_complete`, deadlock refusal, 200 concurrent requests multiplexed on one HTTP/2 connection, parallelism, multi-threaded `perform`, client shutdown with transfers in flight, completion queue |
+| `tests/test_proxy.cc` | SOCKS5 with remote name resolution, HTTP CONNECT proxy with authentication, failures, headers unchanged through proxies, bypass rules (implicit loopback bypass, `<-loopback>`, host rules, malformed lists) |
+| `tests/test_stream.cc` | streamed bodies: uploads with known and unknown length over HTTP/1.1 and HTTP/2 (Content-Length vs chunked framing), empty bodies, writes from other threads, upload backpressure, length mismatches, writers released on failure, no rewind on 307, file uploads (whole, slices, resent on 307, missing file), streamed downloads (40 MiB both protocols, backpressure, headers before body, pollable fd, timeouts, errors after data, failure before headers), on_data precedence, upload and download together, 16 concurrent streamed transfers, transfer progress, uploads driven by the pollable write fd |
 | `tests/test_websocket.cc` | WebSockets: Chrome's handshake headers, both delivery modes, pollable fd, subprotocols, Origin/header overrides, cookies both ways, deflate on/off, client/server/abrupt closes, close codes, fragmentation, large messages, size limit, backpressure, pause, pings, invalid UTF-8, refused/slow handshakes, release semantics, shutdown, proxies, 50 concurrent sockets, WebSockets over HTTP/2 (RFC 8441) on an existing connection and the HTTP/1.1 upgrade without one |
+| `tests/test_tls.cc` | extra trust anchors (file, PEM, anchors only, malformed), client certificates over HTTP and WebSocket |
+| `tests/test_cookies.cc` | cookie jar export and import: lossless JSON round trip including partitioned cookies, Netscape round trip and curl's files, malformed and refused imports, public-suffix cookies |
+| `tests/test_cache.cc` | the HTTP cache: off by default, fresh and stale entries, revalidation, every request cache mode, the disk cache across clients |
 | `tests/test_cpp.cc` | the C++ wrapper |
 | `tests/c_api_smoke.c` | `crnet.h` compiles as strict C99 (`-pedantic -Werror`) and works from C |
 
@@ -47,6 +50,9 @@ which is asked about a `.invalid` name.
   (`crnet:secret`). Both resolve `*.crnet-test` to 127.0.0.1
   themselves. Those names do not exist in DNS, so a successful request
   proves the name was resolved on the proxy.
+- An HTTPS port that requires a client certificate issued by the CA
+  (`https_mtls`; the client's PEM files are `client_cert`,
+  `client_key`).
 - Endpoints: `/echo` (the request as JSON, headers in **wire order**,
   plus the client's source port), `/status/N`, `/redirect/N`,
   `/redirect-to?url=&code=`, `/set-cookie?k=v`, `/bytes/N`,
