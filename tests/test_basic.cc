@@ -99,7 +99,8 @@ TEST(Validation, ProxyStrings)
 	EXPECT_EQ(crnet_client_config_set_proxy(cfg, nullptr), CRNET_OK);
 	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "ftp://proxy:21"), CRNET_E_INVAL);
 	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "proxy:3128"), CRNET_E_INVAL);
-	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "socks5://u:p@h:1"), CRNET_E_INVAL);
+	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "socks5://u:p@h:1"), CRNET_OK);
+	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "socks4://u:p@h:1"), CRNET_E_INVAL);
 	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "http://h:1/path"), CRNET_E_INVAL);
 	crnet_client_config_free(cfg);
 }

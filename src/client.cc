@@ -19,6 +19,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "components/network_session_configurator/browser/network_session_configurator.h"
 #include "crnet/cookie_io.h"
+#include "crnet/socks_auth.h"
 #include "crnet/state.h"
 #include "crnet/internal.h"
 #include "crnet/websocket.h"
@@ -288,9 +289,22 @@ crnet_client::~crnet_client() = default;
 
 crnet_client *crnet_client::Create(const ClientConfig &cfg)
 {
+	// SOCKS5 credentials go into the process-wide table the patched
+	// SOCKS5 client reads (crnet/socks_auth.h).
+	std::string socks_key;
+	if (!cfg.proxy_user.empty()) {
+		socks_key = crnet::SocksProxyKey(cfg.proxy);
+		if (!socks_key.empty() &&
+		    !crnet::RegisterSocksCredentials(socks_key, cfg.proxy_user,
+						     cfg.proxy_pass))
+			return nullptr;
+	}
 	auto *c = new crnet_client(cfg);
+	c->socks_key_ = std::move(socks_key);
 	base::Thread::Options opts(base::MessagePumpType::IO, 0);
 	if (!c->thread_.StartWithOptions(std::move(opts))) {
+		if (!c->socks_key_.empty())
+			crnet::UnregisterSocksCredentials(c->socks_key_);
 		delete c;
 		return nullptr;
 	}
@@ -443,6 +457,8 @@ void crnet_client::Destroy()
 	// The state files are written once the saves posted at shutdown ran.
 	if (state_runner_)
 		crnet::FlushStateRunner(state_runner_.get());
+	if (!socks_key_.empty())
+		crnet::UnregisterSocksCredentials(socks_key_);
 	delete this;
 }
 

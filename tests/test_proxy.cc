@@ -269,3 +269,102 @@ TEST(Proxy, Socks5GreetingFailures)
 		EXPECT_EQ(r.net_error(), c.net_error);
 	}
 }
+
+// ------------------------------------------------------------------
+// SOCKS5 username/password authentication (RFC 1929)
+// ------------------------------------------------------------------
+
+namespace {
+
+std::string AuthProxy(const std::string &userinfo)
+{
+	return "socks5h://" + userinfo + "@127.0.0.1:" + std::to_string(ServerPorts().socks5_auth);
+}
+
+json SocksAuths()
+{
+	crnet_client *c = NewTestClient();
+	Result r = Get(c, HttpsUrl("/echo"));
+	crnet_client_free(c);
+	return r.echo()["stats"]["socks5_auths"];
+}
+
+} // namespace
+
+TEST(Proxy, Socks5UsernamePassword)
+{
+	size_t before = SocksAuths().size();
+	crnet_client *c = ProxyClient(AuthProxy("crnet:secret"));
+	ASSERT_NE(c, nullptr);
+	Result r = Get(c, RemoteOnlyUrl(ServerPorts().https, "/echo"));
+	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	EXPECT_TRUE(crnet_response_via_proxy(r.resp));
+	crnet_client_free(c);
+	json auths = SocksAuths();
+	ASSERT_EQ(auths.size(), before + 1);
+	EXPECT_EQ(auths.back(), json::array({"crnet", true}));
+}
+
+TEST(Proxy, Socks5WrongPasswordIsAnAuthFailure)
+{
+	crnet_client *c = ProxyClient(AuthProxy("crnet:wrong"));
+	Result r = Get(c, RemoteOnlyUrl(ServerPorts().https, "/echo"));
+	EXPECT_EQ(r.rc, CRNET_E_NET);
+	EXPECT_EQ(r.net_error(), -185);	// ERR_SOCKS_AUTH_FAILED
+	crnet_client_free(c);
+}
+
+TEST(Proxy, Socks5WithoutCredentialsIsRefused)
+{
+	crnet_client *c = ProxyClient("socks5h://127.0.0.1:" +
+				      std::to_string(ServerPorts().socks5_auth));
+	Result r = Get(c, RemoteOnlyUrl(ServerPorts().https, "/echo"));
+	EXPECT_EQ(r.net_error(), -199);	// no acceptable methods
+	crnet_client_free(c);
+}
+
+// Credentials are offered besides "no authentication"; a proxy that
+// needs none just picks that.
+TEST(Proxy, Socks5CredentialsForAnOpenProxy)
+{
+	crnet_client *c = ProxyClient("socks5h://crnet:secret@127.0.0.1:" +
+				      std::to_string(ServerPorts().socks5));
+	Result r = Get(c, RemoteOnlyUrl(ServerPorts().https, "/echo"));
+	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	crnet_client_free(c);
+}
+
+TEST(Proxy, Socks5CredentialsArePerProxy)
+{
+	crnet_client *a = ProxyClient(AuthProxy("crnet:secret"));
+	ASSERT_NE(a, nullptr);
+	// Same proxy, same credentials: fine. Different ones: refused while
+	// the first client exists.
+	crnet_client *same = ProxyClient(AuthProxy("crnet:secret"));
+	EXPECT_NE(same, nullptr);
+	crnet_client_config *cfg = crnet_client_config_new();
+	ASSERT_EQ(crnet_client_config_set_proxy(cfg, AuthProxy("other:pass").c_str()), CRNET_OK);
+	EXPECT_EQ(crnet_client_new(cfg), nullptr);
+	crnet_client_free(a);
+	crnet_client_free(same);
+	crnet_client *b = crnet_client_new(cfg);
+	EXPECT_NE(b, nullptr) << "allowed once the others are gone";
+	crnet_client_free(b);
+	crnet_client_config_free(cfg);
+}
+
+TEST(Proxy, Socks5CredentialSyntax)
+{
+	crnet_client_config *cfg = crnet_client_config_new();
+	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "socks5://u%3Ax:p%40ss@127.0.0.1:1080"),
+		  CRNET_OK);
+	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "socks4://u:p@127.0.0.1:1080"),
+		  CRNET_E_INVAL);
+	EXPECT_EQ(crnet_client_config_set_proxy(cfg, "socks5://u@127.0.0.1:1080"),
+		  CRNET_E_INVAL) << "RFC 1929 needs a password";
+	std::string long_user(256, 'u');
+	EXPECT_EQ(crnet_client_config_set_proxy(
+			  cfg, ("socks5://" + long_user + ":p@127.0.0.1:1080").c_str()),
+		  CRNET_E_INVAL);
+	crnet_client_config_free(cfg);
+}

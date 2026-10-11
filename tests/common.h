@@ -24,6 +24,7 @@ struct Ports {
 	int https_h1 = 0;	// http/1.1 only
 	int http = 0;
 	int socks5 = 0;
+	int socks5_auth = 0;	// requires crnet:secret (RFC 1929)
 	int http_proxy = 0;
 	int https_ws_h2 = 0;	// h2 that also serves WebSockets (RFC 8441)
 	int https_mtls = 0;	// requires a client certificate

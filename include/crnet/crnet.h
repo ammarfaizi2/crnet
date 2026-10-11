@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 20
+#define CRNET_VERSION_MINOR 21
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.20.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.21.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -174,9 +174,19 @@ CRNET_API void crnet_client_config_free(crnet_client_config *cfg);
  * "socks4://...", "http://host:port", "https://host:port", or
  * "direct://". SOCKS5 always resolves host names on the proxy (socks5
  * and socks5h are equivalent). Credentials in an http(s) proxy URL
- * ("http://user:pass@host:port") answer proxy auth challenges; SOCKS
- * authentication is not supported by Chromium. NULL means direct.
+ * ("http://user:pass@host:port") answer proxy auth challenges. In a
+ * SOCKS5 URL ("socks5://user:pass@host:port", each 1 to 255 bytes,
+ * percent-encoded as needed) they enable username/password
+ * authentication (RFC 1929), offered besides "no authentication"; a
+ * proxy rejecting them fails requests with net error -185. SOCKS4 has
+ * no credentials. NULL means direct.
+ *
+ * Chromium's SOCKS5 client finds the credentials by proxy host and
+ * port, so clients that exist at the same time cannot use the same
+ * SOCKS5 proxy with different credentials: crnet_client_new() returns
+ * NULL for the second one.
  */
+#define CRNET_HAS_SOCKS5_AUTH 1
 CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
 					    const char *proxy_url);
 
@@ -1158,6 +1168,7 @@ CRNET_API int crnet_response_via_proxy(const crnet_response *resp);
  *                 supported);
  *   -199          the proxy accepted none of the offered authentication
  *                 methods;
+ *   -185          the proxy rejected the username and password;
  *   -100          ERR_CONNECTION_CLOSED: the proxy closed the connection
  *                 during the handshake (other transport errors, such as
  *                 a reset, keep their own codes);

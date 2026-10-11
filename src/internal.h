@@ -448,6 +448,9 @@ private:
 	// Destroy()), and the HSTS persister, destroyed before context_ so
 	// that it saves first.
 	scoped_refptr<base::SequencedTaskRunner> state_runner_;
+	// "host:port" of the SOCKS5 proxy whose credentials this client
+	// registered (crnet/socks_auth.h), or "".
+	std::string socks_key_;
 	std::unique_ptr<net::TransportSecurityPersister> hsts_persister_;
 	std::unique_ptr<net::FileNetLogObserver> netlog_;
 	scoped_refptr<net::CertNetFetcherURLRequest> cert_fetcher_;

@@ -36,16 +36,6 @@ Choose the proxy per request instead of per client.
   example through a `ProxyDelegate`; check what the pinned Chromium
   passes to it.
 
-### socks5-auth
-
-SOCKS5 username/password authentication (RFC 1929).
-
-- Today: Chromium's SOCKS5 client offers only method 0x00, so a proxy
-  that requires a credential cannot be used.
-- Cost: needs a Chromium patch to the greeting and an auth
-  sub-negotiation. Only worth it once a credentialed SOCKS5 proxy is
-  actually needed.
-
 ### fresh-connection
 
 A per-request fresh connection.

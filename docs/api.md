@@ -81,7 +81,7 @@ crnet_client_config_free(cfg);
 
 | Setting | Default | Notes |
 |---|---|---|
-| `proxy` | direct | `socks5://`, `socks5h://` (same thing: SOCKS5 always resolves names on the proxy), `socks4://`, `http://[user:pass@]host:port`, `https://...`, `direct://`. Chromium supports no SOCKS authentication. |
+| `proxy` | direct | `socks5://`, `socks5h://` (same thing: SOCKS5 always resolves names on the proxy), `socks4://`, `http://[user:pass@]host:port`, `https://...`, `direct://`. `socks5://user:pass@host:port` enables SOCKS5 username/password authentication (RFC 1929); two clients that exist at the same time cannot use one SOCKS5 proxy with different credentials. |
 | `proxy_bypass` | none | destinations sent direct, in Chrome's `--proxy-bypass-list` syntax: `*.example.com, 10.0.0.0/8, <local>`. Like Chrome, localhost, loopback and link-local destinations always go direct unless the list contains `<-loopback>`. |
 | `user_agent`, `sec_ch_ua`, `platform`, `accept_language` | Chrome on Linux, `en-US,en;q=0.9` | the browser identity, see [browser-emulation.md](browser-emulation.md) |
 | `http2`, `quic` | on | QUIC is used for HTTP/3 when the server advertises it (Alt-Svc or DNS). Through a proxy Chromium never uses QUIC. |
@@ -422,7 +422,8 @@ for `.com`) rejects all of it.
 SOCKS5 proxy failures are told apart, unlike in Chrome: a refused
 CONNECT reports its reply code as net error -191 (code 1) to -198
 (code 8), also available as `crnet_response_socks_reply()`; -199 means
-the proxy accepted no offered authentication method; a proxy closing
+the proxy accepted no offered authentication method; -185 that it
+rejected the username and password; a proxy closing
 the connection during the handshake gives `ERR_CONNECTION_CLOSED`; a
 malformed reply stays `ERR_SOCKS_CONNECTION_FAILED` (-120).
 
@@ -520,6 +521,7 @@ feature can be used:
 | `CRNET_HAS_WS_COMPRESSION_SWITCH` | 0.18.0 | `crnet_request_set_ws_compression()` |
 | `CRNET_HAS_PROGRESS_CALLBACK` | 0.19.0 | `crnet_transfer_set_progress_callback()` |
 | `CRNET_HAS_WS_PING` | 0.20.0 | `crnet_ws_ping()`, `crnet_ws_set_pong_callback()`, `crnet_ws_set_auto_ping()` |
+| `CRNET_HAS_SOCKS5_AUTH` | 0.21.0 | `socks5://user:pass@...` proxy URLs |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

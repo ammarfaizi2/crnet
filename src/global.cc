@@ -24,6 +24,7 @@
 #include "base/task/thread_pool.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "crnet/internal.h"
+#include "crnet/socks_auth.h"
 #include "net/base/network_change_notifier.h"
 
 namespace crnet {
@@ -82,6 +83,7 @@ bool DoInit(const char *enable_features, const char *disable_features)
 	base::FeatureList::SetInstance(std::move(fl));
 
 	base::ThreadPoolInstance::CreateAndStartWithDefaultParams("crnet");
+	InstallSocksCredentialsLookup();
 
 	// The NetworkChangeNotifier feeds the system DNS configuration to the
 	// built-in resolver and lets //net react to network changes, as in

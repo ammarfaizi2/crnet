@@ -43,6 +43,8 @@ shared_library("crnet") {
     "internal.h",
     "profile.cc",
     "queue.cc",
+    "socks_auth.cc",
+    "socks_auth.h",
     "state.cc",
     "state.h",
     "stream.cc",

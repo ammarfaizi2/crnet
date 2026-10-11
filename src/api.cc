@@ -83,12 +83,17 @@ int ParseProxy(const char *url, ClientConfig *cfg)
 	if (u.path() != "/" || u.has_query())
 		return CRNET_E_INVAL;
 	if (u.has_username()) {
-		if (scheme == "socks4" || scheme == "socks5")
-			return CRNET_E_INVAL;	// unsupported by Chromium
+		if (scheme == "socks4")
+			return CRNET_E_INVAL;	// SOCKS4 has no passwords
 		cfg->proxy_user = base::UnescapeURLComponent(
 			u.username(), base::UnescapeRule::NORMAL);
 		cfg->proxy_pass = base::UnescapeURLComponent(
 			u.password(), base::UnescapeRule::NORMAL);
+		// RFC 1929 sends each in a length byte.
+		if (scheme == "socks5" &&
+		    (cfg->proxy_user.empty() || cfg->proxy_user.size() > 255 ||
+		     cfg->proxy_pass.empty() || cfg->proxy_pass.size() > 255))
+			return CRNET_E_INVAL;
 	}
 	cfg->proxy = base::StrCat({scheme, "://", u.host()});
 	if (u.has_port())
