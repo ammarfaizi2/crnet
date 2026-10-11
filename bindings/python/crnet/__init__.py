@@ -188,7 +188,7 @@ def _ws_closed(ws):
 
 
 def version():
-    """The loaded library's version, e.g. "0.23.0"."""
+    """The loaded library's version, e.g. "0.24.0"."""
     return _lib.crnet_version().decode().split(" ", 1)[0]
 
 
@@ -652,7 +652,7 @@ class WebSocket:
 
 _STRING_OPTIONS = ("proxy", "proxy_bypass", "user_agent", "sec_ch_ua",
                    "platform", "accept_language", "host_rules", "netlog",
-                   "state_dir", "local_address")
+                   "state_dir", "local_address", "bind_interface")
 _BOOL_OPTIONS = ("http2", "quic", "builtin_dns", "cookies", "insecure",
                  "trust_anchors_only")
 
@@ -663,7 +663,8 @@ class Client:
 
     Options (all optional), as in crnet_client_config_set_*():
       proxy, proxy_bypass, user_agent, sec_ch_ua, platform,
-      accept_language, host_rules, netlog, state_dir, local_address (str)
+      accept_language, host_rules, netlog, state_dir, local_address,
+      bind_interface (str)
       http2, quic, builtin_dns, cookies, insecure, trust_anchors_only
       platform_profile (PLATFORM_*)
       secure_dns (SECURE_DNS_*), with doh_templates (str)

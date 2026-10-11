@@ -64,7 +64,7 @@ class ClientTest(unittest.TestCase):
 class Library(unittest.TestCase):
     def test_versions(self):
         major, minor, _ = (int(x) for x in crnet.version().split("."))
-        self.assertGreaterEqual((major, minor), (0, 23))
+        self.assertGreaterEqual((major, minor), (0, 24))
         self.assertRegex(crnet.chromium_version(), r"^\d+\.\d+\.\d+\.\d+$")
         self.assertIn("Chrome/", crnet.default_user_agent())
         self.assertIn("Windows NT 10.0",
@@ -79,6 +79,8 @@ class Library(unittest.TestCase):
             crnet.Client(proxy="ftp://proxy:21")
         with self.assertRaises(ValueError):
             crnet.Client(local_address="not-an-ip")
+        with self.assertRaises(ValueError):
+            crnet.Client(bind_interface="a/b")
 
     def test_closed_client(self):
         c = crnet.Client()
@@ -236,6 +238,14 @@ class Configuration(unittest.TestCase):
         with crnet.Client(local_address="127.0.0.2") as c:
             e = c.get(url("/echo", "http", host="127.0.0.1")).json()
         self.assertEqual(e["peer_addr"], "127.0.0.2")
+
+    def test_bind_interface(self):
+        with crnet.Client(bind_interface="lo") as c:
+            self.assertEqual(c.get(url("/echo", "http")).status, 200)
+        with crnet.Client(bind_interface="crnet-none0") as c:
+            with self.assertRaises(crnet.Error) as cm:
+                c.get(url("/echo", "http"))
+        self.assertEqual(cm.exception.net_error, -109)
 
 
 class Cookies(ClientTest):

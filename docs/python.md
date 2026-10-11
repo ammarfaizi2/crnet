@@ -39,7 +39,7 @@ seconds:
 
 | Option | Value |
 |---|---|
-| `proxy`, `proxy_bypass`, `host_rules`, `local_address` | strings, as in the C API |
+| `proxy`, `proxy_bypass`, `host_rules`, `local_address`, `bind_interface` | strings, as in the C API |
 | `user_agent`, `sec_ch_ua`, `platform`, `accept_language`, `platform_profile` | the browser identity; `platform_profile` is `PLATFORM_LINUX`, `PLATFORM_WINDOWS` or `PLATFORM_MACOS` |
 | `http2`, `quic`, `builtin_dns`, `cookies`, `insecure` | booleans |
 | `secure_dns`, `doh_templates` | `SECURE_DNS_*` and the DoH URI templates |
