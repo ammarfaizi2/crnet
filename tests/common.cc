@@ -66,7 +66,10 @@ void StartServer()
 	g_ports.http = j["http"];
 	g_ports.socks5 = j["socks5"];
 	g_ports.http_proxy = j["http_proxy"];
+	g_ports.https_mtls = j["https_mtls"];
 	g_ports.ca_file = j["ca"];
+	g_ports.client_cert_file = j["client_cert"];
+	g_ports.client_key_file = j["client_key"];
 	atexit(StopServer);
 }
 

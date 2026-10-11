@@ -6,6 +6,8 @@ Listens on 127.0.0.1 (ephemeral ports) and serves:
   * HTTPS with ALPN h2 + http/1.1 (certificate issued by a throwaway CA,
     whose path is reported as "ca")
   * HTTPS restricted to http/1.1
+  * HTTPS requiring a client certificate issued by the same CA
+    ("https_mtls"; the client's PEM files are "client_cert", "client_key")
   * plain HTTP/1.1
   * a SOCKS5 proxy (no auth, CONNECT only, remote name resolution)
   * an HTTP CONNECT proxy requiring Basic auth (user "crnet", pass "secret")
@@ -794,25 +796,47 @@ def make_cert(tmpdir):
         ["openssl", "x509", "-req", "-in", csr, "-CA", ca, "-CAkey", ca_key,
          "-CAcreateserial", "-days", "2", "-extfile", ext, "-out", crt],
         **quiet)
-    return ca, crt, key
+    # A client certificate from the same CA, for the mutual-TLS port.
+    client_key = os.path.join(tmpdir, "client-key.pem")
+    client_csr = os.path.join(tmpdir, "client.csr")
+    client_crt = os.path.join(tmpdir, "client.pem")
+    client_ext = os.path.join(tmpdir, "client.ext")
+    subprocess.run(
+        ["openssl", "req", "-new", *ec, "-subj", "/CN=crnet test client",
+         "-keyout", client_key, "-out", client_csr], **quiet)
+    with open(client_ext, "w") as f:
+        f.write("basicConstraints=critical,CA:FALSE\n"
+                "keyUsage=critical,digitalSignature\n"
+                "extendedKeyUsage=clientAuth\n")
+    subprocess.run(
+        ["openssl", "x509", "-req", "-in", client_csr, "-CA", ca,
+         "-CAkey", ca_key, "-CAcreateserial", "-days", "2",
+         "-extfile", client_ext, "-out", client_crt], **quiet)
+    return ca, crt, key, client_crt, client_key
 
 
-def tls_context(crt, key, alpn):
+def tls_context(crt, key, alpn, client_ca=None):
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(crt, key)
     ctx.set_alpn_protocols(alpn)
+    if client_ca:
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        ctx.load_verify_locations(client_ca)
     return ctx
 
 
 async def main():
     tmpdir = tempfile.mkdtemp(prefix="crnet-test-")
-    ca, crt, key = make_cert(tmpdir)
+    ca, crt, key, client_crt, client_key = make_cert(tmpdir)
     host = "127.0.0.1"
     servers = {
         "https": await asyncio.start_server(
             serve_tls, host, 0, ssl=tls_context(crt, key, ["h2", "http/1.1"])),
         "https_h1": await asyncio.start_server(
             serve_tls, host, 0, ssl=tls_context(crt, key, ["http/1.1"])),
+        "https_mtls": await asyncio.start_server(
+            serve_tls, host, 0,
+            ssl=tls_context(crt, key, ["h2", "http/1.1"], client_ca=ca)),
         "http": await asyncio.start_server(
             lambda r, w: serve_h1(r, w, False), host, 0),
         "socks5": await asyncio.start_server(serve_socks5, host, 0),
@@ -821,6 +845,8 @@ async def main():
     ports = {k: s.sockets[0].getsockname()[1] for k, s in servers.items()}
     ports["cert"] = crt
     ports["ca"] = ca
+    ports["client_cert"] = client_crt
+    ports["client_key"] = client_key
     print(json.dumps(ports), flush=True)
 
     loop = asyncio.get_event_loop()

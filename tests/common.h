@@ -25,7 +25,10 @@ struct Ports {
 	int http = 0;
 	int socks5 = 0;
 	int http_proxy = 0;
+	int https_mtls = 0;	// requires a client certificate
 	std::string ca_file;	// PEM of the CA that issued the server cert
+	std::string client_cert_file;	// for https_mtls, issued by the CA
+	std::string client_key_file;
 };
 
 // Ports of the running test server (started on first use).

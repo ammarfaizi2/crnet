@@ -101,7 +101,7 @@ async def main():
     args = ap.parse_args()
 
     tmp = tempfile.mkdtemp(prefix="crnet-capture-cert-")
-    _ca, crt, key = ts.make_cert(tmp)
+    _ca, crt, key, _client_crt, _client_key = ts.make_cert(tmp)
     servers = [
         await asyncio.start_server(ts.serve_tls, "127.0.0.1", 0,
                                    ssl=ts.tls_context(crt, key, alpn))
