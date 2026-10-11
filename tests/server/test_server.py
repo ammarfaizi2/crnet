@@ -38,6 +38,9 @@ Endpoints (all servers):
   /cache/<key>?max_age=N  cacheable response (Cache-Control: max-age=N,
                         an ETag); answers If-None-Match with 304
   /cache-stats/<key>    {"requests", "conditional"} seen for /cache/<key>
+  /dns-query            DNS over HTTPS (RFC 8484, GET and POST): names
+                        under .crnet-test (and Chromium's DoH probe name)
+                        are 127.0.0.1, others NXDOMAIN
   /drop                 closes the connection without a response
 
 WebSocket endpoints (HTTP/1.1 upgrade, any server):
@@ -90,7 +93,8 @@ PLAINTEXT = (b"crnet content-encoding test payload. " * 200)
 PROXY_USER = "crnet"
 PROXY_PASS = "secret"
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
-         "ws_h2_connects": 0, "ws_pongs": 0, "ws_last_close": None}
+         "ws_h2_connects": 0, "ws_pongs": 0, "ws_last_close": None,
+         "doh_queries": []}
 CACHE_STATS = {}    # /cache/<key> -> {"requests": n, "conditional": n}
 
 
@@ -98,6 +102,39 @@ def pattern(n):
     block = bytes(range(256))
     reps, rem = divmod(n, 256)
     return block * reps + block[:rem]
+
+
+def doh_answer(query):
+    """Answers one DNS query (wire format). A records for names under
+    .crnet-test point to 127.0.0.1, other types there get an empty
+    answer, and every other name is NXDOMAIN, except the name Chromium
+    resolves to probe a DoH server (net::kDohProbeHostname)."""
+    qid, flags, qdcount = struct.unpack("!HHH", query[:6])
+    if qdcount != 1:
+        return None
+    labels, i = [], 12
+    while query[i]:
+        n = query[i]
+        labels.append(query[i + 1:i + 1 + n].decode("ascii", "replace"))
+        i += 1 + n
+    qtype, qclass = struct.unpack("!HH", query[i + 1:i + 5])
+    question = query[12:i + 5]
+    name = ".".join(labels).lower()
+    STATS["doh_queries"].append([name, qtype])
+    ours = (name == "crnet-test" or name.endswith(".crnet-test") or
+            name == "www.gstatic.com")
+    rcode = 0 if ours else 3
+    answers = b""
+    ancount = 0
+    if ours and qtype == 1 and qclass == 1:
+        # Name pointer to the question, A, IN, TTL 60, 127.0.0.1.
+        answers = struct.pack("!HHHIH", 0xC00C, 1, 1, 60, 4) + \
+            socket.inet_aton("127.0.0.1")
+        ancount = 1
+    # QR, opcode and RD from the query, RA set.
+    rflags = 0x8000 | (flags & 0x7900) | 0x0080 | rcode
+    return struct.pack("!HHHHHH", qid, rflags, 1, ancount, 0, 0) + \
+        question + answers
 
 
 def compress(enc, data):
@@ -234,6 +271,20 @@ def route(req):
         if q.get("dict") == "1":
             headers.append(("use-as-dictionary", 'match="/encoded/*"'))
         return Response(200, headers, data)
+    if p == "/dns-query":
+        if req.method == "POST":
+            query = req.body
+        else:
+            b64 = q.get("dns", "")
+            query = base64.urlsafe_b64decode(b64 + "=" * (-len(b64) % 4))
+        try:
+            answer = doh_answer(query)
+        except (IndexError, struct.error):
+            answer = None
+        if answer is None:
+            return Response(400, [], b"bad query")
+        return Response(200, [("content-type", "application/dns-message"),
+                              ("cache-control", "max-age=60")], answer)
     if p in ("/upload-digest", "/slow-upload"):
         doc = {"len": len(req.body),
                "sha256": hashlib.sha256(req.body).hexdigest(),
