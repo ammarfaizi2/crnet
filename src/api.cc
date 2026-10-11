@@ -996,6 +996,24 @@ CRNET_API int crnet_response_via_proxy(const crnet_response *r)
 	return r && r->via_proxy;
 }
 
+CRNET_API int crnet_response_socket_reused(const crnet_response *r)
+{
+	return r && r->socket_reused;
+}
+
+CRNET_API uint64_t crnet_response_connection_id(const crnet_response *r)
+{
+	return r ? r->connection_id : 0;
+}
+
+CRNET_API int64_t crnet_response_timing(const crnet_response *r,
+					crnet_timing which)
+{
+	if (!r || which < 0 || which >= CRNET_TIMING_COUNT)
+		return -1;
+	return r->timing[static_cast<size_t>(which)];
+}
+
 CRNET_API int crnet_response_content_decoded(const crnet_response *r)
 {
 	return r && !r->decoded_codings.empty();

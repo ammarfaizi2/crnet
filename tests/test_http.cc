@@ -353,3 +353,90 @@ TEST(Cookies, ClientsHaveSeparateJars)
 	crnet_client_free(a);
 	crnet_client_free(b);
 }
+
+namespace {
+
+int64_t T(const Result &r, crnet_timing which)
+{
+	return crnet_response_timing(r.resp, which);
+}
+
+} // namespace
+
+TEST_F(ClientTest, TimingOnANewConnection)
+{
+	crnet_client *c = NewTestClient();
+	Result r = Get(c, HttpsH1Url("/echo"));
+	ASSERT_EQ(r.rc, CRNET_OK);
+	EXPECT_FALSE(crnet_response_socket_reused(r.resp));
+	EXPECT_NE(crnet_response_connection_id(r.resp), 0u);
+
+	// Every phase of a fresh TLS connection, in order.
+	const crnet_timing order[] = {
+		CRNET_TIMING_REQUEST_START, CRNET_TIMING_CONNECT_START,
+		CRNET_TIMING_TLS_START,	    CRNET_TIMING_TLS_END,
+		CRNET_TIMING_CONNECT_END,   CRNET_TIMING_SEND_START,
+		CRNET_TIMING_SEND_END,	    CRNET_TIMING_HEADERS_START,
+		CRNET_TIMING_HEADERS_END,   CRNET_TIMING_COMPLETE,
+	};
+	int64_t prev = 0;
+	for (crnet_timing t : order) {
+		SCOPED_TRACE(t);
+		EXPECT_GE(T(r, t), prev);
+		prev = T(r, t);
+	}
+	EXPECT_LT(T(r, CRNET_TIMING_COMPLETE), 10 * 1000 * 1000);
+	EXPECT_EQ(T(r, CRNET_TIMING_PROXY_RESOLVE_START) >= 0,
+		  T(r, CRNET_TIMING_PROXY_RESOLVE_END) >= 0);
+	EXPECT_EQ(crnet_response_timing(r.resp, CRNET_TIMING_COUNT), -1);
+	EXPECT_EQ(crnet_response_timing(nullptr, CRNET_TIMING_COMPLETE), -1);
+	crnet_client_free(c);
+}
+
+TEST_F(ClientTest, TimingOnAReusedConnection)
+{
+	for (bool h2 : {false, true}) {
+		SCOPED_TRACE(h2 ? "h2" : "http/1.1");
+		crnet_client *c = NewTestClient();
+		auto url = h2 ? HttpsUrl("/echo") : HttpsH1Url("/echo");
+		Result a = Get(c, url);
+		Result b = Get(c, url);
+		ASSERT_EQ(b.rc, CRNET_OK);
+		EXPECT_FALSE(crnet_response_socket_reused(a.resp));
+		EXPECT_TRUE(crnet_response_socket_reused(b.resp));
+		EXPECT_EQ(crnet_response_connection_id(a.resp),
+			  crnet_response_connection_id(b.resp));
+		for (crnet_timing t : {CRNET_TIMING_DNS_START, CRNET_TIMING_CONNECT_START,
+				       CRNET_TIMING_TLS_START})
+			EXPECT_EQ(T(b, t), -1) << t;
+		EXPECT_GE(T(b, CRNET_TIMING_SEND_START), 0);
+		EXPECT_GE(T(b, CRNET_TIMING_HEADERS_END), T(b, CRNET_TIMING_SEND_START));
+
+		// Another client has its own connections.
+		crnet_client *c2 = NewTestClient();
+		Result d = Get(c2, url);
+		EXPECT_NE(crnet_response_connection_id(d.resp),
+			  crnet_response_connection_id(a.resp));
+		crnet_client_free(c2);
+		crnet_client_free(c);
+	}
+}
+
+TEST_F(ClientTest, TimingAfterRedirects)
+{
+	Result r = Get(client_, HttpsUrl("/redirect/2"));
+	ASSERT_EQ(r.rc, CRNET_OK);
+	EXPECT_EQ(crnet_response_redirect_count(r.resp), 2);
+	// The final hop starts after the first two finished.
+	EXPECT_GT(T(r, CRNET_TIMING_REQUEST_START), 0);
+	EXPECT_GE(T(r, CRNET_TIMING_SEND_START), T(r, CRNET_TIMING_REQUEST_START));
+}
+
+TEST_F(ClientTest, TimingOfAFailedTransfer)
+{
+	Result r = Get(client_, "https://127.0.0.1:1/");
+	ASSERT_EQ(r.rc, CRNET_E_NET);
+	EXPECT_EQ(crnet_response_connection_id(r.resp), 0u);
+	EXPECT_EQ(T(r, CRNET_TIMING_SEND_START), -1);
+	EXPECT_GE(T(r, CRNET_TIMING_COMPLETE), 0);
+}

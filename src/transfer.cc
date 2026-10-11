@@ -21,6 +21,7 @@
 #include "net/base/auth.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_file_element_reader.h"
 #include "net/cert/x509_certificate.h"
@@ -30,6 +31,7 @@
 #include "net/filter/source_stream_type.h"
 #include "net/http/http_connection_info.h"
 #include "net/http/http_response_headers.h"
+#include "net/log/net_log_source.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_info.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -356,6 +358,36 @@ void crnet_transfer::FillResponseMeta(net::URLRequest *request)
 			net::HttpConnectionInfoToString(info.connection_info));
 	r.remote = request->GetResponseRemoteEndpoint().ToString();
 	r.via_proxy = info.WasFetchedViaProxy();
+	FillTiming(request);
+}
+
+void crnet_transfer::FillTiming(net::URLRequest *request)
+{
+	net::LoadTimingInfo lt;
+	request->GetLoadTimingInfo(&lt);
+	crnet_response &r = *resp_;
+	r.socket_reused = lt.socket_reused;
+	r.connection_id = lt.socket_log_id == net::NetLogSource::kInvalidId
+				  ? 0
+				  : lt.socket_log_id;
+	auto set = [&](crnet_timing which, base::TimeTicks t) {
+		r.timing[which] =
+			t.is_null() ? -1 : (t - created_).InMicroseconds();
+	};
+	const net::LoadTimingInfo::ConnectTiming &ct = lt.connect_timing;
+	set(CRNET_TIMING_REQUEST_START, lt.request_start);
+	set(CRNET_TIMING_PROXY_RESOLVE_START, lt.proxy_resolve_start);
+	set(CRNET_TIMING_PROXY_RESOLVE_END, lt.proxy_resolve_end);
+	set(CRNET_TIMING_DNS_START, ct.domain_lookup_start);
+	set(CRNET_TIMING_DNS_END, ct.domain_lookup_end);
+	set(CRNET_TIMING_CONNECT_START, ct.connect_start);
+	set(CRNET_TIMING_CONNECT_END, ct.connect_end);
+	set(CRNET_TIMING_TLS_START, ct.ssl_start);
+	set(CRNET_TIMING_TLS_END, ct.ssl_end);
+	set(CRNET_TIMING_SEND_START, lt.send_start);
+	set(CRNET_TIMING_SEND_END, lt.send_end);
+	set(CRNET_TIMING_HEADERS_START, lt.receive_headers_start);
+	set(CRNET_TIMING_HEADERS_END, lt.receive_headers_end);
 }
 
 void crnet_transfer::OnReceivedRedirect(net::URLRequest *request,
@@ -521,6 +553,8 @@ void crnet_transfer::Finish(int err, int net_error)
 
 	if (!resp_)
 		resp_ = std::make_unique<crnet_response>();
+	resp_->timing[CRNET_TIMING_COMPLETE] =
+		(base::TimeTicks::Now() - created_).InMicroseconds();
 	if (err != CRNET_OK) {
 		resp_->net_error = net_error;
 		resp_->net_error_str = crnet::NetErrorName(net_error);

@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -23,6 +24,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "crnet/crnet.h"
 #include "crnet/event.h"
@@ -205,6 +207,8 @@ struct crnet_request {
 };
 
 struct crnet_response {
+	crnet_response() { timing.fill(-1); }
+
 	int status = 0;
 	std::string status_text;
 	std::string url;
@@ -216,6 +220,10 @@ struct crnet_response {
 	bool via_proxy = false;
 	// Content codings removed from the body, "" when it is as received.
 	std::string decoded_codings;
+	bool socket_reused = false;
+	uint64_t connection_id = 0;
+	// Microseconds since the transfer was created, -1 = did not happen.
+	std::array<int64_t, CRNET_TIMING_COUNT> timing;
 	int net_error = 0;
 	std::string net_error_str;
 };
@@ -291,6 +299,7 @@ private:
 
 	void FillResponseMeta(net::URLRequest *request);
 	static std::string DecodedCodings(net::URLRequest *request);
+	void FillTiming(net::URLRequest *request);
 	void ReadMore();
 	// Returns true if reading should continue.
 	bool HandleRead(int bytes);
@@ -305,6 +314,8 @@ private:
 	crnet_callbacks cb_{};
 	void *user_data_;
 	crnet_queue *queue_;
+	// Zero point of the response's timing information.
+	const base::TimeTicks created_ = base::TimeTicks::Now();
 
 	// Network thread only.
 	crnet::BrowserHeaders bh_;

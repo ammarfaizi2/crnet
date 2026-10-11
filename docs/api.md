@@ -384,6 +384,22 @@ did: it leaves the whole body raw when `Content-Encoding` names a coding
 it does not know (`identity` included), and it decodes a response with
 `Use-As-Dictionary` even when decompression is off.
 
+Each response also says which connection carried it and how long each
+phase took, from Chromium's `LoadTimingInfo` for the final hop:
+
+```c
+crnet_response_socket_reused(r);    /* keep-alive or shared h2/h3 session */
+crnet_response_connection_id(r);    /* equal ids = same connection */
+/* microseconds since crnet_start(), -1 = phase did not happen */
+int64_t ttfb = crnet_response_timing(r, CRNET_TIMING_HEADERS_START) -
+	       crnet_response_timing(r, CRNET_TIMING_SEND_START);
+```
+
+The phases are `REQUEST_START` (the final hop; later than 0 after
+redirects), `PROXY_RESOLVE_*`, `DNS_*`, `CONNECT_*` (which includes the
+TLS handshake), `TLS_*`, `SEND_*`, `HEADERS_*` and `COMPLETE`. A reused
+connection has no DNS, connect or TLS phase.
+
 ## Versions and feature tests
 
 `CRNET_VERSION_MAJOR`, `CRNET_VERSION_MINOR` and `CRNET_VERSION_PATCH`
@@ -412,6 +428,7 @@ feature can be used:
 | `CRNET_HAS_TRANSFER_RESULT` | 0.3.0 | `crnet_transfer_result()`, `CRNET_E_PENDING` |
 | `CRNET_HAS_PROXY_BYPASS` | 0.4.0 | `crnet_client_config_set_proxy_bypass()` |
 | `CRNET_HAS_CONTENT_DECODED` | 0.5.0 | `crnet_response_content_decoded()`, `crnet_response_decoded_codings()` |
+| `CRNET_HAS_TIMING` | 0.6.0 | `crnet_response_socket_reused()`, `_connection_id()`, `_timing()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

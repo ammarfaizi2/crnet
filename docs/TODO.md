@@ -60,16 +60,6 @@ Tell SOCKS5 failures apart.
   `tests/server/test_server.py` (each REP value, a refused method, a
   truncated reply, a close at each stage); today it only ever accepts.
 
-### connection-timing-info
-
-Connection and timing info on the response.
-
-- Wanted: whether the socket was reused, a connection id, and
-  `LoadTimingInfo` (DNS, connect, TLS, send, headers).
-- Why: tests and logs can tell which connection carried a request
-  without counting accepts at the server, and slow requests can be
-  attributed to a phase.
-
 ### transfer-progress
 
 Upload and download progress.

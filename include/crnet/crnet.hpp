@@ -142,6 +142,10 @@ public:
 	std::string remote_address() const { return detail::str(crnet_response_remote_address(r_)); }
 	bool via_proxy() const { return crnet_response_via_proxy(r_) != 0; }
 	bool content_decoded() const { return crnet_response_content_decoded(r_) != 0; }
+	bool socket_reused() const { return crnet_response_socket_reused(r_) != 0; }
+	uint64_t connection_id() const { return crnet_response_connection_id(r_); }
+	// Microseconds since the transfer started, -1 if it did not happen.
+	int64_t timing(crnet_timing which) const { return crnet_response_timing(r_, which); }
 	std::string decoded_codings() const { return detail::str(crnet_response_decoded_codings(r_)); }
 	int net_error() const { return crnet_response_net_error(r_); }
 	std::string error_string() const { return detail::str(crnet_response_error_string(r_)); }

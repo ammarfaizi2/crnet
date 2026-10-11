@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 5
+#define CRNET_VERSION_MINOR 6
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.5.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.6.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -837,6 +837,60 @@ CRNET_API const char *crnet_response_remote_address(
 		const crnet_response *resp);
 /* Whether the response was obtained through a proxy. */
 CRNET_API int crnet_response_via_proxy(const crnet_response *resp);
+
+/*
+ * Connection and timing information, from Chromium's LoadTimingInfo
+ * for the final request (the last redirect hop).
+ */
+#define CRNET_HAS_TIMING 1
+
+/*
+ * Whether the request was sent on a connection that already existed (an
+ * idle keep-alive socket, or a shared HTTP/2 or HTTP/3 session).
+ */
+CRNET_API int crnet_response_socket_reused(const crnet_response *resp);
+
+/*
+ * Identifies the connection that carried the request: requests with the
+ * same id shared one connection (an HTTP/2 or HTTP/3 session counts as
+ * one). Unique within the process; 0 when unknown (no response).
+ */
+CRNET_API uint64_t crnet_response_connection_id(const crnet_response *resp);
+
+typedef enum crnet_timing {
+	/* The final hop started; 0 unless redirects were followed. */
+	CRNET_TIMING_REQUEST_START = 0,
+	CRNET_TIMING_PROXY_RESOLVE_START,
+	CRNET_TIMING_PROXY_RESOLVE_END,
+	CRNET_TIMING_DNS_START,
+	CRNET_TIMING_DNS_END,
+	/* TCP (or QUIC) connect; includes the TLS handshake and any proxy
+	 * tunnel set-up. */
+	CRNET_TIMING_CONNECT_START,
+	CRNET_TIMING_CONNECT_END,
+	CRNET_TIMING_TLS_START,
+	CRNET_TIMING_TLS_END,
+	CRNET_TIMING_SEND_START,
+	CRNET_TIMING_SEND_END,
+	/* First and last byte of the response headers. */
+	CRNET_TIMING_HEADERS_START,
+	CRNET_TIMING_HEADERS_END,
+	/* The transfer finished (on_complete was about to run). */
+	CRNET_TIMING_COMPLETE,
+	CRNET_TIMING_COUNT
+} crnet_timing;
+
+/*
+ * When |which| happened, in microseconds since crnet_start() (or
+ * crnet_perform() / crnet_queue_start()), or -1 if it did not happen:
+ * a reused connection has no DNS, connect or TLS phase, and nothing but
+ * CRNET_TIMING_COMPLETE is known for a transfer that failed before the
+ * response headers. Times are clamped as in Chrome's DevTools: a phase
+ * that started before the hop (a preconnect, a shared session) is
+ * reported as starting with it.
+ */
+CRNET_API int64_t crnet_response_timing(const crnet_response *resp,
+					crnet_timing which);
 
 /*
  * Whether crnet removed content codings from the body. When it did, the
