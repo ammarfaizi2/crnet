@@ -245,7 +245,7 @@ struct crnet_transfer : public base::RefCountedThreadSafe<crnet_transfer>,
 public:
 	crnet_transfer(crnet_client *client, crnet::RequestSpec spec,
 		       const crnet_callbacks *cb, void *user_data,
-			crnet_queue *queue);
+		       crnet_queue *queue);
 
 	crnet_transfer(const crnet_transfer &) = delete;
 	crnet_transfer &operator=(const crnet_transfer &) = delete;

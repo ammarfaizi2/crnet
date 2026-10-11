@@ -98,8 +98,8 @@ HeaderHook *HeaderHook::Get(const net::URLRequest *req)
 
 crnet_transfer::crnet_transfer(crnet_client *client,
 			       crnet::RequestSpec spec,
-				 const crnet_callbacks *cb, void *user_data,
-				 crnet_queue *queue)
+			       const crnet_callbacks *cb, void *user_data,
+			       crnet_queue *queue)
 	: client_(client),
 	  runner_(client->runner()),
 	  spec_(std::move(spec)),
@@ -392,7 +392,7 @@ void crnet_transfer::FillTiming(net::URLRequest *request)
 
 void crnet_transfer::OnReceivedRedirect(net::URLRequest *request,
 					const net::RedirectInfo &redirect_info,
-					 bool *defer_redirect)
+					bool *defer_redirect)
 {
 	if (resp_->redirects >= spec_.max_redirects) {
 		// Hand the 3xx itself to the caller.
@@ -429,8 +429,8 @@ void crnet_transfer::OnCertificateRequested(
 
 void crnet_transfer::OnSSLCertificateError(net::URLRequest *request,
 					   int net_error,
-					    const net::SSLInfo &ssl_info,
-					    bool fatal)
+					   const net::SSLInfo &ssl_info,
+					   bool fatal)
 {
 	if (client_->config().insecure) {
 		request->ContinueDespiteLastError();

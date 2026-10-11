@@ -818,7 +818,7 @@ CRNET_API int crnet_response_redirect_count(const crnet_response *resp);
 CRNET_API size_t crnet_response_header_count(const crnet_response *resp);
 CRNET_API int crnet_response_header_at(const crnet_response *resp,
 				       size_t index, const char **name,
-					 const char **value);
+				       const char **value);
 /*
  * First value of header |name| (case-insensitive) or NULL. Use
  * crnet_response_header_at() for repeated headers such as Set-Cookie.

@@ -195,7 +195,7 @@ CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
 }
 
 CRNET_API int crnet_client_config_set_proxy_bypass(crnet_client_config *cfg,
-						    const char *rules)
+						   const char *rules)
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
@@ -519,8 +519,8 @@ CRNET_API int crnet_request_set_max_body_size(crnet_request *req,
 
 static crnet_transfer *StartTransfer(crnet_client *client,
 				     const crnet_request *req,
-				      const crnet_callbacks *cb,
-				      void *user_data, crnet_queue *q)
+				     const crnet_callbacks *cb,
+				     void *user_data, crnet_queue *q)
 {
 	if (!client || !req || !req->spec.url.SchemeIsHTTPOrHTTPS())
 		return nullptr;
@@ -946,7 +946,7 @@ CRNET_API size_t crnet_response_header_count(const crnet_response *r)
 
 CRNET_API int crnet_response_header_at(const crnet_response *r,
 				       size_t index, const char **name,
-					 const char **value)
+				       const char **value)
 {
 	if (!r || index >= r->headers.size())
 		return CRNET_E_INVAL;
