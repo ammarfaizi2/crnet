@@ -32,6 +32,9 @@ Endpoints (all servers):
   /slow-upload?pause_ms=  the same, but waits before reading the body
                         (HTTP/1.1 only)
   /dup-headers          repeated response headers
+  /cache/<key>?max_age=N  cacheable response (Cache-Control: max-age=N,
+                        an ETag); answers If-None-Match with 304
+  /cache-stats/<key>    {"requests", "conditional"} seen for /cache/<key>
   /drop                 closes the connection without a response
 
 WebSocket endpoints (HTTP/1.1 upgrade, any server):
@@ -84,6 +87,7 @@ PROXY_USER = "crnet"
 PROXY_PASS = "secret"
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
          "ws_pongs": 0, "ws_last_close": None}
+CACHE_STATS = {}    # /cache/<key> -> {"requests": n, "conditional": n}
 
 
 def pattern(n):
@@ -195,6 +199,23 @@ def route(req):
         r = echo_response(req)
         r.delay = int(seg[1]) / 1000.0
         return r
+    if seg[0] == "cache" and len(seg) == 2:
+        st = CACHE_STATS.setdefault(seg[1], {"requests": 0, "conditional": 0})
+        st["requests"] += 1
+        etag = '"%s-v1"' % seg[1]
+        headers = [("content-type", "text/plain"), ("etag", etag),
+                   ("cache-control", "max-age=%s" % q.get("max_age", "60"))]
+        if req.header("if-none-match"):
+            st["conditional"] += 1
+            if req.header("if-none-match") == etag:
+                return Response(304, headers, b"")
+        return Response(200, headers,
+                        ("%s #%d" % (seg[1], st["requests"])).encode())
+    if seg[0] == "cache-stats" and len(seg) == 2:
+        st = CACHE_STATS.get(seg[1], {"requests": 0, "conditional": 0})
+        return Response(200, [("content-type", "application/json"),
+                              ("cache-control", "no-store")],
+                        json.dumps(st).encode())
     if seg[0] == "encoded" and len(seg) == 2:
         codings = seg[1].split(",")
         data = PLAINTEXT
