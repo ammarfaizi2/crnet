@@ -164,8 +164,9 @@ def compress(enc, data):
 
 class Request:
     def __init__(self, method, target, headers, body, protocol, tls,
-                 peer_port=0):
-        self.peer_port = peer_port
+                 peer=("", 0)):
+        # The client's address and port.
+        self.peer_addr, self.peer_port = peer[0], peer[1]
         self.method = method
         self.target = target
         self.headers = headers  # list of (name, value) str, received order
@@ -209,6 +210,7 @@ def echo_response(req):
         "tls": req.tls,
         "headers": [[k, v] for k, v in req.headers],
         "body_len": len(req.body),
+        "peer_addr": req.peer_addr,
         "peer_port": req.peer_port,
         "stats": STATS,
     }
@@ -367,7 +369,7 @@ async def read_h1_request(reader):
 
 
 async def serve_h1(reader, writer, tls):
-    peer_port = writer.get_extra_info("peername")[1]
+    peer = writer.get_extra_info("peername")
     try:
         while True:
             parsed = await read_h1_request(reader)
@@ -375,7 +377,7 @@ async def serve_h1(reader, writer, tls):
                 break
             method, target, headers, body = parsed
             req = Request(method, target, headers, body, "http/1.1", tls,
-                          peer_port)
+                          peer)
             if (req.header("upgrade") or "").lower() == "websocket":
                 await serve_websocket(req, reader, writer)
                 return
@@ -555,6 +557,7 @@ async def ws_session(ws, req, chosen, deflate):
             doc = {"path": req.target, "headers": [list(h) for h in
                                                    req.headers],
                    "protocol": chosen, "deflate": deflate,
+                   "peer_addr": req.peer_addr,
                    "peer_port": req.peer_port,
                    "http_version": req.protocol}
             await ws.send(OP_TEXT, json.dumps(doc).encode())
@@ -758,7 +761,7 @@ class H2Session:
     async def serve_websocket(self, sid, headers, reader):
         pseudo = {k: v for k, v in headers if k.startswith(":")}
         req = Request("CONNECT", pseudo.get(":path"), headers, b"", "h2",
-                      True, self.writer.get_extra_info("peername")[1])
+                      True, self.writer.get_extra_info("peername"))
         await ws_handshake_delay(req)
         neg = ws_negotiate(req)
         if neg is None:
@@ -793,7 +796,7 @@ class H2Session:
         pseudo = {k: v for k, v in headers if k.startswith(":")}
         req = Request(pseudo.get(":method"), pseudo.get(":path"), headers,
                       body, "h2", True,
-                      self.writer.get_extra_info("peername")[1])
+                      self.writer.get_extra_info("peername"))
         req.headers = headers  # keep pseudo headers for order checks
         resp = route(req)
         try:

@@ -62,7 +62,7 @@ which is asked about a `.invalid` name.
   (`https_mtls`; the client's PEM files are `client_cert`,
   `client_key`).
 - Endpoints: `/echo` (the request as JSON, headers in **wire order**,
-  plus the client's source port), `/status/N`, `/redirect/N`,
+  plus the client's address and port), `/status/N`, `/redirect/N`,
   `/redirect-to?url=&code=`, `/set-cookie?k=v`, `/bytes/N`,
   `/stream/N?chunk=&delay_ms=`, `/delay/MS`, `/encoded/{gzip,deflate,br,zstd}`,
   `/upload-digest` and `/slow-upload?pause_ms=` (SHA-256 and framing of an
