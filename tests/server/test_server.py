@@ -10,14 +10,16 @@ Listens on 127.0.0.1 (ephemeral ports) and serves:
   * HTTPS requiring a client certificate issued by the same CA
     ("https_mtls"; the client's PEM files are "client_cert", "client_key")
   * plain HTTP/1.1
-  * a SOCKS5 proxy requiring username "crnet" and password "secret"
+  * a SOCKS5 proxy requiring username "crnet" (or a session user
+    "crnet-<anything>", like a rotating proxy) and password "secret"
     (RFC 1929, "socks5_auth"), otherwise like the next one
   * a SOCKS5 proxy (no auth, CONNECT only, remote name resolution) with
     fault injection: destinations rep-N.crnet-test (reply code N),
     close.crnet-test, truncate.crnet-test and badatyp.crnet-test fail
     after the greeting; /socks5-fault?greeting=close|noauth|badmethod|
     badversion breaks the next greeting
-  * an HTTP CONNECT proxy requiring Basic auth (user "crnet", pass "secret")
+  * an HTTP proxy requiring Basic auth with the same users; it tunnels
+    CONNECT and answers a plain request itself with the user it saw
 
 On start-up it prints one JSON line with the ports to stdout, then runs
 until stdin is closed or it receives SIGTERM.
@@ -102,9 +104,15 @@ except ImportError:  # pragma: no cover
 PLAINTEXT = (b"crnet content-encoding test payload. " * 200)
 PROXY_USER = "crnet"
 PROXY_PASS = "secret"
+
+
+def proxy_user_ok(user, password):
+    """The proxies' users: "crnet", or a session user "crnet-<id>"."""
+    return ((user == PROXY_USER or user.startswith(PROXY_USER + "-")) and
+            password == PROXY_PASS)
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
          "ws_h2_connects": 0, "ws_pings": 0, "ws_pongs": 0,
-         "ws_last_close": None, "socks5_auths": [],
+         "ws_last_close": None, "socks5_auths": [], "http_proxy_auths": [],
          "doh_queries": []}
 CACHE_STATS = {}    # /cache/<key> -> {"requests": n, "conditional": n}
 SOCKS_FAULT = {"greeting": None}  # one-shot, set by /socks5-fault
@@ -871,7 +879,7 @@ async def serve_socks5(reader, writer, auth=False):
             writer.close()
             return
         if auth:
-            # RFC 1929: user "crnet", password "secret".
+            # RFC 1929, see proxy_user_ok().
             if 2 not in methods:
                 writer.write(b"\x05\xff")
                 await writer.drain()
@@ -882,7 +890,8 @@ async def serve_socks5(reader, writer, auth=False):
             user = await reader.readexactly(ulen)
             plen = (await reader.readexactly(1))[0]
             password = await reader.readexactly(plen)
-            ok = subver == 1 and user == b"crnet" and password == b"secret"
+            ok = subver == 1 and proxy_user_ok(user.decode("latin-1"),
+                                               password.decode("latin-1"))
             STATS["socks5_auths"].append([user.decode("latin-1"), ok])
             writer.write(b"\x01\x00" if ok else b"\x01\x01")
             await writer.drain()
@@ -963,9 +972,17 @@ async def serve_http_proxy(reader, writer):
         for k, v in headers:
             if k.lower() == "proxy-authorization":
                 auth = v
-        want = "Basic " + base64.b64encode(
-            ("%s:%s" % (PROXY_USER, PROXY_PASS)).encode()).decode()
-        if auth != want:
+        user = None
+        if auth and auth.startswith("Basic "):
+            try:
+                user, _, password = base64.b64decode(
+                    auth[6:]).decode("latin-1").partition(":")
+            except ValueError:
+                user = None
+        if auth is not None:
+            ok = user is not None and proxy_user_ok(user, password)
+            STATS["http_proxy_auths"].append([user, ok])
+        if auth is None or not ok:
             writer.write(b"HTTP/1.1 407 Proxy Authentication Required\r\n"
                          b"Proxy-Authenticate: Basic realm=\"crnet\"\r\n"
                          b"Content-Length: 0\r\n\r\n")
@@ -974,9 +991,15 @@ async def serve_http_proxy(reader, writer):
             await serve_http_proxy(reader, writer)
             return
         if method != "CONNECT":
-            writer.write(b"HTTP/1.1 405 Method Not Allowed\r\n"
-                         b"Content-Length: 0\r\n\r\n")
-            writer.close()
+            # A plain request to the proxy: answer it here, telling who
+            # asked, and keep the connection for the next one.
+            body = json.dumps({"proxy_user": user, "target": target,
+                               "method": method}).encode()
+            writer.write(b"HTTP/1.1 200 OK\r\n"
+                         b"Content-Type: application/json\r\n"
+                         b"Content-Length: %d\r\n\r\n" % len(body) + body)
+            await writer.drain()
+            await serve_http_proxy(reader, writer)
             return
         host, port = target.rsplit(":", 1)
         target_host = "127.0.0.1" if host.endswith(".crnet-test") else host
