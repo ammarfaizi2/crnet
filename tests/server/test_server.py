@@ -113,6 +113,7 @@ def proxy_user_ok(user, password):
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
          "ws_h2_connects": 0, "ws_pings": 0, "ws_pongs": 0,
          "ws_last_close": None, "socks5_auths": [], "http_proxy_auths": [],
+         "socks5_greetings": [],
          "doh_queries": []}
 CACHE_STATS = {}    # /cache/<key> -> {"requests": n, "conditional": n}
 SOCKS_FAULT = {"greeting": None}  # one-shot, set by /socks5-fault
@@ -875,6 +876,9 @@ async def serve_socks5(reader, writer, auth=False):
     try:
         ver, nmethods = await reader.readexactly(2)
         methods = await reader.readexactly(nmethods)
+        if auth:
+            # The methods offered, for checking what went on the wire.
+            STATS["socks5_greetings"].append(list(methods))
         if ver != 5:
             writer.close()
             return
