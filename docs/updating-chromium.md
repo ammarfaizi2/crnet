@@ -73,3 +73,6 @@ None are needed today. If a release ever requires one, put a
 `git format-patch`-style file in `chromium/patches/*.patch`.
 `scripts/fetch-chromium.sh` applies it through `scripts/apply-patches.sh`,
 which first restores the touched files, so it can be re-run safely.
+Configuring the CMake build checks that every patch is applied and
+stops otherwise, since a tree without them would build but behave
+differently.

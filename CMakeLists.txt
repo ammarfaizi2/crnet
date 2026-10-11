@@ -66,6 +66,24 @@ if(NOT CRNET_CHECKOUT_CR STREQUAL CRNET_PINNED_CR)
 endif()
 message(STATUS "crnet: Chromium ${CRNET_CHECKOUT_CR} at ${CR_SRC}")
 
+# crnet relies on its patches to Chromium (chromium/patches/, applied by
+# scripts/fetch-chromium.sh); refuse to build a tree without them, which
+# would compile but behave differently.
+find_package(Git REQUIRED)
+file(GLOB _crnet_patches "${CMAKE_CURRENT_SOURCE_DIR}/chromium/patches/*.patch")
+foreach(_p IN LISTS _crnet_patches)
+  execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${CR_SRC}" apply --reverse
+                          --check "${_p}"
+                  RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_QUIET)
+  if(NOT _rc EQUAL 0)
+    get_filename_component(_name "${_p}" NAME)
+    message(FATAL_ERROR
+      "Chromium patch ${_name} is not applied to ${CR_SRC}.\n"
+      "Run: scripts/apply-patches.sh ${CR_SRC}")
+  endif()
+endforeach()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_crnet_patches})
+
 # //crnet must point at our src/; checked again before every build.
 set(CRNET_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/link-src.cmake")
