@@ -401,9 +401,10 @@ net::ProxyChain crnet::ProxyChainOf(const std::string &proxy)
 crnet_client::crnet_client(const ClientConfig &cfg)
 	: cfg_(cfg), thread_("crnet-io"), partition_(NextConnectionPartition())
 {
-	// The configured proxy's credentials come first (its SOCKS5 key is
-	// registered in Create()).
-	if (!cfg.proxy.empty() && !cfg.proxy_user.empty())
+	// The configured proxy's credentials, none included, come first (its
+	// SOCKS5 key is registered in Create()): requests naming others for
+	// it are identities, not its new default.
+	if (!cfg.proxy.empty())
 		proxy_creds_[ProxyKey(cfg.proxy)] = {cfg.proxy_user,
 						     cfg.proxy_pass};
 }

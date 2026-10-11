@@ -703,8 +703,8 @@ CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable);
  * proxies are never shared. CRNET_E_INVAL for a malformed URL or "".
  *
  * Credentials: a proxy's default credentials are the client's own for
- * its configured proxy, or else those of the first request that names
- * the proxy with credentials; a request naming the proxy without
+ * its configured proxy (none, if it was configured without), or else
+ * those of the first request that names the proxy with credentials; a request naming the proxy without
  * credentials uses them, answering auth challenges as configured
  * clients do. Since 0.28.0 (CRNET_HAS_PROXY_IDENTITIES) a request
  * naming other credentials is another identity of the proxy, as

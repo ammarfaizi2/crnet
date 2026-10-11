@@ -620,6 +620,23 @@ TEST(RequestProxy, Socks5Identities)
 	crnet_client_free(c);
 }
 
+// The configured proxy's credentials are the client's, none included: a
+// request naming credentials for it does not make them the default.
+TEST(RequestProxy, ConfiguredProxyWithoutCredentialsStaysWithout)
+{
+	const Ports &p = ServerPorts();
+	const std::string url = RemoteOnlyUrl(p.https, "/echo");
+	crnet_client *c = ProxyClient("socks5h://127.0.0.1:" + std::to_string(p.socks5_auth));
+	Result r = GetVia(c, url, AuthProxy("crnet-a:secret"));
+	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	size_t greetings = SocksGreetings().size();
+	EXPECT_EQ(Get(c, RemoteOnlyUrl(p.https_h1, "/echo")).net_error(), -199);
+	json g = SocksGreetings();
+	ASSERT_EQ(g.size(), greetings + 1);
+	EXPECT_EQ(g.back(), json::array({0}));
+	crnet_client_free(c);
+}
+
 TEST(RequestProxy, Socks5CredentialsAreTheClients)
 {
 	const Ports &p = ServerPorts();
