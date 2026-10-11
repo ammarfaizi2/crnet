@@ -266,10 +266,13 @@ class Configuration(unittest.TestCase):
     def test_request_proxy(self):
         remote = "https://www.crnet-test:%d/echo" % ports["https"]
         socks = "socks5h://127.0.0.1:%d" % ports["socks5"]
-        with crnet.Client(insecure=True) as c:
+        # The host rule keeps the system's DNS out of the local lookup.
+        with crnet.Client(insecure=True,
+                          host_rules="MAP www.crnet-test ~NOTFOUND") as c:
             self.assertTrue(c.get(remote, proxy=socks).via_proxy)
-            with self.assertRaises(crnet.Error):
+            with self.assertRaises(crnet.Error) as cm:
                 c.get(remote)
+            self.assertEqual(cm.exception.net_error, -105)
             with self.assertRaises(ValueError):
                 c.get(remote, proxy="ftp://proxy")
 

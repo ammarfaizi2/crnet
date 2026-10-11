@@ -431,9 +431,14 @@ TEST(RequestProxy, OverridesTheClientsProxy)
 	const Ports &p = ServerPorts();
 	int before = SocksConnects();
 	// A direct client reaches a name only the proxy can resolve through a
-	// request's proxy, and follows redirects through it.
-	crnet_client *c = NewTestClient();
-	EXPECT_NE(Get(c, RemoteOnlyUrl(p.https, "/echo")).rc, CRNET_OK);
+	// request's proxy, and follows redirects through it. Locally the name
+	// does not resolve; the host rule keeps the system's DNS out of it.
+	crnet_client_config *cfg = crnet_client_config_new();
+	ASSERT_EQ(crnet_client_config_set_host_rules(cfg, "MAP www.crnet-test ~NOTFOUND"),
+		  CRNET_OK);
+	crnet_client *c = NewTestClient(cfg);
+	crnet_client_config_free(cfg);
+	EXPECT_EQ(Get(c, RemoteOnlyUrl(p.https, "/echo")).net_error(), -105);
 	Result r = GetVia(c, RemoteOnlyUrl(p.https, "/redirect/2"), Socks5());
 	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
 	EXPECT_EQ(crnet_response_redirect_count(r.resp), 2);
