@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 13
+#define CRNET_VERSION_MINOR 14
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.13.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.14.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -225,6 +225,27 @@ CRNET_API void crnet_client_config_set_quic(crnet_client_config *cfg,
  */
 CRNET_API void crnet_client_config_set_builtin_dns(crnet_client_config *cfg,
 						   int enable);
+
+/*
+ * DNS over HTTPS, as Chrome's "Use secure DNS" setting. |templates| are
+ * one or more DoH URI templates separated by whitespace, in Chrome's
+ * syntax ("https://dns.example/dns-query{?dns}"; without {?dns} queries
+ * are POSTed). CRNET_SECURE_DNS_AUTOMATIC uses them once a probe shows
+ * they work and falls back to ordinary DNS; CRNET_SECURE_DNS_SECURE
+ * resolves only through them. Host names of the DoH servers themselves
+ * are resolved with ordinary DNS. Default CRNET_SECURE_DNS_OFF. No
+ * effect when a proxy resolves names. CRNET_E_INVAL for a malformed
+ * template or a mode other than OFF without templates.
+ */
+#define CRNET_HAS_SECURE_DNS 1
+typedef enum crnet_secure_dns {
+	CRNET_SECURE_DNS_OFF = 0,
+	CRNET_SECURE_DNS_AUTOMATIC = 1,
+	CRNET_SECURE_DNS_SECURE = 2,
+} crnet_secure_dns;
+CRNET_API int crnet_client_config_set_secure_dns(crnet_client_config *cfg,
+						 crnet_secure_dns mode,
+						 const char *templates);
 
 /* In-memory cookie jar shared by all requests of the client. Default on. */
 CRNET_API void crnet_client_config_set_cookies(crnet_client_config *cfg,

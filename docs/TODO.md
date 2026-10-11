@@ -119,19 +119,6 @@ Bind outgoing connections to a local address or interface.
   needs a custom `ClientSocketFactory`. Check its effect on Happy
   Eyeballs and on QUIC connection migration.
 
-### secure-dns
-
-DNS over HTTPS.
-
-- Today: crnet resolves with the system resolver or Chrome's built-in
-  insecure DNS client.
-- Wanted: a DoH server template and mode (automatic or secure only),
-  like Chrome's secure DNS setting.
-- Why: some networks tamper with or block plain DNS, and DoH still
-  delivers HTTPS records (ECH configs, ALPN hints) there.
-- Notes: `DnsConfigOverrides` carries the DoH config and secure DNS
-  mode into the standalone host resolver.
-
 ## Browser emulation
 
 ### platform-profiles

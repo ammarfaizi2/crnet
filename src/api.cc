@@ -18,6 +18,7 @@
 #include "base/files/file_util.h"
 #include "crnet/internal.h"
 #include "net/cert/x509_certificate.h"
+#include "net/dns/public/dns_over_https_config.h"
 #include "net/cert/x509_util.h"
 #include "net/ssl/openssl_private_key.h"
 #include "third_party/boringssl/src/include/openssl/bio.h"
@@ -415,6 +416,35 @@ CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
 {
 	if (cfg)
 		cfg->cfg.timeout_ms = timeout_ms;
+}
+
+CRNET_API int crnet_client_config_set_secure_dns(crnet_client_config *cfg,
+						 crnet_secure_dns mode,
+						 const char *templates)
+{
+	if (!cfg)
+		return CRNET_E_INVAL;
+	switch (mode) {
+	case CRNET_SECURE_DNS_OFF:
+		cfg->cfg.secure_dns = mode;
+		cfg->cfg.doh_templates.clear();
+		return CRNET_OK;
+	case CRNET_SECURE_DNS_AUTOMATIC:
+	case CRNET_SECURE_DNS_SECURE:
+		break;
+	default:
+		return CRNET_E_INVAL;
+	}
+	if (!templates)
+		return CRNET_E_INVAL;
+	// FromString() rejects the whole list if any template is invalid.
+	std::optional<net::DnsOverHttpsConfig> doh =
+		net::DnsOverHttpsConfig::FromString(templates);
+	if (!doh || doh->servers().empty())
+		return CRNET_E_INVAL;
+	cfg->cfg.secure_dns = mode;
+	cfg->cfg.doh_templates = templates;
+	return CRNET_OK;
 }
 
 CRNET_API int crnet_client_config_set_http_cache(crnet_client_config *cfg,

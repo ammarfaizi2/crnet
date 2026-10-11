@@ -33,6 +33,7 @@
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/http/http_request_headers.h"
+#include "net/dns/host_resolver.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "url/gurl.h"
@@ -82,6 +83,8 @@ struct ClientConfig {
 	bool http2 = true;
 	bool quic = true;
 	bool builtin_dns = true;
+	crnet_secure_dns secure_dns = CRNET_SECURE_DNS_OFF;
+	std::string doh_templates;
 	bool cookies = true;
 	bool insecure = false;
 	// Extra roots (DER), and whether they replace the Chrome Root Store.
@@ -426,6 +429,9 @@ private:
 
 	// Network thread only.
 	std::unique_ptr<net::URLRequestContext> context_;
+	// Keeps DoH availability probes running (secure DNS); destroyed
+	// before context_.
+	std::unique_ptr<net::HostResolver::ProbeRequest> doh_probes_;
 	std::unique_ptr<net::FileNetLogObserver> netlog_;
 	scoped_refptr<net::CertNetFetcherURLRequest> cert_fetcher_;
 	std::set<scoped_refptr<crnet_transfer>> running_;

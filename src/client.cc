@@ -38,7 +38,9 @@
 #include "net/cookies/cookie_partition_key_collection.h"
 #include "net/cookies/cookie_store.h"
 #include "net/dns/host_resolver.h"
+#include "net/dns/public/dns_over_https_config.h"
 #include "net/dns/public/insecure_dns_mode.h"
+#include "net/dns/public/secure_dns_mode.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/log/file_net_log_observer.h"
@@ -336,6 +338,17 @@ bool crnet_client::InitOnNetworkThread()
 				       ? net::InsecureDnsMode::kEnabledBuiltIn
 				       : net::InsecureDnsMode::kDisabled;
 	mo.additional_types_via_insecure_dns_enabled = true;
+	// Chrome applies its secure DNS setting the same way, as overrides
+	// of the system configuration (network::NetworkService::
+	// ConfigureStubHostResolver()).
+	if (cfg_.secure_dns != CRNET_SECURE_DNS_OFF) {
+		mo.dns_config_overrides.dns_over_https_config =
+			net::DnsOverHttpsConfig::FromString(cfg_.doh_templates);
+		mo.dns_config_overrides.secure_dns_mode =
+			cfg_.secure_dns == CRNET_SECURE_DNS_SECURE
+				? net::SecureDnsMode::kSecure
+				: net::SecureDnsMode::kAutomatic;
+	}
 	b.set_host_resolver(net::HostResolver::CreateStandaloneResolver(
 		net::NetLog::Get(), std::move(mo), cfg_.host_rules,
 		/*enable_caching=*/true));
@@ -361,6 +374,14 @@ bool crnet_client::InitOnNetworkThread()
 	if (!context_)
 		return false;
 	cert_fetcher_->SetURLRequestContext(context_.get());
+
+	// Automatic mode only uses a DoH server that a probe found working,
+	// and nothing probes unless asked; Chrome starts them per network
+	// context (network::NetworkContext::ActivateDohProbes()).
+	if (cfg_.secure_dns != CRNET_SECURE_DNS_OFF) {
+		doh_probes_ = context_->host_resolver()->CreateDohProbeRequest();
+		doh_probes_->Start();
+	}
 
 	if (!cfg_.netlog_path.empty()) {
 		netlog_ = net::FileNetLogObserver::CreateUnbounded(
@@ -402,6 +423,7 @@ void crnet_client::ShutdownOnNetworkThread(base::WaitableEvent *ev)
 			[](crnet_client *c, base::WaitableEvent *ev) {
 				if (c->cert_fetcher_)
 					c->cert_fetcher_->Shutdown();
+				c->doh_probes_.reset();
 				c->context_.reset();
 				c->cert_fetcher_ = nullptr;
 				if (!c->netlog_) {

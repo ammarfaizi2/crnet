@@ -31,6 +31,7 @@ which is asked about a `.invalid` name.
 | `tests/test_websocket.cc` | WebSockets: Chrome's handshake headers, both delivery modes, pollable fd, subprotocols, Origin/header overrides, cookies both ways, deflate on/off, client/server/abrupt closes, close codes, fragmentation, large messages, size limit, backpressure, pause, pings, invalid UTF-8, refused/slow handshakes, release semantics, shutdown, proxies, 50 concurrent sockets, WebSockets over HTTP/2 (RFC 8441) on an existing connection and the HTTP/1.1 upgrade without one |
 | `tests/test_tls.cc` | extra trust anchors (file, PEM, anchors only, malformed), client certificates over HTTP and WebSocket |
 | `tests/test_cookies.cc` | cookie jar export and import: lossless JSON round trip including partitioned cookies, Netscape round trip and curl's files, malformed and refused imports, public-suffix cookies |
+| `tests/test_dns.cc` | DNS over HTTPS: secure mode with GET and POST templates and no fallback, automatic mode after a successful probe, invalid settings |
 | `tests/test_cache.cc` | the HTTP cache: off by default, fresh and stale entries, revalidation, every request cache mode, the disk cache across clients |
 | `tests/test_cpp.cc` | the C++ wrapper |
 | `tests/c_api_smoke.c` | `crnet.h` compiles as strict C99 (`-pedantic -Werror`) and works from C |
@@ -50,6 +51,9 @@ which is asked about a `.invalid` name.
   (`crnet:secret`). Both resolve `*.crnet-test` to 127.0.0.1
   themselves. Those names do not exist in DNS, so a successful request
   proves the name was resolved on the proxy.
+- A DNS over HTTPS endpoint, `/dns-query`, that resolves names under
+  `.crnet-test` (and the name Chromium probes DoH servers with) to
+  127.0.0.1.
 - An HTTPS port that requires a client certificate issued by the CA
   (`https_mtls`; the client's PEM files are `client_cert`,
   `client_key`).

@@ -18,6 +18,7 @@ add_executable(crnet_tests
   test_cache.cc
   test_cookies.cc
   test_cpp.cc
+  test_dns.cc
   test_headers.cc
   test_http.cc
   test_proxy.cc

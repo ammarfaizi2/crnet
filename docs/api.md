@@ -85,6 +85,7 @@ crnet_client_config_free(cfg);
 | `proxy_bypass` | none | destinations sent direct, in Chrome's `--proxy-bypass-list` syntax: `*.example.com, 10.0.0.0/8, <local>`. Like Chrome, localhost, loopback and link-local destinations always go direct unless the list contains `<-loopback>`. |
 | `user_agent`, `sec_ch_ua`, `platform`, `accept_language` | Chrome on Linux, `en-US,en;q=0.9` | the browser identity, see [browser-emulation.md](browser-emulation.md) |
 | `http2`, `quic` | on | QUIC is used for HTTP/3 when the server advertises it (Alt-Svc or DNS). Through a proxy Chromium never uses QUIC. |
+| `secure_dns` | off | DNS over HTTPS with Chrome's semantics: `CRNET_SECURE_DNS_AUTOMATIC` uses the DoH templates once a probe shows they work and falls back to ordinary DNS, `CRNET_SECURE_DNS_SECURE` resolves only through them |
 | `builtin_dns` | on | Chromium's own DNS client, as Chrome on Linux, including HTTPS records (ECH, HTTP/3 hints) |
 | `cookies` | on | in-memory cookie jar shared by the client's requests |
 | `insecure` | off | accept any certificate (testing only; the handshake itself is unchanged) |
@@ -486,6 +487,7 @@ feature can be used:
 | `CRNET_HAS_COOKIE_JAR_IO` | 0.11.0 | `crnet_client_export_cookies()`, `crnet_client_import_cookies()` |
 | `CRNET_HAS_HTTP_CACHE` | 0.12.0 | `crnet_client_config_set_http_cache()`, `crnet_request_set_cache_mode()`, `crnet_response_from_cache()` |
 | `CRNET_HAS_CLIENT_CERT` | 0.13.0 | `crnet_client_config_set_client_cert()`, `_set_client_cert_file()` |
+| `CRNET_HAS_SECURE_DNS` | 0.14.0 | `crnet_client_config_set_secure_dns()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built
