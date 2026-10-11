@@ -134,17 +134,6 @@ DNS over HTTPS.
 
 ## TLS
 
-### extra-trust-anchors
-
-Extra trust anchors.
-
-- Today: crnet verifies against the Chrome Root Store only, so a
-  private CA (or a test server's self-signed certificate) can only be
-  used with verification turned off.
-- Wanted: `crnet_client_config_add_trust_anchor_pem()` or a file-based
-  variant, and optionally an "only these anchors" mode.
-- Payoff: the local TLS tests could run with verification on.
-
 ### client-certificates
 
 Client certificates, via `OnCertificateRequested` ->

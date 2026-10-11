@@ -12,7 +12,14 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
+#include "base/containers/extend.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "crnet/internal.h"
+#include "net/cert/x509_certificate.h"
+#include "net/cert/x509_util.h"
+#include "third_party/boringssl/src/pki/cert_errors.h"
+#include "third_party/boringssl/src/pki/parsed_certificate.h"
 #include "net/base/scheme_host_port_matcher.h"
 #include "net/proxy_resolution/proxy_host_matching_rules.h"
 #include "crnet/stream.h"
@@ -204,6 +211,51 @@ CRNET_API int crnet_client_config_set_proxy_bypass(crnet_client_config *cfg,
 		return CRNET_E_INVAL;
 	cfg->cfg.proxy_bypass = std::move(r);
 	return CRNET_OK;
+}
+
+CRNET_API int crnet_client_config_add_trust_anchors(crnet_client_config *cfg,
+						    const char *pem)
+{
+	if (!cfg || !pem)
+		return CRNET_E_INVAL;
+	net::CertificateList certs =
+		net::X509Certificate::CreateCertificateListFromBytes(
+			base::as_byte_span(std::string_view(pem)),
+			net::X509Certificate::FORMAT_PEM_CERT_SEQUENCE);
+	if (certs.empty())
+		return CRNET_E_INVAL;
+	std::vector<std::string> der;
+	for (const auto &c : certs) {
+		bssl::CertErrors errors;
+		if (!bssl::ParsedCertificate::Create(
+			    bssl::UpRef(c->cert_buffer()),
+			    net::x509_util::DefaultParseCertificateOptions(),
+			    &errors))
+			return CRNET_E_INVAL;
+		der.emplace_back(net::x509_util::CryptoBufferAsStringPiece(
+			c->cert_buffer()));
+	}
+	base::Extend(cfg->cfg.trust_anchors, std::move(der));
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_client_config_add_trust_anchors_file(
+	crnet_client_config *cfg, const char *path)
+{
+	if (!cfg || !path)
+		return CRNET_E_INVAL;
+	std::string pem;
+	if (!base::ReadFileToStringWithMaxSize(base::FilePath(path), &pem,
+					       16 * 1024 * 1024))
+		return CRNET_E_INVAL;
+	return crnet_client_config_add_trust_anchors(cfg, pem.c_str());
+}
+
+CRNET_API void crnet_client_config_set_trust_anchors_only(
+	crnet_client_config *cfg, int only)
+{
+	if (cfg)
+		cfg->cfg.trust_anchors_only = !!only;
 }
 
 CRNET_API int crnet_client_config_set_user_agent(crnet_client_config *cfg,

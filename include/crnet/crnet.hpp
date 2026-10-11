@@ -66,6 +66,9 @@ public:
 	ClientConfig &builtin_dns(bool on) { crnet_client_config_set_builtin_dns(get(), on); return *this; }
 	ClientConfig &cookies(bool on) { crnet_client_config_set_cookies(get(), on); return *this; }
 	ClientConfig &insecure(bool on) { crnet_client_config_set_insecure(get(), on); return *this; }
+	ClientConfig &add_trust_anchors(const std::string &pem) { check(crnet_client_config_add_trust_anchors(get(), pem.c_str())); return *this; }
+	ClientConfig &add_trust_anchors_file(const std::string &path) { check(crnet_client_config_add_trust_anchors_file(get(), path.c_str())); return *this; }
+	ClientConfig &trust_anchors_only(bool on = true) { crnet_client_config_set_trust_anchors_only(get(), on); return *this; }
 	ClientConfig &host_rules(const std::string &r) { check(crnet_client_config_set_host_rules(get(), r.c_str())); return *this; }
 	ClientConfig &timeout_ms(uint64_t ms) { crnet_client_config_set_timeout(get(), ms); return *this; }
 	ClientConfig &connect_timeout_ms(uint64_t ms) { crnet_client_config_set_connect_timeout(get(), ms); return *this; }

@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 9
+#define CRNET_VERSION_MINOR 10
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.9.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.10.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -243,6 +243,29 @@ CRNET_API void crnet_client_config_set_insecure(crnet_client_config *cfg,
  */
 CRNET_API int crnet_client_config_set_host_rules(crnet_client_config *cfg,
 						 const char *rules);
+
+/*
+ * Certificate verification is Chrome's: the Chrome Root Store, plus
+ * roots the user added to the system store (the NSS database on Linux).
+ *
+ * Add the CERTIFICATE blocks of |pem| as extra trust anchors (roots) for
+ * this client, such as a private CA. May be called repeatedly. Returns
+ * CRNET_E_INVAL if |pem| holds no certificate or one that does not
+ * parse. The anchors' own validity period and constraints are not
+ * enforced, as for roots a user adds to Chrome.
+ */
+#define CRNET_HAS_TRUST_ANCHORS 1
+CRNET_API int crnet_client_config_add_trust_anchors(crnet_client_config *cfg,
+						    const char *pem);
+/* The same, reading the PEM from a file. */
+CRNET_API int crnet_client_config_add_trust_anchors_file(
+		crnet_client_config *cfg, const char *path);
+/*
+ * Non-zero: trust only the anchors added above, not the Chrome Root
+ * Store or the system store. Default 0.
+ */
+CRNET_API void crnet_client_config_set_trust_anchors_only(
+		crnet_client_config *cfg, int only);
 
 /* Default per-request timeout in milliseconds, 0 = none (default). */
 CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,

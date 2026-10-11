@@ -20,7 +20,15 @@
 #include "crnet/websocket.h"
 #include "net/base/features.h"
 #include "net/base/network_delegate_impl.h"
+#include "net/cert/caching_cert_verifier.h"
 #include "net/cert/cert_verifier.h"
+#include "net/cert/cert_verify_proc.h"
+#include "net/cert/cert_verify_proc_builtin.h"
+#include "net/cert/coalescing_cert_verifier.h"
+#include "net/cert/crl_set.h"
+#include "net/cert/ct_policy_enforcer.h"
+#include "net/cert/do_nothing_ct_verifier.h"
+#include "net/cert/multi_threaded_cert_verifier.h"
 #include "net/cert/x509_util.h"
 #include "net/cert_net/cert_net_fetcher_url_request.h"
 #include "net/cookies/canonical_cookie.h"
@@ -43,9 +51,10 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request_context_builder.h"
 
-#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+#include "net/cert/internal/system_trust_store.h"
 #include "net/cert/internal/trust_store_chrome.h"
-#endif
+#include "third_party/boringssl/src/pki/cert_errors.h"
+#include "third_party/boringssl/src/pki/parsed_certificate.h"
 
 namespace {
 
@@ -181,6 +190,82 @@ std::unique_ptr<net::ProxyConfigService> MakeProxyConfigService(
 		net::ProxyConfigWithAnnotation(pc, kProxyAnnotation));
 }
 
+// Hands out one fixed CertVerifyProc. MultiThreadedCertVerifier needs a
+// factory for parameter updates, which crnet never makes.
+class FixedCertVerifyProcFactory : public net::CertVerifyProcFactory {
+public:
+	explicit FixedCertVerifyProcFactory(
+		scoped_refptr<net::CertVerifyProc> proc)
+		: proc_(std::move(proc))
+	{
+	}
+
+	scoped_refptr<net::CertVerifyProc> CreateCertVerifyProc(
+		scoped_refptr<net::CertNetFetcher> cert_net_fetcher,
+		const net::CertVerifyProc::ImplParams &impl_params,
+		const net::CertVerifyProc::InstanceParams &instance_params) override
+	{
+		return proc_;
+	}
+
+private:
+	~FixedCertVerifyProcFactory() override = default;
+
+	const scoped_refptr<net::CertVerifyProc> proc_;
+};
+
+// Chrome's verifier (net::CertVerifier::CreateDefault()): the Chrome Root
+// Store, plus the user-added roots of the system store, with the
+// configured anchors added, or with the configured anchors alone.
+std::unique_ptr<net::CertVerifier> MakeCertVerifier(
+	const ClientConfig &cfg, scoped_refptr<net::CertNetFetcher> fetcher)
+{
+	if (cfg.trust_anchors.empty() && !cfg.trust_anchors_only)
+		return net::CertVerifier::CreateDefault(std::move(fetcher));
+
+	net::CertVerifyProc::InstanceParams ip;
+	for (const std::string &der : cfg.trust_anchors) {
+		bssl::CertErrors errors;
+		std::shared_ptr<const bssl::ParsedCertificate> cert =
+			bssl::ParsedCertificate::Create(
+				net::x509_util::CreateCryptoBuffer(der),
+				net::x509_util::DefaultParseCertificateOptions(),
+				&errors);
+		if (cert)	// validated by the API already
+			ip.additional_trust_anchors.push_back(std::move(cert));
+	}
+	net::CertVerifyProc::ImplParams impl;	// the built-in CRLSet
+	scoped_refptr<net::CertVerifyProc> proc;
+	if (!cfg.trust_anchors_only) {
+		proc = net::CertVerifyProc::CreateBuiltinWithChromeRootStore(
+			std::move(fetcher), impl.crl_set,
+			std::make_unique<net::DoNothingCTVerifier>(),
+			base::MakeRefCounted<net::DefaultCTPolicyEnforcer>(),
+			/*root_store_data=*/nullptr,
+			/*root_store_mtc_metadata=*/nullptr, ip,
+			/*time_tracker=*/std::nullopt);
+	} else {
+		// The same verifier over an empty Chrome Root Store and no
+		// system store. An empty TrustStoreChrome can only be made
+		// from a root store proto, which //crnet may not depend on,
+		// or with the testing factory.
+		proc = net::CreateCertVerifyProcBuiltin(
+			std::move(fetcher), impl.crl_set,
+			std::make_unique<net::DoNothingCTVerifier>(),
+			base::MakeRefCounted<net::DefaultCTPolicyEnforcer>(),
+			net::CreateChromeOnlySystemTrustStore(
+				net::TrustStoreChrome::CreateTrustStoreForTesting(
+					{}, {}, /*version=*/0)),
+			ip, /*time_tracker=*/std::nullopt);
+	}
+	// Wrapped as CreateDefault() does.
+	auto factory = base::MakeRefCounted<FixedCertVerifyProcFactory>(proc);
+	return std::make_unique<net::CachingCertVerifier>(
+		std::make_unique<net::CoalescingCertVerifier>(
+			std::make_unique<net::MultiThreadedCertVerifier>(
+				std::move(proc), std::move(factory))));
+}
+
 void SignalEvent(base::WaitableEvent *ev)
 {
 	ev->Signal();
@@ -259,7 +344,7 @@ bool crnet_client::InitOnNetworkThread()
 
 	// Chrome fetches missing intermediates (AIA) through the network.
 	cert_fetcher_ = base::MakeRefCounted<net::CertNetFetcherURLRequest>();
-	b.SetCertVerifier(net::CertVerifier::CreateDefault(cert_fetcher_));
+	b.SetCertVerifier(MakeCertVerifier(cfg_, cert_fetcher_));
 
 	context_ = b.Build();
 	if (!context_)

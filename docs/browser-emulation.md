@@ -12,7 +12,7 @@ for a library.
 | TCP | the OS (or the proxy) | not controlled by Chrome either |
 | TLS ClientHello: cipher suites, extensions and their permutation, GREASE, supported groups incl. X25519MLKEM768, key shares, signature algorithms, ALPN, ALPS, certificate compression, ECH (GREASE or real), session tickets | Chromium `//net` + BoringSSL, unmodified | it *is* Chrome's code |
 | TLS Trust Anchor IDs extension | `client.cc` (`ChromeSSLConfigService`) | Chrome's browser process configures it from the compiled-in Chrome Root Store; crnet does the same |
-| Certificate verification, AIA fetching | Chromium `CertVerifier` with the Chrome Root Store, `CertNetFetcherURLRequest` | same verifier and roots |
+| Certificate verification, AIA fetching | Chromium `CertVerifier` with the Chrome Root Store, `CertNetFetcherURLRequest` | same verifier and roots; configured extra trust anchors only affect verification, not the handshake |
 | HTTP/2: SETTINGS, connection WINDOW_UPDATE, HEADERS priority, pseudo-header order, `priority` header (RFC 9218) | `//net` + Chrome's `network_session_configurator` | same code and parameters |
 | HTTP/3 / QUIC | `//net` (QUICHE) | same code; used when the server advertises h3 |
 | DNS: built-in resolver, HTTPS/SVCB records (ECH configs, ALPN hints) | `//net` `HostResolver` in Chrome's Linux mode | same code and mode |

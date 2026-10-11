@@ -88,6 +88,7 @@ crnet_client_config_free(cfg);
 | `builtin_dns` | on | Chromium's own DNS client, as Chrome on Linux, including HTTPS records (ECH, HTTP/3 hints) |
 | `cookies` | on | in-memory cookie jar shared by the client's requests |
 | `insecure` | off | accept any certificate (testing only; the handshake itself is unchanged) |
+| `trust_anchors` | none | extra roots (PEM, string or file) on top of Chrome's verification: the Chrome Root Store plus user-added roots of the system store. With `trust_anchors_only` they replace both, e.g. to accept only a private CA. |
 | `host_rules` | none | Chrome's `--host-resolver-rules` syntax, e.g. `MAP api.example.com 10.0.0.5:8443` |
 | `timeout` | none | default per-request timeout in ms |
 | `connect_timeout` | none | default limit in ms on getting a connection ready (proxy resolution, DNS, TCP/QUIC, proxy handshake, TLS), per redirect hop; fails with `CRNET_E_TIMEOUT` and net error `ERR_CONNECTION_TIMED_OUT` (-118) instead of the request timeout's `ERR_TIMED_OUT` (-7) |
@@ -459,6 +460,7 @@ feature can be used:
 | `CRNET_HAS_PROGRESS` | 0.7.0 | `crnet_transfer_progress()` |
 | `CRNET_HAS_CONNECT_TIMEOUT` | 0.8.0 | `crnet_client_config_set_connect_timeout()`, `crnet_request_set_connect_timeout()` |
 | `CRNET_HAS_WRITE_FD` | 0.9.0 | `crnet_transfer_write_fd()` |
+| `CRNET_HAS_TRUST_ANCHORS` | 0.10.0 | `crnet_client_config_add_trust_anchors()`, `_add_trust_anchors_file()`, `_set_trust_anchors_only()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

@@ -82,6 +82,9 @@ struct ClientConfig {
 	bool builtin_dns = true;
 	bool cookies = true;
 	bool insecure = false;
+	// Extra roots (DER), and whether they replace the Chrome Root Store.
+	std::vector<std::string> trust_anchors;
+	bool trust_anchors_only = false;
 	std::string host_rules;
 	uint64_t timeout_ms = 0;
 	uint64_t connect_timeout_ms = 0;
