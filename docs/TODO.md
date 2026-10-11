@@ -133,22 +133,6 @@ Consistent per-OS browser profiles.
   other per-platform difference together, verified against captures
   from real Chrome on each platform.
 
-## Persistence
-
-### network-state-persistence
-
-Persist what Chrome keeps between runs besides cookies.
-
-- Today: every new client behaves like a freshly installed browser:
-  no HSTS entries learned from sites, no Alt-Svc / HTTP/3 hints, no
-  known broken alternative services.
-- Wanted: an optional state file holding HTTP server properties
-  (Alt-Svc, QUIC server info) and dynamic HSTS, so a returning client
-  starts on HTTP/3 and HTTPS like a returning Chrome.
-- Notes: Chromium has persisters for both (`HttpServerPropertiesManager`,
-  `TransportSecurityPersister`). One "profile directory" option could
-  cover them and the cookie jar (`crnet_client_export_cookies()`).
-
 ## WebSocket
 
 ### websocket-parity

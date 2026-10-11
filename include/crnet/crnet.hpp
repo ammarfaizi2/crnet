@@ -73,6 +73,7 @@ public:
 	ClientConfig &trust_anchors_only(bool on = true) { crnet_client_config_set_trust_anchors_only(get(), on); return *this; }
 	ClientConfig &host_rules(const std::string &r) { check(crnet_client_config_set_host_rules(get(), r.c_str())); return *this; }
 	ClientConfig &timeout_ms(uint64_t ms) { crnet_client_config_set_timeout(get(), ms); return *this; }
+	ClientConfig &state_dir(const std::string &dir) { check(crnet_client_config_set_state_dir(get(), dir.c_str())); return *this; }
 	ClientConfig &secure_dns(crnet_secure_dns mode, const std::string &templates = "")
 	{
 		check(crnet_client_config_set_secure_dns(get(), mode, templates.empty() ? nullptr : templates.c_str()));

@@ -34,6 +34,7 @@
 #include "net/ssl/ssl_private_key.h"
 #include "net/http/http_request_headers.h"
 #include "net/dns/host_resolver.h"
+#include "net/http/transport_security_persister.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "url/gurl.h"
@@ -100,6 +101,7 @@ struct ClientConfig {
 	uint64_t timeout_ms = 0;
 	uint64_t connect_timeout_ms = 0;
 	std::string netlog_path;
+	std::string state_dir;		// "" = keep nothing across runs
 };
 
 struct RequestSpec {
@@ -432,6 +434,12 @@ private:
 	// Keeps DoH availability probes running (secure DNS); destroyed
 	// before context_.
 	std::unique_ptr<net::HostResolver::ProbeRequest> doh_probes_;
+	// State directory (crnet/state.h): its I/O sequence (set in Create()
+	// before the network thread starts using it, also used by
+	// Destroy()), and the HSTS persister, destroyed before context_ so
+	// that it saves first.
+	scoped_refptr<base::SequencedTaskRunner> state_runner_;
+	std::unique_ptr<net::TransportSecurityPersister> hsts_persister_;
 	std::unique_ptr<net::FileNetLogObserver> netlog_;
 	scoped_refptr<net::CertNetFetcherURLRequest> cert_fetcher_;
 	std::set<scoped_refptr<crnet_transfer>> running_;

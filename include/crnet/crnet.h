@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 14
+#define CRNET_VERSION_MINOR 15
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.14.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.15.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -351,6 +351,27 @@ CRNET_API int crnet_client_config_set_http_cache(crnet_client_config *cfg,
 						 crnet_http_cache type,
 						 const char *path,
 						 uint64_t max_size);
+
+/*
+ * Keep network state across runs in directory |dir| (created if
+ * missing), as Chrome keeps it in a profile, so that a new client starts
+ * where the last one stopped instead of like a fresh browser install:
+ *   - "Network Persistent State": HTTP server properties, i.e. Alt-Svc
+ *     (HTTP/3) advertisements, broken alternative services, HTTP/2
+ *     support and QUIC server information;
+ *   - "TransportSecurity": HSTS learned from Strict-Transport-Security
+ *     headers.
+ * The files are read in the background when the client starts (requests
+ * made before that finishes do not see them), saved in batches as the
+ * state changes, as Chrome does, and once more when the client is freed;
+ * crnet_client_free() returns after that save. One client at a time per
+ * directory. Cookies and the HTTP cache have their own settings
+ * (crnet_client_export_cookies(), crnet_client_config_set_http_cache()).
+ * NULL or "" keeps nothing (default).
+ */
+#define CRNET_HAS_STATE_DIR 1
+CRNET_API int crnet_client_config_set_state_dir(crnet_client_config *cfg,
+						const char *dir);
 
 /*
  * Write a Chromium NetLog (JSON, viewable with netlog-viewer) to |path|

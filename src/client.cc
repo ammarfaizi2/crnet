@@ -11,12 +11,15 @@
 #include "base/containers/extend.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/functional/callback_helpers.h"
 #include "base/functional/bind.h"
 #include "base/message_loop/message_pump_type.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/network_session_configurator/browser/network_session_configurator.h"
 #include "crnet/cookie_io.h"
+#include "crnet/state.h"
 #include "crnet/internal.h"
 #include "crnet/websocket.h"
 #include "net/base/features.h"
@@ -292,6 +295,9 @@ crnet_client *crnet_client::Create(const ClientConfig &cfg)
 		return nullptr;
 	}
 	c->runner_ = c->thread_.task_runner();
+	// Made here, not on the network thread, so Destroy() can use it.
+	if (!cfg.state_dir.empty())
+		c->state_runner_ = crnet::CreateStateRunner();
 
 	// No need to wait for the context: everything later posted to this
 	// thread (requests, cookie calls, shutdown) runs after this task. A
@@ -370,10 +376,30 @@ bool crnet_client::InitOnNetworkThread()
 	cert_fetcher_ = base::MakeRefCounted<net::CertNetFetcherURLRequest>();
 	b.SetCertVerifier(MakeCertVerifier(cfg_, cert_fetcher_));
 
+	if (state_runner_) {
+		base::FilePath dir(cfg_.state_dir);
+		state_runner_->PostTask(
+			FROM_HERE, base::BindOnce(base::IgnoreResult(
+							  &base::CreateDirectory),
+						  dir));
+		b.SetHttpServerProperties(std::make_unique<net::HttpServerProperties>(
+			crnet::CreateServerPropertiesStore(
+				dir.Append(crnet::kServerPropertiesFile),
+				state_runner_),
+			net::NetLog::Get()));
+	}
+
 	context_ = b.Build();
 	if (!context_)
 		return false;
 	cert_fetcher_->SetURLRequestContext(context_.get());
+
+	if (state_runner_) {
+		hsts_persister_ = std::make_unique<net::TransportSecurityPersister>(
+			context_->transport_security_state(), state_runner_,
+			base::FilePath(cfg_.state_dir)
+				.Append(crnet::kTransportSecurityFile));
+	}
 
 	// Automatic mode only uses a DoH server that a probe found working,
 	// and nothing probes unless asked; Chrome starts them per network
@@ -395,12 +421,28 @@ bool crnet_client::InitOnNetworkThread()
 void crnet_client::Destroy()
 {
 	shutting_down_.store(true);
+	if (state_runner_) {
+		// Shutting down saves the state, so it must have been loaded
+		// first or the save would replace it with what little this
+		// client learned. Once the context exists the loads are queued
+		// on state_runner_; once that drained, their results are
+		// queued on the network thread ahead of the shutdown.
+		base::WaitableEvent inited;
+		runner_->PostTask(FROM_HERE,
+				  base::BindOnce(&base::WaitableEvent::Signal,
+						 base::Unretained(&inited)));
+		inited.Wait();
+		crnet::FlushStateRunner(state_runner_.get());
+	}
 	base::WaitableEvent ev;
 	runner_->PostTask(FROM_HERE,
 			  base::BindOnce(&crnet_client::ShutdownOnNetworkThread,
 					 base::Unretained(this), &ev));
 	ev.Wait();
 	thread_.Stop();
+	// The state files are written once the saves posted at shutdown ran.
+	if (state_runner_)
+		crnet::FlushStateRunner(state_runner_.get());
 	delete this;
 }
 
@@ -424,6 +466,9 @@ void crnet_client::ShutdownOnNetworkThread(base::WaitableEvent *ev)
 				if (c->cert_fetcher_)
 					c->cert_fetcher_->Shutdown();
 				c->doh_probes_.reset();
+				// Both persisters post their final save to
+				// state_runner_ as they go.
+				c->hsts_persister_.reset();
 				c->context_.reset();
 				c->cert_fetcher_ = nullptr;
 				if (!c->netlog_) {

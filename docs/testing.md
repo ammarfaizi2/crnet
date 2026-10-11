@@ -32,6 +32,7 @@ which is asked about a `.invalid` name.
 | `tests/test_tls.cc` | extra trust anchors (file, PEM, anchors only, malformed), client certificates over HTTP and WebSocket |
 | `tests/test_cookies.cc` | cookie jar export and import: lossless JSON round trip including partitioned cookies, Netscape round trip and curl's files, malformed and refused imports, public-suffix cookies |
 | `tests/test_dns.cc` | DNS over HTTPS: secure mode with GET and POST templates and no fallback, automatic mode after a successful probe, invalid settings |
+| `tests/test_state.cc` | the state directory: server properties (Alt-Svc, HTTP/2) and HSTS across clients, no loss when a client is freed before its state loaded, directory creation |
 | `tests/test_cache.cc` | the HTTP cache: off by default, fresh and stale entries, revalidation, every request cache mode, the disk cache across clients |
 | `tests/test_cpp.cc` | the C++ wrapper |
 | `tests/c_api_smoke.c` | `crnet.h` compiles as strict C99 (`-pedantic -Werror`) and works from C |

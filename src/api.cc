@@ -418,6 +418,15 @@ CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
 		cfg->cfg.timeout_ms = timeout_ms;
 }
 
+CRNET_API int crnet_client_config_set_state_dir(crnet_client_config *cfg,
+						const char *dir)
+{
+	if (!cfg)
+		return CRNET_E_INVAL;
+	cfg->cfg.state_dir = dir ? dir : "";
+	return CRNET_OK;
+}
+
 CRNET_API int crnet_client_config_set_secure_dns(crnet_client_config *cfg,
 						 crnet_secure_dns mode,
 						 const char *templates)

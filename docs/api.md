@@ -94,6 +94,7 @@ crnet_client_config_free(cfg);
 | `timeout` | none | default per-request timeout in ms |
 | `connect_timeout` | none | default limit in ms on getting a connection ready (proxy resolution, DNS, TCP/QUIC, proxy handshake, TLS), per redirect hop; fails with `CRNET_E_TIMEOUT` and net error `ERR_CONNECTION_TIMED_OUT` (-118) instead of the request timeout's `ERR_TIMED_OUT` (-7) |
 | `client_cert` | none | a certificate and key (PEM) presented to servers that ask for one, over HTTP and WebSocket; without one crnet answers with none, as Chrome does when the user picks none |
+| `state_dir` | none | a directory where the client keeps Chrome's per-profile network state across runs: Alt-Svc/HTTP/3 and HTTP/2 knowledge ("Network Persistent State") and HSTS ("TransportSecurity"); `crnet_client_free()` returns after saving it |
 | `http_cache` | off | Chromium's HTTP cache in memory or on disk (`crnet_client_config_set_http_cache()`); requests pick a fetch()-style mode with `crnet_request_set_cache_mode()`, and `crnet_response_from_cache()` tells where a response came from. Responses accepted only through `insecure` are never cached. |
 | `netlog` | none | write a Chromium NetLog JSON file (view it with the netlog-viewer) |
 
@@ -488,6 +489,7 @@ feature can be used:
 | `CRNET_HAS_HTTP_CACHE` | 0.12.0 | `crnet_client_config_set_http_cache()`, `crnet_request_set_cache_mode()`, `crnet_response_from_cache()` |
 | `CRNET_HAS_CLIENT_CERT` | 0.13.0 | `crnet_client_config_set_client_cert()`, `_set_client_cert_file()` |
 | `CRNET_HAS_SECURE_DNS` | 0.14.0 | `crnet_client_config_set_secure_dns()` |
+| `CRNET_HAS_STATE_DIR` | 0.15.0 | `crnet_client_config_set_state_dir()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

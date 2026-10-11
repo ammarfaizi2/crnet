@@ -41,6 +41,8 @@ shared_library("crnet") {
     "internal.h",
     "profile.cc",
     "queue.cc",
+    "state.cc",
+    "state.h",
     "stream.cc",
     "stream.h",
     "transfer.cc",
