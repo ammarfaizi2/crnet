@@ -510,8 +510,10 @@ void crnet_transfer::OnAuthRequired(net::URLRequest *request,
 void crnet_transfer::OnCertificateRequested(
 	net::URLRequest *request, net::SSLCertRequestInfo *cert_request_info)
 {
-	// No client certificates; continue the handshake without one.
-	request->ContinueWithCertificate(nullptr, nullptr);
+	// The configured identity, or none: continue without a certificate
+	// and let the server decide.
+	const crnet::ClientConfig &cfg = client_->config();
+	request->ContinueWithCertificate(cfg.client_cert, cfg.client_key);
 }
 
 void crnet_transfer::OnSSLCertificateError(net::URLRequest *request,

@@ -30,6 +30,8 @@
 #include "crnet/event.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/cert/x509_certificate.h"
+#include "net/ssl/ssl_private_key.h"
 #include "net/http/http_request_headers.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
@@ -85,6 +87,9 @@ struct ClientConfig {
 	// Extra roots (DER), and whether they replace the Chrome Root Store.
 	std::vector<std::string> trust_anchors;
 	bool trust_anchors_only = false;
+	// Presented to any server that asks; null = none.
+	scoped_refptr<net::X509Certificate> client_cert;
+	scoped_refptr<net::SSLPrivateKey> client_key;
 	std::string host_rules;
 	crnet_http_cache http_cache = CRNET_HTTP_CACHE_OFF;
 	std::string http_cache_path;

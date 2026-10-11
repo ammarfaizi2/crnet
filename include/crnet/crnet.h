@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 12
+#define CRNET_VERSION_MINOR 13
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.12.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.13.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -266,6 +266,25 @@ CRNET_API int crnet_client_config_add_trust_anchors_file(
  */
 CRNET_API void crnet_client_config_set_trust_anchors_only(
 		crnet_client_config *cfg, int only);
+
+/*
+ * A client certificate (TLS client authentication), presented to any
+ * server that asks for one, HTTP and WebSocket alike. |cert_pem| holds
+ * the certificate, optionally followed by intermediates to send along;
+ * |key_pem| its unencrypted private key (PKCS#8, or a traditional RSA or
+ * EC key). CRNET_E_INVAL if either does not parse or the key does not
+ * match the certificate. NULL for both removes it. Without one, crnet
+ * answers a request for a certificate with none, as Chrome does when the
+ * user picks none, and the server decides.
+ */
+#define CRNET_HAS_CLIENT_CERT 1
+CRNET_API int crnet_client_config_set_client_cert(crnet_client_config *cfg,
+						  const char *cert_pem,
+						  const char *key_pem);
+/* The same, reading both from files. */
+CRNET_API int crnet_client_config_set_client_cert_file(
+		crnet_client_config *cfg, const char *cert_path,
+		const char *key_path);
 
 /* Default per-request timeout in milliseconds, 0 = none (default). */
 CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,

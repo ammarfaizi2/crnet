@@ -68,6 +68,8 @@ public:
 	ClientConfig &insecure(bool on) { crnet_client_config_set_insecure(get(), on); return *this; }
 	ClientConfig &add_trust_anchors(const std::string &pem) { check(crnet_client_config_add_trust_anchors(get(), pem.c_str())); return *this; }
 	ClientConfig &add_trust_anchors_file(const std::string &path) { check(crnet_client_config_add_trust_anchors_file(get(), path.c_str())); return *this; }
+	ClientConfig &client_cert(const std::string &cert_pem, const std::string &key_pem) { check(crnet_client_config_set_client_cert(get(), cert_pem.c_str(), key_pem.c_str())); return *this; }
+	ClientConfig &client_cert_file(const std::string &cert_path, const std::string &key_path) { check(crnet_client_config_set_client_cert_file(get(), cert_path.c_str(), key_path.c_str())); return *this; }
 	ClientConfig &trust_anchors_only(bool on = true) { crnet_client_config_set_trust_anchors_only(get(), on); return *this; }
 	ClientConfig &host_rules(const std::string &r) { check(crnet_client_config_set_host_rules(get(), r.c_str())); return *this; }
 	ClientConfig &timeout_ms(uint64_t ms) { crnet_client_config_set_timeout(get(), ms); return *this; }

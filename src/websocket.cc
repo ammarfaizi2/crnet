@@ -22,7 +22,11 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/auth.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/isolation_info.h"
+#include "net/http/http_network_session.h"
+#include "net/http/http_transaction_factory.h"
+#include "net/socket/ssl_client_socket.h"
 #include "net/base/transport_info.h"
 #include "net/cookies/site_for_cookies.h"
 #include "net/http/http_response_headers.h"
@@ -393,6 +397,19 @@ void crnet_ws::StartOnNetworkThread()
 				     std::numeric_limits<int64_t>::max())),
 			     base::BindOnce(&crnet_ws::OnTimeout,
 					    base::Unretained(this)));
+	}
+
+	// The WebSocket handshake never asks for a client certificate (in
+	// Chrome it may not show UI); it uses the one chosen for the server
+	// before. Choose the configured one up front.
+	const crnet::ClientConfig &cfg = client_->config();
+	if (cfg.client_cert) {
+		client_->context()
+			->http_transaction_factory()
+			->GetSession()
+			->ssl_client_context()
+			->SetClientCertificate(net::HostPortPair::FromURL(url_),
+					       cfg.client_cert, cfg.client_key);
 	}
 
 	// What a page of |origin| gets: a first-party, non-frame request.

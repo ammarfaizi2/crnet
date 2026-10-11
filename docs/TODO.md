@@ -132,14 +132,6 @@ DNS over HTTPS.
 - Notes: `DnsConfigOverrides` carries the DoH config and secure DNS
   mode into the standalone host resolver.
 
-## TLS
-
-### client-certificates
-
-Client certificates, via `OnCertificateRequested` ->
-`ContinueWithCertificate` with a PEM certificate and key. Low
-priority until a user needs mutual TLS.
-
 ## Browser emulation
 
 ### platform-profiles

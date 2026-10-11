@@ -19,6 +19,11 @@
 #include "crnet/internal.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
+#include "net/ssl/openssl_private_key.h"
+#include "third_party/boringssl/src/include/openssl/bio.h"
+#include "third_party/boringssl/src/include/openssl/evp.h"
+#include "third_party/boringssl/src/include/openssl/pem.h"
+#include "third_party/boringssl/src/include/openssl/x509.h"
 #include "third_party/boringssl/src/pki/cert_errors.h"
 #include "third_party/boringssl/src/pki/parsed_certificate.h"
 #include "net/base/scheme_host_port_matcher.h"
@@ -250,6 +255,70 @@ CRNET_API int crnet_client_config_add_trust_anchors_file(
 					       16 * 1024 * 1024))
 		return CRNET_E_INVAL;
 	return crnet_client_config_add_trust_anchors(cfg, pem.c_str());
+}
+
+CRNET_API int crnet_client_config_set_client_cert(crnet_client_config *cfg,
+						  const char *cert_pem,
+						  const char *key_pem)
+{
+	if (!cfg || !cert_pem != !key_pem)
+		return CRNET_E_INVAL;
+	if (!cert_pem) {
+		cfg->cfg.client_cert = nullptr;
+		cfg->cfg.client_key = nullptr;
+		return CRNET_OK;
+	}
+	// The leaf first, then any intermediates to send along.
+	net::CertificateList certs =
+		net::X509Certificate::CreateCertificateListFromBytes(
+			base::as_byte_span(std::string_view(cert_pem)),
+			net::X509Certificate::FORMAT_PEM_CERT_SEQUENCE);
+	if (certs.empty())
+		return CRNET_E_INVAL;
+	std::vector<bssl::UniquePtr<CRYPTO_BUFFER>> intermediates;
+	for (size_t i = 1; i < certs.size(); i++)
+		intermediates.push_back(bssl::UpRef(certs[i]->cert_buffer()));
+	scoped_refptr<net::X509Certificate> chain =
+		net::X509Certificate::CreateFromBuffer(
+			bssl::UpRef(certs[0]->cert_buffer()),
+			std::move(intermediates));
+
+	// Unencrypted PEM key (PKCS#8, or traditional RSA/EC); it must
+	// belong to the leaf.
+	bssl::UniquePtr<BIO> bio(BIO_new_mem_buf(key_pem, strlen(key_pem)));
+	bssl::UniquePtr<EVP_PKEY> pkey(
+		PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr));
+	if (!chain || !pkey)
+		return CRNET_E_INVAL;
+	std::string_view der = net::x509_util::CryptoBufferAsStringPiece(
+		chain->cert_buffer());
+	const uint8_t *p = reinterpret_cast<const uint8_t *>(der.data());
+	bssl::UniquePtr<X509> leaf(d2i_X509(nullptr, &p, der.size()));
+	const EVP_PKEY *pub = leaf ? X509_get0_pubkey(leaf.get()) : nullptr;
+	if (!pub || EVP_PKEY_cmp(pub, pkey.get()) != 1)
+		return CRNET_E_INVAL;
+	scoped_refptr<net::SSLPrivateKey> key =
+		net::WrapOpenSSLPrivateKey(std::move(pkey));
+	if (!key)
+		return CRNET_E_INVAL;
+	cfg->cfg.client_cert = std::move(chain);
+	cfg->cfg.client_key = std::move(key);
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_client_config_set_client_cert_file(
+	crnet_client_config *cfg, const char *cert_path, const char *key_path)
+{
+	if (!cfg || !cert_path || !key_path)
+		return CRNET_E_INVAL;
+	std::string cert, key;
+	if (!base::ReadFileToStringWithMaxSize(base::FilePath(cert_path),
+					       &cert, 1024 * 1024) ||
+	    !base::ReadFileToStringWithMaxSize(base::FilePath(key_path), &key,
+					       1024 * 1024))
+		return CRNET_E_INVAL;
+	return crnet_client_config_set_client_cert(cfg, cert.c_str(),
+						   key.c_str());
 }
 
 CRNET_API void crnet_client_config_set_trust_anchors_only(
