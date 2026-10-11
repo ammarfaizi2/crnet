@@ -291,15 +291,52 @@ void crnet_ws::Abort(int reason)
 
 void crnet_ws::Pause()
 {
+	// Not receiving while paused is the application's choice, not the
+	// peer's silence: the idle timer waits for the resume.
 	if (runner_->BelongsToCurrentThread()) {
 		paused_ = true;
+		idle_timer_.Stop();
 		return;
 	}
 	runner_->PostTask(FROM_HERE, base::BindOnce(
 					     [](scoped_refptr<crnet_ws> ws) {
 						     ws->paused_ = true;
+						     ws->idle_timer_.Stop();
 					     },
 					     base::WrapRefCounted(this)));
+}
+
+void crnet_ws::SetIdleTimeout(uint64_t ms)
+{
+	runner_->PostTask(FROM_HERE,
+			  base::BindOnce(
+				  [](scoped_refptr<crnet_ws> ws, uint64_t ms) {
+					  ws->idle_ms_ = ms;
+					  ws->RestartIdleTimer();
+				  },
+				  base::WrapRefCounted(this), ms));
+}
+
+void crnet_ws::RestartIdleTimer()
+{
+	if (finished_ || state() != CRNET_WS_OPEN || !idle_ms_ || paused_ ||
+	    reading_stopped_) {
+		idle_timer_.Stop();
+		return;
+	}
+	idle_timer_.Start(
+		FROM_HERE,
+		base::Milliseconds(std::min<uint64_t>(
+			idle_ms_, std::numeric_limits<int64_t>::max())),
+		base::BindOnce(
+			[](crnet_ws *ws) {
+				// The peer (or the path to it) is gone: drop
+				// the connection, no closing handshake.
+				ws->Finish(CRNET_E_TIMEOUT,
+					   net::kWebSocketErrorAbnormalClosure,
+					   "idle timeout", net::ERR_TIMED_OUT);
+			},
+			base::Unretained(this)));
 }
 
 void crnet_ws::Resume()
@@ -473,6 +510,7 @@ void crnet_ws::OnAddChannelResponse(
 	opened_ = true;
 	state_.store(CRNET_WS_OPEN);
 	settled_.Signal();
+	RestartIdleTimer();
 
 	if (cb_.on_open)
 		cb_.on_open(this, handshake_.get(), protocol_.c_str(),
@@ -489,6 +527,7 @@ void crnet_ws::ReadMore()
 	if (finished_ || !channel_)
 		return;
 	reading_stopped_ = false;
+	RestartIdleTimer();
 	// A CHANNEL_DELETED result means Finish() already ran.
 	std::ignore = channel_->ReadFrames();
 }
@@ -498,6 +537,8 @@ void crnet_ws::OnDataFrame(bool fin, net::WebSocketFrameHeader::OpCode type,
 {
 	if (finished_)
 		return;
+	if (idle_timer_.IsRunning())
+		idle_timer_.Reset();
 	if (type != net::WebSocketFrameHeader::kOpCodeContinuation) {
 		assembling_type_ = type == net::WebSocketFrameHeader::kOpCodeText
 					   ? CRNET_WS_TEXT
@@ -551,14 +592,20 @@ bool crnet_ws::HasPendingDataFrames()
 	bool stop = paused_ || !held_.empty() ||
 		    (!cb_.on_message &&
 		     queued_bytes_.load(std::memory_order_relaxed) > kRecvQueueLimit);
-	if (stop)
+	if (stop) {
+		// Reading stops because the application is not taking
+		// messages (paused, or a full receive queue); the idle timer
+		// restarts with reading.
 		reading_stopped_ = true;
+		idle_timer_.Stop();
+	}
 	return stop;
 }
 
 void crnet_ws::ResumeOnNetworkThread()
 {
 	paused_ = false;
+	RestartIdleTimer();
 	while (!finished_ && !paused_ && !held_.empty()) {
 		Message m = std::move(held_.front());
 		held_.pop_front();
@@ -643,6 +690,7 @@ void crnet_ws::Finish(int err, int code, const std::string &reason,
 		return;
 	finished_ = true;
 	timer_.Stop();
+	idle_timer_.Stop();
 
 	if (channel_) {
 		// We may be inside one of the channel's callbacks; delete it on

@@ -663,3 +663,71 @@ TEST_F(ClientTest, WsWithoutAnHttp2ConnectionUsesHttp11)
 	EXPECT_EQ(json::parse(RecvText(ws))["http_version"], "http/1.1");
 	crnet_ws_free(ws);
 }
+
+// ------------------------------------------------------------------
+// Idle timeout
+// ------------------------------------------------------------------
+
+TEST_F(ClientTest, WsIdleTimeoutDropsASilentConnection)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, nullptr);
+	crnet_ws_set_idle_timeout(ws, 300);	// before it is open
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	auto t0 = std::chrono::steady_clock::now();
+	EXPECT_EQ(crnet_ws_wait_closed(ws, 5000), CRNET_E_TIMEOUT);
+	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+			  std::chrono::steady_clock::now() - t0)
+			  .count();
+	EXPECT_GE(ms, 250);
+	EXPECT_LT(ms, 3000);
+	EXPECT_EQ(crnet_ws_close_code(ws), 1006);
+	EXPECT_EQ(crnet_ws_net_error(ws), -7);	// ERR_TIMED_OUT
+	crnet_ws_free(ws);
+}
+
+TEST_F(ClientTest, WsIdleTimeoutRestartsWithEveryMessage)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	crnet_ws_set_idle_timeout(ws, 400);
+	for (int i = 0; i < 10; i++) {	// ~1.5 s, far beyond 400 ms
+		ASSERT_EQ(crnet_ws_send(ws, CRNET_WS_TEXT, "beat", 4), CRNET_OK);
+		EXPECT_EQ(RecvText(ws), "beat");
+		std::this_thread::sleep_for(std::chrono::milliseconds(150));
+	}
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_OPEN);
+	crnet_ws_wait_closed(ws, 5000);
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_CLOSED);
+	EXPECT_EQ(crnet_ws_net_error(ws), -7);
+	crnet_ws_free(ws);
+}
+
+// A paused application is not a silent peer.
+TEST_F(ClientTest, WsIdleTimeoutWaitsWhilePaused)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	crnet_ws_pause(ws);
+	crnet_ws_set_idle_timeout(ws, 200);
+	std::this_thread::sleep_for(std::chrono::milliseconds(800));
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_OPEN) << "closed while paused";
+	crnet_ws_resume(ws);
+	// CRNET_E_TIMEOUT is also what an expired wait returns: check the state.
+	crnet_ws_wait_closed(ws, 5000);
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_CLOSED);
+	EXPECT_EQ(crnet_ws_net_error(ws), -7);
+	crnet_ws_free(ws);
+}
+
+TEST_F(ClientTest, WsIdleTimeoutZeroDisables)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	crnet_ws_set_idle_timeout(ws, 200);
+	crnet_ws_set_idle_timeout(ws, 0);
+	std::this_thread::sleep_for(std::chrono::milliseconds(600));
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_OPEN);
+	crnet_ws_send(ws, CRNET_WS_TEXT, "still here", 10);
+	EXPECT_EQ(RecvText(ws), "still here");
+	crnet_ws_free(ws);
+}

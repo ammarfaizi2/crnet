@@ -490,6 +490,7 @@ feature can be used:
 | `CRNET_HAS_CLIENT_CERT` | 0.13.0 | `crnet_client_config_set_client_cert()`, `_set_client_cert_file()` |
 | `CRNET_HAS_SECURE_DNS` | 0.14.0 | `crnet_client_config_set_secure_dns()` |
 | `CRNET_HAS_STATE_DIR` | 0.15.0 | `crnet_client_config_set_state_dir()` |
+| `CRNET_HAS_WS_IDLE_TIMEOUT` | 0.16.0 | `crnet_ws_set_idle_timeout()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

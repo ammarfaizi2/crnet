@@ -1086,6 +1086,12 @@ CRNET_API int crnet_ws_close(crnet_ws *ws, int code, const char *reason)
 	return ws->Close(code, reason ? reason : "");
 }
 
+CRNET_API void crnet_ws_set_idle_timeout(crnet_ws *ws, uint64_t timeout_ms)
+{
+	if (ws)
+		ws->SetIdleTimeout(timeout_ms);
+}
+
 CRNET_API void crnet_ws_pause(crnet_ws *ws)
 {
 	if (ws)

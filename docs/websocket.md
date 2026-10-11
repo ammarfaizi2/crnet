@@ -120,6 +120,17 @@ and every queued message has been read.
   already in flight when you pause are held back and delivered on
   resume, so `on_message` is not called while paused.
 
+### Idle timeout
+
+`crnet_ws_set_idle_timeout(ws, ms)` drops a connection on which no
+message arrived for `ms` milliseconds, without a closing handshake
+(the peer is presumed gone); `on_close` reports `CRNET_E_TIMEOUT`, code
+1006 and `ERR_TIMED_OUT`. Every received message restarts it, and it
+waits while the application is not taking messages (paused, or a full
+receive queue). Pings and pongs do not count: Chromium answers pings on
+its own and reports neither. 0 turns it off; it may be changed at any
+time.
+
 ## Closing
 
 ```c

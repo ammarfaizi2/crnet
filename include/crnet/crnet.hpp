@@ -383,6 +383,8 @@ public:
 
 	void close(int code = 1000, const std::string &reason = "") { check(crnet_ws_close(ws_, code, reason.c_str())); }
 	int wait_closed(uint64_t timeout_ms = UINT64_MAX) { return crnet_ws_wait_closed(ws_, timeout_ms); }
+	// 0 = never; see crnet_ws_set_idle_timeout().
+	void set_idle_timeout(uint64_t ms) { crnet_ws_set_idle_timeout(ws_, ms); }
 	void pause() { crnet_ws_pause(ws_); }
 	void resume() { crnet_ws_resume(ws_); }
 

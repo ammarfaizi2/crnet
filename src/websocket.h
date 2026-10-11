@@ -35,6 +35,7 @@ public:
 	void Abort(int reason);
 	void Pause();
 	void Resume();
+	void SetIdleTimeout(uint64_t ms);
 	int WaitOpen(uint64_t timeout_ms);
 	int WaitClosed(uint64_t timeout_ms);
 	int Recv(crnet_ws_msg_type *type, void **data, size_t *len,
@@ -91,6 +92,8 @@ private:
 	void CloseOnNetworkThread(int code, std::string reason);
 	void ResumeOnNetworkThread();
 	void OnTimeout();
+	// (Re)arms the idle timer if the connection is open and one is set.
+	void RestartIdleTimer();
 	void Finish(int err, int code, const std::string &reason,
 		    int net_error);
 	// Keeps the fd readable exactly while Recv() would not block.
@@ -108,6 +111,8 @@ private:
 	// Network thread only.
 	std::unique_ptr<net::WebSocketChannel> channel_;
 	base::OneShotTimer timer_;
+	base::OneShotTimer idle_timer_;
+	uint64_t idle_ms_ = 0;
 	bool finished_ = false;
 	bool paused_ = false;
 	bool reading_stopped_ = false;

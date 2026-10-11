@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 15
+#define CRNET_VERSION_MINOR 16
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.15.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.16.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -990,6 +990,21 @@ CRNET_API int crnet_ws_fd(const crnet_ws *ws);
  * Thread-safe; on_close follows.
  */
 CRNET_API int crnet_ws_close(crnet_ws *ws, int code, const char *reason);
+
+/*
+ * Drop the connection when no message has arrived for |timeout_ms|
+ * (0 = never, the default): on_close then reports CRNET_E_TIMEOUT, code
+ * 1006 and net error ERR_TIMED_OUT, and no closing handshake is
+ * attempted, as the peer is presumed gone. The time counts while the
+ * connection is open and messages are being read; it restarts with
+ * every message, and stops while crnet is not reading because the
+ * application paused or did not take queued messages. Pings and pongs
+ * do not count: Chromium answers pings itself and reports neither.
+ * Thread-safe; may be called at any time, also before the connection is
+ * open.
+ */
+#define CRNET_HAS_WS_IDLE_TIMEOUT 1
+CRNET_API void crnet_ws_set_idle_timeout(crnet_ws *ws, uint64_t timeout_ms);
 
 /* Stop / resume reading messages from the network. Thread-safe. */
 CRNET_API void crnet_ws_pause(crnet_ws *ws);
