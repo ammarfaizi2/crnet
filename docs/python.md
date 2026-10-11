@@ -27,9 +27,23 @@ CRNET_LIBRARY=build/lib/libcrnet.so.0 PYTHONPATH=bindings/python python3 app.py
 ```
 
 Importing fails with `ImportError` when the library is missing or older
-than the module needs. There is no package on PyPI yet: put
-`bindings/python` on `PYTHONPATH`, or copy the `crnet` directory next
-to your program.
+than the module needs.
+
+## Installing
+
+There is no package on PyPI yet. From a crnet checkout, install the
+module with pip (into a virtual environment, or with `--user`):
+
+```bash
+pip install bindings/python
+```
+
+`python -m build bindings/python` makes a source distribution and a
+wheel to install elsewhere. The package has the version of the crnet
+release it comes from, read from `include/crnet/crnet.h`; it installs
+only the Python module, so libcrnet still has to be built and loadable
+as described above. Without installing, put `bindings/python` on
+`PYTHONPATH`, or copy the `crnet` directory next to your program.
 
 ## Clients
 

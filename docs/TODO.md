@@ -85,8 +85,6 @@ More from the bindings for other languages.
 
 - Today: `bindings/python` covers blocking requests, streamed uploads
   and downloads, cookies and WebSockets, without callbacks.
-- Python packaging: a `pyproject.toml` for `pip install`, with the
-  version taken from `crnet.h` rather than written down twice.
 - Python `asyncio`: awaitable requests and WebSockets on top of the
   completion queue's and the WebSocket's pollable descriptors, which
   need no callbacks into Python.

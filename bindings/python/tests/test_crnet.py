@@ -53,6 +53,20 @@ def header_of(echo, name):
     return None
 
 
+class Packaging(unittest.TestCase):
+    def test_version_is_the_librarys(self):
+        try:
+            import setuptools  # noqa: F401
+        except ImportError:
+            self.skipTest("setuptools is not installed")
+        setup_py = pathlib.Path(__file__).resolve().parents[1] / "setup.py"
+        out = subprocess.run([sys.executable, str(setup_py), "--version"],
+                             cwd=str(setup_py.parent), check=True,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL).stdout
+        self.assertEqual(out.decode().split()[-1], crnet.version())
+
+
 class ClientTest(unittest.TestCase):
     def setUp(self):
         self.c = crnet.Client(insecure=True)

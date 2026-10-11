@@ -14,3 +14,8 @@
 
 # Python bytecode (tests/server)
 __pycache__/
+
+# What pip and python -m build leave in bindings/python
+/bindings/python/build/
+/bindings/python/dist/
+/bindings/python/*.egg-info/
