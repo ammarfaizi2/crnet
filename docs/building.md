@@ -134,6 +134,19 @@ It rebuilds all of Chromium's network stack in its own output directory
 (`out/crnet-tsan`). The test suite runs clean under it, without
 suppressions; a race report makes a test fail.
 
+Instrumenting only your own code, with crnet built without
+ThreadSanitizer (or ignored, e.g. `called_from_lib:libcrnet.so`), works
+too, but the tool then cannot see how crnet hands work to its network
+thread: through its own task queues, futexes and eventfds. Memory you
+prepare before a crnet call and touch again in a callback on the
+network thread (a `user_data` structure, a handle you store), or after
+a crnet wait returns, may then be reported as a race with its own
+initialisation. That ordering is real, only invisible to the tool;
+state it in a form the tool understands, for example by publishing the
+pointer or a flag with a release store before the call and reading it
+with an acquire load in the callback, or by building crnet with
+`CRNET_TSAN=ON` as above.
+
 ### GN arguments crnet relies on
 
 `cmake/args.gn.in` sets, among others:
