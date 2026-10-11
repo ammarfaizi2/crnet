@@ -53,7 +53,7 @@ std::cout << r.status() << " " << r.protocol() << "\n" << r.body();
   permessage-deflate, cookies and proxies; messages via callbacks or a
   pollable queue.
 - **Proxies**: SOCKS5 (with remote DNS), SOCKS4, HTTP and HTTPS proxies,
-  with proxy authentication for HTTP(S) proxies.
+  with username/password authentication for SOCKS5 and HTTP(S) proxies.
 - **A stable C ABI**: `libcrnet.so` exports only `crnet_*` C symbols.
   Chromium, BoringSSL and Chromium's libc++ stay private, so it links
   into any C or C++ program built with any toolchain.
