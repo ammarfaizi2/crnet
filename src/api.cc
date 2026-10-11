@@ -94,10 +94,10 @@ int ParseProxy(const char *url, std::string *proxy, std::string *user,
 	if (u.has_username()) {
 		if (scheme == "socks4")
 			return CRNET_E_INVAL;	// SOCKS4 has no passwords
-		*user = base::UnescapeURLComponent(u.username(),
-						   base::UnescapeRule::NORMAL);
-		*pass = base::UnescapeURLComponent(u.password(),
-						   base::UnescapeRule::NORMAL);
+		// Every %XX is a byte: NORMAL would keep "%3A", "%2F" and
+		// the like escaped, so ':' or '/' could not be sent.
+		*user = base::UnescapeBinaryURLComponent(u.username());
+		*pass = base::UnescapeBinaryURLComponent(u.password());
 		// RFC 1929 sends each in a length byte.
 		if (scheme == "socks5" &&
 		    (user->empty() || user->size() > 255 || pass->empty() ||

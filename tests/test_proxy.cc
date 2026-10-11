@@ -734,3 +734,47 @@ TEST(RequestProxy, ExplicitlyNoHttpProxyCredentials)
 	EXPECT_EQ(HttpProxyAuths().size(), before);
 	crnet_client_free(c);
 }
+
+namespace {
+
+// What the test server reports for a user it decoded as Latin-1.
+std::string Latin1(const std::string &bytes)
+{
+	std::string out;
+	for (unsigned char ch : bytes) {
+		if (ch < 0x80) {
+			out += static_cast<char>(ch);
+		} else {
+			out += static_cast<char>(0xc0 | (ch >> 6));
+			out += static_cast<char>(0x80 | (ch & 0x3f));
+		}
+	}
+	return out;
+}
+
+} // namespace
+
+// Every %XX in the userinfo is that byte, and characters written as they
+// are stay as they are.
+TEST(Proxy, Socks5CredentialsArePercentDecoded)
+{
+	const std::string url = RemoteOnlyUrl(ServerPorts().https, "/echo");
+	crnet_client *c = NewTestClient();
+	size_t before = SocksAuths().size();
+	std::vector<std::string> sent;
+	for (int b = 0; b < 256; b++) {
+		char esc[4];
+		snprintf(esc, sizeof(esc), "%%%02X", b);
+		Result r = GetVia(c, url, AuthProxy(std::string("crnet-") + esc + ":secret"));
+		ASSERT_EQ(r.rc, CRNET_OK) << esc << ": " << crnet_response_error_string(r.resp);
+		sent.push_back("crnet-" + std::string(1, static_cast<char>(b)));
+	}
+	const std::string literal = "crnet-azAZ09-._~!\"$&()*+,<>%zz%";
+	ASSERT_EQ(GetVia(c, url, AuthProxy(literal + ":secr%65t")).rc, CRNET_OK);
+	sent.push_back(literal);
+	json auths = SocksAuths();
+	ASSERT_EQ(auths.size(), before + sent.size());
+	for (size_t i = 0; i < sent.size(); i++)
+		EXPECT_EQ(auths[before + i], json::array({Latin1(sent[i]), true})) << i;
+	crnet_client_free(c);
+}

@@ -173,15 +173,19 @@ CRNET_API void crnet_client_config_free(crnet_client_config *cfg);
  * Proxy for every request: "socks5://host:port", "socks5h://...",
  * "socks4://...", "http://host:port", "https://host:port", or
  * "direct://". SOCKS5 always resolves host names on the proxy (socks5
- * and socks5h are equivalent). Credentials in an http(s) proxy URL
- * ("http://user:pass@host:port") answer proxy auth challenges. In a
- * SOCKS5 URL ("socks5://user:pass@host:port", each 1 to 255 bytes,
- * percent-encoded as needed) they enable username/password
- * authentication (RFC 1929), offered besides "no authentication"; a
- * proxy rejecting them fails requests with net error -185. SOCKS4 has
- * no credentials. NULL means direct. An empty userinfo
- * ("socks5://@host:port", CRNET_HAS_PROXY_NO_CREDENTIALS) means no
- * credentials, the same as none here.
+ * and socks5h are equivalent). NULL means direct.
+ *
+ * Credentials in an http(s) proxy URL ("http://user:pass@host:port")
+ * answer proxy auth challenges. In a SOCKS5 URL
+ * ("socks5://user:pass@host:port", each 1 to 255 bytes) they enable
+ * username/password authentication (RFC 1929), offered besides "no
+ * authentication"; a proxy rejecting them fails requests with net error
+ * -185. SOCKS4 has no credentials. Every %XX in the credentials is the
+ * byte XX (since 0.29.0; before, "%3A" and the like stayed as written),
+ * so any byte can be sent percent-encoded; characters written as they
+ * are, and a '%' not followed by two hex digits, arrive unchanged. An
+ * empty userinfo ("socks5://@host:port", CRNET_HAS_PROXY_NO_CREDENTIALS)
+ * means no credentials, the same as none here.
  *
  * Credentials belong to the client (and its requests, see
  * crnet_request_set_proxy()): a client given none offers none, whatever
