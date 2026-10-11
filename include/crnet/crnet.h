@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 23
+#define CRNET_VERSION_MINOR 24
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -398,6 +398,28 @@ CRNET_API void crnet_client_config_set_connect_timeout(
 #define CRNET_HAS_LOCAL_ADDRESS 1
 CRNET_API int crnet_client_config_set_local_address(crnet_client_config *cfg,
 						    const char *addresses);
+
+/*
+ * A network interface ("eth1", "wg0") the client's connections must
+ * use, as SO_BINDTODEVICE does on Linux: the same sockets as
+ * crnet_client_config_set_local_address() are bound to it before they
+ * connect, so their packets leave through it whatever the routing
+ * table says. Combine the two for a source address and an interface.
+ * Plain DNS queries are not bound; with a VPN interface, use DNS over
+ * HTTPS (crnet_client_config_set_secure_dns()) to keep lookups on it.
+ *
+ * The interface need not exist yet: connections fail with net error
+ * ERR_ADDRESS_UNREACHABLE (-109) while it does not. Before Linux 5.7 the
+ * option needs CAP_NET_RAW; without it connections fail with
+ * ERR_ACCESS_DENIED (-10).
+ *
+ * NULL or "" means the routing table's choice (default). CRNET_E_INVAL
+ * for a name the kernel would not accept (empty, 16 bytes or longer,
+ * "." or "..", or containing '/', ':' or whitespace).
+ */
+#define CRNET_HAS_BIND_INTERFACE 1
+CRNET_API int crnet_client_config_set_bind_interface(crnet_client_config *cfg,
+						     const char *name);
 
 /*
  * Chromium's HTTP cache (the one Chrome uses), off by default: every

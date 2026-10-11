@@ -87,6 +87,7 @@ public:
 	}
 	ClientConfig &connect_timeout_ms(uint64_t ms) { crnet_client_config_set_connect_timeout(get(), ms); return *this; }
 	ClientConfig &local_address(const std::string &addresses) { check(crnet_client_config_set_local_address(get(), addresses.c_str())); return *this; }
+	ClientConfig &bind_interface(const std::string &name) { check(crnet_client_config_set_bind_interface(get(), name.c_str())); return *this; }
 	ClientConfig &netlog(const std::string &path) { check(crnet_client_config_set_netlog(get(), path.c_str())); return *this; }
 
 	crnet_client_config *get() const noexcept { return cfg_.get(); }

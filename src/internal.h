@@ -97,7 +97,7 @@ struct ClientConfig {
 	scoped_refptr<net::X509Certificate> client_cert;
 	scoped_refptr<net::SSLPrivateKey> client_key;
 	std::string host_rules;
-	LocalAddresses local_addresses;	// empty = the system's choice
+	SocketBinding binding;	// local addresses and interface
 	crnet_http_cache http_cache = CRNET_HTTP_CACHE_OFF;
 	std::string http_cache_path;
 	uint64_t http_cache_max_size = 0;

@@ -434,7 +434,18 @@ CRNET_API int crnet_client_config_set_local_address(
 	if (addresses && *addresses &&
 	    !crnet::ParseLocalAddresses(addresses, &local))
 		return CRNET_E_INVAL;
-	cfg->cfg.local_addresses = local;
+	cfg->cfg.binding.addresses = local;
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_client_config_set_bind_interface(crnet_client_config *cfg,
+						    const char *name)
+{
+	if (!cfg)
+		return CRNET_E_INVAL;
+	if (name && *name && !crnet::ValidInterfaceName(name))
+		return CRNET_E_INVAL;
+	cfg->cfg.binding.interface_name = name ? name : "";
 	return CRNET_OK;
 }
 

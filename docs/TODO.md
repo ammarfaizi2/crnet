@@ -47,19 +47,6 @@ A per-request fresh connection.
   `crnet_client_close_idle()` is client-wide and races with concurrent
   requests.
 
-### interface-binding
-
-Bind outgoing connections to a network interface (`SO_BINDTODEVICE`).
-
-- Today: `crnet_client_config_set_local_address()` picks the source
-  address, but the kernel's routing still picks the interface, so
-  without policy routing a packet can leave through another interface
-  than the one that owns the address.
-- Notes: the option has to be set on the descriptor before connect.
-  `TCPClientSocket` does not expose its descriptor, but it can adopt an
-  unconnected `TCPSocket`; the UDP side can reuse the wrapper in
-  `src/local_address.cc`. Older kernels require `CAP_NET_RAW` for it.
-
 ## Browser emulation
 
 ### platform-profiles

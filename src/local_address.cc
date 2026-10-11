@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "crnet/local_address.h"
 
+#include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -28,27 +29,46 @@ namespace {
 // family it cannot use.
 constexpr int kNoLocalAddress = net::ERR_ADDRESS_UNREACHABLE;
 
-// Opens a non-blocking socket of |peer|'s family and binds it to the
-// local address of that family. Returns a net error; on success |*fd|
-// is the caller's.
-int OpenBoundSocket(const LocalAddresses &local, int type,
-		    const net::IPEndPoint &peer, int *fd)
+int Bind(const SocketBinding &binding, const net::IPAddress *addr, int fd)
 {
-	const net::IPAddress *addr = local.For(peer);
+	const std::string &dev = binding.interface_name;
+	if (!dev.empty() && setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE,
+				       dev.data(), dev.size()) < 0) {
+		// A missing interface is a path that does not exist.
+		return errno == ENODEV ? kNoLocalAddress
+				       : net::MapSystemError(errno);
+	}
 	if (!addr)
-		return kNoLocalAddress;
+		return net::OK;
 	net::SockaddrStorage storage;
 	if (!net::IPEndPoint(*addr, 0).ToSockAddr(storage.addr(),
 						   &storage.addr_len))
 		return net::ERR_ADDRESS_INVALID;
-	int s = socket(storage.addr()->sa_family,
+	if (bind(fd, storage.addr(), storage.addr_len) < 0)
+		return net::MapSystemError(errno);
+	return net::OK;
+}
+
+// Opens a non-blocking socket of |peer|'s family and binds it to the
+// interface and to the local address of that family. Returns a net
+// error; on success |*fd| is the caller's.
+int OpenBoundSocket(const SocketBinding &binding, int type,
+		    const net::IPEndPoint &peer, int *fd)
+{
+	const net::IPAddress *addr = nullptr;
+	if (!binding.addresses.empty()) {
+		addr = binding.addresses.For(peer);
+		if (!addr)
+			return kNoLocalAddress;
+	}
+	int s = socket(peer.GetSockAddrFamily(),
 		       type | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
 	if (s < 0)
 		return net::MapSystemError(errno);
-	if (bind(s, storage.addr(), storage.addr_len) < 0) {
-		int err = net::MapSystemError(errno);
+	int rv = Bind(binding, addr, s);
+	if (rv != net::OK) {
 		close(s);
-		return err;
+		return rv;
 	}
 	*fd = s;
 	return net::OK;
@@ -61,9 +81,9 @@ int OpenBoundSocket(const LocalAddresses &local, int type,
 // passed through.
 class BoundDatagramSocket final : public net::DatagramClientSocket {
 public:
-	BoundDatagramSocket(const LocalAddresses &local,
+	BoundDatagramSocket(const SocketBinding &binding,
 			    std::unique_ptr<net::UDPClientSocket> inner)
-		: local_(local), inner_(std::move(inner))
+		: binding_(binding), inner_(std::move(inner))
 	{
 	}
 
@@ -225,7 +245,7 @@ private:
 	int Prepare(const net::IPEndPoint &peer)
 	{
 		int fd;
-		int rv = OpenBoundSocket(local_, SOCK_DGRAM, peer, &fd);
+		int rv = OpenBoundSocket(binding_, SOCK_DGRAM, peer, &fd);
 		if (rv != net::OK)
 			return rv;
 		rv = inner_->AdoptOpenedSocket(peer.GetFamily(), fd);
@@ -236,14 +256,14 @@ private:
 		return rv;
 	}
 
-	const LocalAddresses local_;
+	const SocketBinding binding_;
 	const std::unique_ptr<net::UDPClientSocket> inner_;
 };
 
-class LocalAddressSocketFactory final : public net::ClientSocketFactory {
+class BindingSocketFactory final : public net::ClientSocketFactory {
 public:
-	explicit LocalAddressSocketFactory(const LocalAddresses &local)
-		: local_(local)
+	explicit BindingSocketFactory(const SocketBinding &binding)
+		: binding_(binding)
 	{
 	}
 
@@ -256,7 +276,7 @@ public:
 		// kernel picks, so the connect must not bind again
 		// (RANDOM_BIND would).
 		return std::make_unique<BoundDatagramSocket>(
-			local_, std::make_unique<net::UDPClientSocket>(
+			binding_, std::make_unique<net::UDPClientSocket>(
 					net::DatagramSocket::DEFAULT_BIND,
 					net_log, source, target_network));
 	}
@@ -275,7 +295,7 @@ public:
 		int fd;
 		int rv = addresses.empty()
 				 ? kNoLocalAddress
-				 : OpenBoundSocket(local_, SOCK_STREAM,
+				 : OpenBoundSocket(binding_, SOCK_STREAM,
 						   addresses.front(), &fd);
 		if (rv == net::OK)
 			rv = tcp->AdoptUnconnectedSocket(fd);	// owns |fd| now
@@ -318,7 +338,7 @@ public:
 	}
 
 private:
-	const LocalAddresses local_;
+	const SocketBinding binding_;
 };
 
 } // namespace
@@ -350,10 +370,24 @@ bool ParseLocalAddresses(std::string_view list, LocalAddresses *out)
 	return true;
 }
 
-std::unique_ptr<net::ClientSocketFactory> CreateLocalAddressSocketFactory(
-	const LocalAddresses &local)
+bool ValidInterfaceName(std::string_view name)
 {
-	return std::make_unique<LocalAddressSocketFactory>(local);
+	// The kernel's dev_valid_name().
+	if (name.empty() || name.size() >= IFNAMSIZ || name == "." ||
+	    name == "..")
+		return false;
+	for (char ch : name) {
+		if (ch == '/' || ch == ':' || ch == ' ' ||
+		    (ch >= '\t' && ch <= '\r'))
+			return false;
+	}
+	return true;
+}
+
+std::unique_ptr<net::ClientSocketFactory> CreateBindingSocketFactory(
+	const SocketBinding &binding)
+{
+	return std::make_unique<BindingSocketFactory>(binding);
 }
 
 } // namespace crnet
