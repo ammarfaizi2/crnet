@@ -99,20 +99,14 @@ Consistent per-OS browser profiles.
 
 ### websocket-parity
 
-WebSocket controls that other WebSocket clients commonly offer, beyond
-the message size limit (max_body_size) and the idle timeout crnet has.
+Sending a ping and receiving pong events, or an auto-ping interval, as
+other WebSocket clients offer (crnet has the message size limit, the
+idle timeout and the compression switch).
 
-- Missing:
-  - sending a ping and receiving pong events, or an auto-ping
-    interval;
-  - a permessage-deflate on/off switch.
-- Both need a Chromium patch: `WebSocketChannel` sends only data
-  frames from outside and keeps pings and pongs to itself, and the
-  extension offer is fixed in `WebSocketHandshakeStreamCreateHelper`,
-  below anything crnet's header hook sees.
-- Note that Chrome itself offers neither to pages; turning
-  permessage-deflate off makes the handshake differ from Chrome's, so
-  keep Chrome's behaviour the default.
+- Needs a Chromium patch: `WebSocketChannel` sends only data frames
+  from outside, and answers and consumes pings and pongs itself
+  without telling its event interface.
+- Chrome offers neither to pages, so keep it opt-in.
 
 ## Build and tooling
 

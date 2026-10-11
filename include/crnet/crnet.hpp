@@ -128,6 +128,7 @@ public:
 	Request &priority(crnet_priority p) { check(crnet_request_set_priority(get(), p)); return *this; }
 	Request &max_redirects(int n) { check(crnet_request_set_max_redirects(get(), n)); return *this; }
 	Request &timeout_ms(uint64_t ms) { check(crnet_request_set_timeout(get(), ms)); return *this; }
+	Request &ws_compression(bool on) { check(crnet_request_set_ws_compression(get(), on)); return *this; }
 	Request &cache_mode(crnet_cache_mode mode) { check(crnet_request_set_cache_mode(get(), mode)); return *this; }
 	Request &connect_timeout_ms(uint64_t ms) { check(crnet_request_set_connect_timeout(get(), ms)); return *this; }
 	Request &decompress(bool on) { check(crnet_request_set_decompress(get(), on)); return *this; }

@@ -708,6 +708,14 @@ CRNET_API int crnet_request_set_max_redirects(crnet_request *req,
 	return CRNET_OK;
 }
 
+CRNET_API int crnet_request_set_ws_compression(crnet_request *req, int enable)
+{
+	if (!req)
+		return CRNET_E_INVAL;
+	req->spec.ws_compression = !!enable;
+	return CRNET_OK;
+}
+
 CRNET_API int crnet_request_set_cache_mode(crnet_request *req,
 					   crnet_cache_mode mode)
 {

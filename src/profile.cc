@@ -362,6 +362,12 @@ std::optional<WsHeaders> BuildWsHeaders(const ClientConfig &cfg,
 		wh.extra.SetHeader(name, *value);
 	}
 
+	// An empty Sec-WebSocket-Extensions makes //net offer no extension
+	// (chromium/patches/*-WebSocket-extension-offer*), for the switch or
+	// for removing the header like any other default.
+	if (!spec.ws_compression || wh.suppressed.count("sec-websocket-extensions"))
+		wh.extra.SetHeader("Sec-WebSocket-Extensions", "");
+
 	for (std::string_view p : base::SplitStringPiece(
 		     proto_list, ",", base::TRIM_WHITESPACE,
 		     base::SPLIT_WANT_NONEMPTY)) {

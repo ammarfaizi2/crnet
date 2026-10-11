@@ -731,3 +731,60 @@ TEST_F(ClientTest, WsIdleTimeoutZeroDisables)
 	EXPECT_EQ(RecvText(ws), "still here");
 	crnet_ws_free(ws);
 }
+
+// ------------------------------------------------------------------
+// Compression switch
+// ------------------------------------------------------------------
+
+TEST_F(ClientTest, WsWithoutCompressionOffer)
+{
+	auto off_by_switch = [](crnet_request *req) {
+		crnet_request_set_ws_compression(req, 0);
+	};
+	auto off_by_removal = [](crnet_request *req) {
+		crnet_request_set_header(req, "Sec-WebSocket-Extensions", nullptr);
+	};
+	for (auto tweak : {+off_by_switch, +off_by_removal}) {
+		crnet_ws *ws = Connect(client_, WsUrl("/ws/headers"), nullptr, nullptr, nullptr,
+				       tweak);
+		ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+		json doc = json::parse(RecvText(ws));
+		EXPECT_FALSE(EchoHasHeader(doc, "Sec-WebSocket-Extensions"));
+		EXPECT_EQ(doc["deflate"], false);
+		EXPECT_STREQ(crnet_ws_extensions(ws), "");
+		crnet_ws_send(ws, CRNET_WS_TEXT, "plain", 5);
+		EXPECT_EQ(RecvText(ws), "plain");
+		crnet_ws_free(ws);
+	}
+}
+
+TEST_F(ClientTest, WsWithoutCompressionOverHttp2)
+{
+	Get(client_, "https://" + WsH2Host() + "/echo");
+	crnet_ws *ws = Connect(client_, "wss://" + WsH2Host() + "/ws/headers", nullptr, nullptr,
+			       nullptr, [](crnet_request *req) {
+				       crnet_request_set_ws_compression(req, 0);
+			       });
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	json doc = json::parse(RecvText(ws));
+	EXPECT_EQ(doc["http_version"], "h2");
+	EXPECT_FALSE(EchoHasHeader(doc, "Sec-WebSocket-Extensions"));
+	EXPECT_EQ(doc["deflate"], false);
+	crnet_ws_free(ws);
+}
+
+TEST_F(ClientTest, WsCompressionStaysChromesDefault)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/headers"), nullptr, nullptr, nullptr,
+			       [](crnet_request *req) {
+				       crnet_request_set_ws_compression(req, 1);
+				       // An arbitrary offer is not passed on.
+				       crnet_request_set_header(req, "Sec-WebSocket-Extensions",
+								"x-custom");
+			       });
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	json doc = json::parse(RecvText(ws));
+	EXPECT_EQ(EchoHeader(doc, "Sec-WebSocket-Extensions"),
+		  "permessage-deflate; client_max_window_bits");
+	crnet_ws_free(ws);
+}

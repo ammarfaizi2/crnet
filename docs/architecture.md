@@ -203,8 +203,8 @@ proper hooks for all of this: `URLRequest::SetReferrer()` with
 `NEVER_CLEAR`, `set_client_side_content_decoding_enabled()`, the
 NetworkDelegate. crnet patches only what has no hook (a race on a
 global that only multi-threaded use exposes, SOCKS5 error detail that
-Chromium discards), and keeps each patch small, since every patch
-makes upgrades costlier.
+Chromium discards, a WebSocket extension offer it hard-codes), and
+keeps each patch small, since every patch makes upgrades costlier.
 
 **Allocator.** PartitionAlloc's malloc shim is disabled
 (`use_allocator_shim=false`). A library must not take over the host

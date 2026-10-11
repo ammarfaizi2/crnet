@@ -127,6 +127,7 @@ struct RequestSpec {
 	std::optional<uint64_t> timeout_ms;
 	std::optional<uint64_t> connect_timeout_ms;
 	bool decompress = true;
+	bool ws_compression = true;	// offer permessage-deflate
 	uint64_t max_body = 0;
 
 	const std::optional<std::string> *FindHeader(std::string_view name) const;

@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 17
+#define CRNET_VERSION_MINOR 18
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.17.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.18.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -934,6 +934,9 @@ typedef struct crnet_ws_callbacks {
  *   - The request timeout bounds the opening handshake.
  *   - max_body_size limits the size of one received message
  *     (CRNET_E_TOO_LARGE).
+ *   - crnet_request_set_ws_compression(req, 0), or removing the
+ *     "Sec-WebSocket-Extensions" header (NULL value), offers no
+ *     permessage-deflate.
  * Mode, priority, redirects and decompression do not apply.
  * |protocols| is a comma separated list of subprotocols or NULL.
  *
@@ -991,6 +994,16 @@ CRNET_API int crnet_ws_fd(const crnet_ws *ws);
  * Thread-safe; on_close follows.
  */
 CRNET_API int crnet_ws_close(crnet_ws *ws, int code, const char *reason);
+
+/*
+ * Whether a WebSocket opened with |req| offers permessage-deflate, as
+ * Chrome always does. Default 1. With 0 the handshake has no
+ * Sec-WebSocket-Extensions header, so messages travel uncompressed; the
+ * handshake then differs from Chrome's.
+ */
+#define CRNET_HAS_WS_COMPRESSION_SWITCH 1
+CRNET_API int crnet_request_set_ws_compression(crnet_request *req,
+					       int enable);
 
 /*
  * Drop the connection when no message has arrived for |timeout_ms|

@@ -7,7 +7,9 @@ it. Everything below the API is Chrome's:
 - the opening handshake: the same headers in the same order, cookies
   from and to the client's jar, proxies, TLS with Chrome's fingerprint,
 - `permessage-deflate` (offered as Chrome does,
-  `permessage-deflate; client_max_window_bits`),
+  `permessage-deflate; client_max_window_bits`; turn the offer off with
+  `crnet_request_set_ws_compression(req, 0)`, at the cost of a
+  handshake that differs from Chrome's),
 - WebSockets over HTTP/2 (RFC 8441) when the server enables extended
   CONNECT on an existing HTTP/2 connection,
 - automatic Pong replies, UTF-8 validation of text messages, the

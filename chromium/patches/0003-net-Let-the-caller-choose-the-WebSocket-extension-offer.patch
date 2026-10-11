@@ -1,0 +1,134 @@
+net: Let the caller choose the WebSocket extension offer
+
+WebSocketHandshakeStreamCreateHelper always offers
+"permessage-deflate; client_max_window_bits", and WebSocketStream drops
+any Sec-WebSocket-Extensions the caller passes in its additional
+headers, so there is no way to open a WebSocket without compression.
+
+Take a caller-supplied Sec-WebSocket-Extensions as the offer instead of
+dropping it, an empty one meaning no extension. Chrome never passes the
+header (pages may not set it), so its handshakes do not change.
+
+diff --git a/net/websockets/websocket_handshake_stream_create_helper.cc b/net/websockets/websocket_handshake_stream_create_helper.cc
+index 6d7b6be8a7..fbd0fbd0af 100644
+--- a/net/websockets/websocket_handshake_stream_create_helper.cc
++++ b/net/websockets/websocket_handshake_stream_create_helper.cc
+@@ -19,12 +19,22 @@ namespace net {
+ WebSocketHandshakeStreamCreateHelper::WebSocketHandshakeStreamCreateHelper(
+     WebSocketStream::ConnectDelegate* connect_delegate,
+     const std::vector<std::string>& requested_subprotocols,
+-    WebSocketStreamRequestAPI* request)
++    WebSocketStreamRequestAPI* request,
++    std::optional<std::string> requested_extensions)
+     : connect_delegate_(connect_delegate),
+       requested_subprotocols_(requested_subprotocols),
+       request_(request) {
+   DCHECK(connect_delegate_);
+   DCHECK(request_);
++  // The list of supported extensions and parameters is hard-coded.
++  // TODO(ricea): If more extensions are added, consider a more flexible
++  // method.
++  if (!requested_extensions) {
++    requested_extensions_.push_back(
++        "permessage-deflate; client_max_window_bits");
++  } else if (!requested_extensions->empty()) {
++    requested_extensions_.push_back(std::move(*requested_extensions));
++  }
+ }
+ 
+ WebSocketHandshakeStreamCreateHelper::~WebSocketHandshakeStreamCreateHelper() =
+@@ -35,11 +45,7 @@ WebSocketHandshakeStreamCreateHelper::CreateBasicStream(
+     std::unique_ptr<ClientSocketHandle> connection,
+     bool using_proxy,
+     WebSocketEndpointLockManager* websocket_endpoint_lock_manager) {
+-  // The list of supported extensions and parameters is hard-coded.
+-  // TODO(ricea): If more extensions are added, consider a more flexible
+-  // method.
+-  std::vector<std::string> extensions(
+-      1, "permessage-deflate; client_max_window_bits");
++  std::vector<std::string> extensions = requested_extensions_;
+   auto stream = std::make_unique<WebSocketBasicHandshakeStream>(
+       std::move(connection), connect_delegate_, using_proxy,
+       requested_subprotocols_, std::move(extensions), request_,
+@@ -52,8 +58,7 @@ std::unique_ptr<WebSocketHandshakeStreamBase>
+ WebSocketHandshakeStreamCreateHelper::CreateHttp2Stream(
+     base::WeakPtr<SpdySession> session,
+     std::set<std::string> dns_aliases) {
+-  std::vector<std::string> extensions(
+-      1, "permessage-deflate; client_max_window_bits");
++  std::vector<std::string> extensions = requested_extensions_;
+   auto stream = std::make_unique<WebSocketHttp2HandshakeStream>(
+       std::move(session), connect_delegate_, requested_subprotocols_,
+       std::move(extensions), request_, std::move(dns_aliases));
+@@ -65,8 +70,7 @@ std::unique_ptr<WebSocketHandshakeStreamBase>
+ WebSocketHandshakeStreamCreateHelper::CreateHttp3Stream(
+     std::unique_ptr<QuicChromiumClientSession::Handle> session,
+     std::set<std::string> dns_aliases) {
+-  std::vector<std::string> extensions(
+-      1, "permessage-deflate; client_max_window_bits");
++  std::vector<std::string> extensions = requested_extensions_;
+   auto stream = std::make_unique<WebSocketHttp3HandshakeStream>(
+       std::move(session), connect_delegate_, requested_subprotocols_,
+       std::move(extensions), request_, std::move(dns_aliases));
+diff --git a/net/websockets/websocket_handshake_stream_create_helper.h b/net/websockets/websocket_handshake_stream_create_helper.h
+index 34cae4356b..c72d700bd7 100644
+--- a/net/websockets/websocket_handshake_stream_create_helper.h
++++ b/net/websockets/websocket_handshake_stream_create_helper.h
+@@ -7,6 +7,7 @@
+ 
+ #include <memory>
+ #include <set>
++#include <optional>
+ #include <string>
+ #include <vector>
+ 
+@@ -36,10 +37,13 @@ class NET_EXPORT_PRIVATE WebSocketHandshakeStreamCreateHelper
+     : public WebSocketHandshakeStreamBase::CreateHelper {
+  public:
+   // |*connect_delegate| and |*request| must out-live this object.
++  // crnet: |requested_extensions|, when set, replaces the default
++  // Sec-WebSocket-Extensions offer; an empty value offers none.
+   WebSocketHandshakeStreamCreateHelper(
+       WebSocketStream::ConnectDelegate* connect_delegate,
+       const std::vector<std::string>& requested_subprotocols,
+-      WebSocketStreamRequestAPI* request);
++      WebSocketStreamRequestAPI* request,
++      std::optional<std::string> requested_extensions = std::nullopt);
+ 
+   WebSocketHandshakeStreamCreateHelper(
+       const WebSocketHandshakeStreamCreateHelper&) = delete;
+@@ -69,6 +73,7 @@ class NET_EXPORT_PRIVATE WebSocketHandshakeStreamCreateHelper
+   const raw_ptr<WebSocketStream::ConnectDelegate> connect_delegate_;
+   const std::vector<std::string> requested_subprotocols_;
+   const raw_ptr<WebSocketStreamRequestAPI> request_;
++  std::vector<std::string> requested_extensions_;
+ };
+ 
+ }  // namespace net
+diff --git a/net/websockets/websocket_stream.cc b/net/websockets/websocket_stream.cc
+index c56b0a9303..971ea7dcd9 100644
+--- a/net/websockets/websocket_stream.cc
++++ b/net/websockets/websocket_stream.cc
+@@ -166,6 +166,12 @@ class WebSocketStreamRequestImpl : public WebSocketStreamRequestAPI {
+     headers.SetHeader(websockets::kSecWebSocketVersion,
+                       websockets::kSupportedVersion);
+ 
++    // crnet: a caller-supplied Sec-WebSocket-Extensions replaces the
++    // default offer (an empty one offers no extension) instead of being
++    // dropped.
++    std::optional<std::string> requested_extensions =
++        headers.GetHeader(websockets::kSecWebSocketExtensions);
++
+     // Remove HTTP headers that are important to websocket connections: they
+     // will be added later.
+     headers.RemoveHeader(websockets::kSecWebSocketExtensions);
+@@ -188,7 +194,8 @@ class WebSocketStreamRequestImpl : public WebSocketStreamRequestAPI {
+     }
+ 
+     auto create_helper = std::make_unique<WebSocketHandshakeStreamCreateHelper>(
+-        connect_delegate_.get(), requested_subprotocols, this);
++        connect_delegate_.get(), requested_subprotocols, this,
++        std::move(requested_extensions));
+     url_request_->SetUserData(kWebSocketHandshakeUserDataKey,
+                               std::move(create_helper));
+     int load_flags = LOAD_DISABLE_CACHE | LOAD_BYPASS_CACHE;

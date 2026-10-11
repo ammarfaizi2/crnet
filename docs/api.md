@@ -499,6 +499,7 @@ feature can be used:
 | `CRNET_HAS_STATE_DIR` | 0.15.0 | `crnet_client_config_set_state_dir()` |
 | `CRNET_HAS_WS_IDLE_TIMEOUT` | 0.16.0 | `crnet_ws_set_idle_timeout()` |
 | `CRNET_HAS_SOCKS_ERRORS` | 0.17.0 | distinct SOCKS5 net errors, `crnet_response_socks_reply()` |
+| `CRNET_HAS_WS_COMPRESSION_SWITCH` | 0.18.0 | `crnet_request_set_ws_compression()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built
