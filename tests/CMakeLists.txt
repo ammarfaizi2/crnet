@@ -15,6 +15,7 @@ add_executable(crnet_tests
   common.cc
   test_async.cc
   test_basic.cc
+  test_cookies.cc
   test_cpp.cc
   test_headers.cc
   test_http.cc

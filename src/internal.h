@@ -397,6 +397,9 @@ public:
 	int SetCookie(const std::string &url, const std::string &line);
 	std::optional<std::string> GetCookies(const std::string &url);
 	int ClearCookies();
+	std::string ExportCookies(crnet_cookie_format format);
+	int ImportCookies(const std::string &data, crnet_cookie_format format,
+			  size_t *imported);
 	void CloseIdle();
 
 private:

@@ -480,6 +480,28 @@ public:
 	}
 
 	void clear_cookies() { crnet_client_clear_cookies(get()); }
+
+	// Save / restore the whole jar (see crnet_cookie_format).
+	std::string export_cookies(crnet_cookie_format format = CRNET_COOKIES_JSON)
+	{
+		char *s = crnet_client_export_cookies(get(), format);
+		if (!s)
+			throw Error(CRNET_E_INVAL, "crnet_client_export_cookies failed");
+		std::string out(s);
+		crnet_free(s);
+		return out;
+	}
+	// Returns the number of cookies stored; throws crnet::Error if any
+	// cookie was refused.
+	size_t import_cookies(const std::string &data,
+			      crnet_cookie_format format = CRNET_COOKIES_JSON)
+	{
+		size_t n = 0;
+		int rc = crnet_client_import_cookies(get(), data.c_str(), format, &n);
+		if (rc != CRNET_OK)
+			throw Error(rc, crnet_strerror(rc));
+		return n;
+	}
 	void close_idle() { crnet_client_close_idle(get()); }
 
 	// Open a WebSocket (ws://, wss://). |protocols| is a comma separated

@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 10
+#define CRNET_VERSION_MINOR 11
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.10.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.11.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -327,6 +327,49 @@ CRNET_API int crnet_client_set_cookie(crnet_client *client, const char *url,
 CRNET_API char *crnet_client_get_cookies(crnet_client *client,
 					 const char *url);
 CRNET_API int crnet_client_clear_cookies(crnet_client *client);
+
+/*
+ * Saving and restoring the cookie jar, e.g. to keep a session across
+ * runs. Like the calls above they block, so they must not be called
+ * from a callback.
+ */
+#define CRNET_HAS_COOKIE_JAR_IO 1
+typedef enum crnet_cookie_format {
+	/* crnet's JSON: an array of objects with every attribute Chromium
+	 * keeps (SameSite, priority, partition, creation and access times,
+	 * source scheme and port); lossless. */
+	CRNET_COOKIES_JSON = 0,
+	/* Netscape cookies.txt as read and written by curl and wget,
+	 * "#HttpOnly_" prefix included. Loses SameSite, priority and the
+	 * times other than expiry, and cannot hold partitioned (CHIPS)
+	 * cookies, which are left out. */
+	CRNET_COOKIES_NETSCAPE = 1,
+} crnet_cookie_format;
+
+/*
+ * All cookies in the jar, session cookies included. Release with
+ * crnet_free(). An empty jar (or cookies disabled) gives an empty list
+ * in the format. NULL on invalid arguments or on a network thread.
+ */
+CRNET_API char *crnet_client_export_cookies(crnet_client *client,
+					    crnet_cookie_format format);
+
+/*
+ * Add cookies from |data| in |format| to the jar, replacing cookies of
+ * the same name, domain and path. Expired cookies are skipped. If
+ * |data| is malformed or holds any cookie a site could not set (bad
+ * name or value, a domain cookie for a public suffix such as ".com"),
+ * nothing is imported and CRNET_E_INVAL returned. Each cookie is then
+ * set as if its site had sent it, which can still refuse one given the
+ * jar's contents (a non-secure cookie may not replace a secure one);
+ * the others are kept and CRNET_E_INVAL is returned. *imported (may be
+ * NULL) receives the number stored. CRNET_E_STATE when cookies are
+ * disabled.
+ */
+CRNET_API int crnet_client_import_cookies(crnet_client *client,
+					  const char *data,
+					  crnet_cookie_format format,
+					  size_t *imported);
 
 /* Close idle connections in the pool. */
 CRNET_API void crnet_client_close_idle(crnet_client *client);

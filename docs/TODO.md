@@ -168,11 +168,6 @@ An optional HTTP cache.
 
 ## Persistence
 
-### cookie-jar-persistence
-
-Cookie jar import and export, in JSON or Netscape format, so a crawl
-session (`__cf_bm`, site cookies) survives across runs.
-
 ### network-state-persistence
 
 Persist what Chrome keeps between runs besides cookies.
@@ -184,8 +179,8 @@ Persist what Chrome keeps between runs besides cookies.
   (Alt-Svc, QUIC server info) and dynamic HSTS, so a returning client
   starts on HTTP/3 and HTTPS like a returning Chrome.
 - Notes: Chromium has persisters for both (`HttpServerPropertiesManager`,
-  `TransportSecurityPersister`). Pairs with `cookie-jar-persistence`;
-  one "profile directory" option could cover all three.
+  `TransportSecurityPersister`). One "profile directory" option could
+  cover them and the cookie jar (`crnet_client_export_cookies()`).
 
 ## WebSocket
 

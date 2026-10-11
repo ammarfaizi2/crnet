@@ -16,6 +16,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/network_session_configurator/browser/network_session_configurator.h"
+#include "crnet/cookie_io.h"
 #include "crnet/internal.h"
 #include "crnet/websocket.h"
 #include "net/base/features.h"
@@ -543,6 +544,110 @@ std::optional<std::string> crnet_client::GetCookies(const std::string &url)
 			base::Unretained(this), u, &line, &ev));
 	ev.Wait();
 	return line;
+}
+
+std::string crnet_client::ExportCookies(crnet_cookie_format format)
+{
+	net::CookieList cookies;
+	if (cfg_.cookies) {
+		base::WaitableEvent ev;
+		runner_->PostTask(
+			FROM_HERE,
+			base::BindOnce(
+				[](crnet_client *c, net::CookieList *out,
+				   base::WaitableEvent *ev) {
+					if (!c->context_) {
+						ev->Signal();
+						return;
+					}
+					c->context_->cookie_store()->GetAllCookiesAsync(
+						base::BindOnce(
+							[](net::CookieList *out,
+							   base::WaitableEvent *ev,
+							   const net::CookieList &all) {
+								*out = all;
+								ev->Signal();
+							},
+							out, ev));
+				},
+				base::Unretained(this), &cookies, &ev));
+		ev.Wait();
+	}
+	return crnet::ExportCookies(cookies, format);
+}
+
+int crnet_client::ImportCookies(const std::string &data,
+				crnet_cookie_format format, size_t *imported)
+{
+	*imported = 0;
+	if (!cfg_.cookies)
+		return CRNET_E_STATE;
+	// All or nothing as far as parsing goes: nothing is stored unless
+	// every cookie is well-formed.
+	std::vector<std::unique_ptr<net::CanonicalCookie>> cookies;
+	if (!crnet::ParseCookies(data, format, &cookies))
+		return CRNET_E_INVAL;
+
+	struct Import {
+		size_t pending = 0;
+		size_t ok = 0;
+		int result = CRNET_OK;
+		base::WaitableEvent done;
+	} state;
+	state.pending = cookies.size();
+	if (!state.pending)
+		return CRNET_OK;
+	runner_->PostTask(
+		FROM_HERE,
+		base::BindOnce(
+			[](crnet_client *c,
+			   std::vector<std::unique_ptr<net::CanonicalCookie>> cookies,
+			   Import *state) {
+				if (!c->context_) {
+					state->result = CRNET_E_SHUTDOWN;
+					state->done.Signal();
+					return;
+				}
+				for (auto &cc : cookies) {
+					// Set as if received from the site that
+					// set it, so Chromium checks it as it would
+					// a Set-Cookie header.
+					std::string host(base::TrimString(
+						cc->Domain(), ".",
+						base::TRIM_LEADING));
+					bool https = cc->SecureAttribute() ||
+						     cc->SourceScheme() ==
+							     net::CookieSourceScheme::kSecure;
+					std::string port;
+					if (cc->SourcePort() > 0)
+						port = base::StrCat(
+							{":", base::NumberToString(
+								      cc->SourcePort())});
+					GURL source(base::StrCat(
+						{https ? "https://" : "http://", host,
+						 port, cc->Path()}));
+					c->context_->cookie_store()->SetCanonicalCookieAsync(
+						std::move(cc), source,
+						net::CookieOptions::MakeAllInclusive(),
+						base::BindOnce(
+							[](Import *state,
+							   net::CookieAccessResult r) {
+								if (r.status.IsInclude())
+									state->ok++;
+								else
+									state->result =
+										CRNET_E_INVAL;
+								if (!--state->pending)
+									state->done.Signal();
+							},
+							state),
+						std::nullopt);
+				}
+			},
+			base::Unretained(this), std::move(cookies), &state));
+	state.done.Wait();
+	*imported = state.ok;
+	return state.result;
 }
 
 int crnet_client::ClearCookies()

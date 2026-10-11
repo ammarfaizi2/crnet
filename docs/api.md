@@ -360,6 +360,26 @@ crnet_client_clear_cookies(client);
 `crnet_client_get_cookies()` returns the `Cookie` header value the
 client would send to that URL.
 
+To keep a session across runs, save the jar and load it into the next
+client:
+
+```c
+char *saved = crnet_client_export_cookies(client, CRNET_COOKIES_JSON);
+/* ... write it to a file; next run: */
+size_t n;
+crnet_client_import_cookies(client, saved, CRNET_COOKIES_JSON, &n);
+crnet_free(saved);
+```
+
+`CRNET_COOKIES_JSON` keeps every attribute Chromium stores (SameSite,
+priority, CHIPS partition, creation and access times) and round-trips
+exactly. `CRNET_COOKIES_NETSCAPE` is the `cookies.txt` format of curl
+and wget, for exchanging cookies with them; it loses SameSite, priority
+and the times other than expiry, and leaves partitioned cookies out.
+Session cookies are exported too. An import is checked as a whole
+first: a malformed entry or one a site could not set (such as a cookie
+for `.com`) rejects all of it.
+
 ## Errors
 
 | Code | Meaning |
@@ -461,6 +481,7 @@ feature can be used:
 | `CRNET_HAS_CONNECT_TIMEOUT` | 0.8.0 | `crnet_client_config_set_connect_timeout()`, `crnet_request_set_connect_timeout()` |
 | `CRNET_HAS_WRITE_FD` | 0.9.0 | `crnet_transfer_write_fd()` |
 | `CRNET_HAS_TRUST_ANCHORS` | 0.10.0 | `crnet_client_config_add_trust_anchors()`, `_add_trust_anchors_file()`, `_set_trust_anchors_only()` |
+| `CRNET_HAS_COOKIE_JAR_IO` | 0.11.0 | `crnet_client_export_cookies()`, `crnet_client_import_cookies()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

@@ -31,6 +31,8 @@ shared_library("crnet") {
     "$crnet_root/include/crnet/crnet.h",
     "api.cc",
     "client.cc",
+    "cookie_io.cc",
+    "cookie_io.h",
     "event.cc",
     "event.h",
     "fd_flag.cc",

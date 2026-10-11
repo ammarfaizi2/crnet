@@ -404,6 +404,34 @@ CRNET_API int crnet_client_clear_cookies(crnet_client *client)
 	return client->ClearCookies();
 }
 
+CRNET_API char *crnet_client_export_cookies(crnet_client *client,
+					    crnet_cookie_format format)
+{
+	if (!client || crnet::OnNetworkThread() ||
+	    (format != CRNET_COOKIES_JSON && format != CRNET_COOKIES_NETSCAPE))
+		return nullptr;
+	return strdup(client->ExportCookies(format).c_str());
+}
+
+CRNET_API int crnet_client_import_cookies(crnet_client *client,
+					  const char *data,
+					  crnet_cookie_format format,
+					  size_t *imported)
+{
+	size_t n = 0;
+	if (imported)
+		*imported = 0;
+	if (!client || !data ||
+	    (format != CRNET_COOKIES_JSON && format != CRNET_COOKIES_NETSCAPE))
+		return CRNET_E_INVAL;
+	if (crnet::OnNetworkThread())
+		return CRNET_E_WOULD_DEADLOCK;
+	int rc = client->ImportCookies(data, format, &n);
+	if (imported)
+		*imported = n;
+	return rc;
+}
+
 CRNET_API void crnet_client_close_idle(crnet_client *client)
 {
 	if (client)
