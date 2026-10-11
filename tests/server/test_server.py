@@ -62,8 +62,9 @@ WebSocket endpoints (HTTP/1.1 upgrade, any server):
   /ws/fragmented        sends fragmented text and binary messages
   /ws/burst?n=&size=    sends n binary messages back to back
   /ws/big?size=         sends one large binary message
-  /ws/ping              sends a ping; the pong is counted in stats
-                        (pings from the client are counted too)
+  /ws/ping?n=&interval_ms=  sends n pings (default 1), "ping 0", "ping
+                        1", ..., interval_ms apart; pongs are counted in
+                        stats (pings from the client are counted too)
   /ws/pong              sends an unsolicited pong
   /ws/badutf8           sends invalid UTF-8 in a text frame
   /ws/badproto          answers with a subprotocol that was not offered
@@ -588,7 +589,17 @@ async def ws_session(ws, req, chosen, deflate):
             for i in range(n):
                 await ws.send(OP_BINARY, struct.pack("!I", i) + body[4:])
         elif path == "/ws/ping":
-            await ws.send_frame(OP_PING, b"are you there")
+            n = int(q.get("n", "1"))
+            interval = int(q.get("interval_ms", "0")) / 1000
+
+            async def pings():
+                for i in range(n):
+                    if i:
+                        await asyncio.sleep(interval)
+                    await ws.send_frame(OP_PING, b"ping %d" % i)
+
+            # Alongside the echo loop below, which answers "stats".
+            ping_task = asyncio.ensure_future(pings())
         elif path == "/ws/pong":
             await ws.send_frame(OP_PONG, b"unsolicited")
         elif path == "/ws/badutf8":
