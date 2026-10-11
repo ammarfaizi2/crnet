@@ -172,7 +172,10 @@ crnet is a network stack, not a browser:
 - **No subresource behaviour.** A real page load is followed by CSS,
   script, image and beacon requests. Systems that score a session on
   that behaviour can tell the difference over time.
-- **No HTTP cache, no service workers, no prefetch/preconnect.**
+- **No HTTP cache unless enabled, no service workers, no
+  prefetch/preconnect.** With `crnet_client_config_set_http_cache()` the
+  cache is Chrome's own, so revalidation requests (`If-None-Match`,
+  `If-Modified-Since`) are formed as Chrome forms them.
 - **No high-entropy client hints** (`sec-ch-ua-full-version-list` etc.)
   unless you add them yourself after a server asked for them with
   `Accept-CH`.

@@ -230,6 +230,28 @@ void crnet_transfer::StartOnNetworkThread()
 	int flags = net::LOAD_NORMAL;
 	if (!cfg.cookies)
 		flags |= net::LOAD_DO_NOT_SAVE_COOKIES;
+	// As Chrome maps fetch()'s cache modes
+	// (blink::DetermineFetchCacheMode() and the network service).
+	switch (spec_.cache_mode) {
+	case CRNET_CACHE_DEFAULT:
+		break;
+	case CRNET_CACHE_NO_STORE:
+		flags |= net::LOAD_DISABLE_CACHE;
+		break;
+	case CRNET_CACHE_RELOAD:
+		flags |= net::LOAD_BYPASS_CACHE;
+		break;
+	case CRNET_CACHE_NO_CACHE:
+		flags |= net::LOAD_VALIDATE_CACHE;
+		break;
+	case CRNET_CACHE_FORCE_CACHE:
+		flags |= net::LOAD_SKIP_CACHE_VALIDATION;
+		break;
+	case CRNET_CACHE_ONLY_IF_CACHED:
+		flags |= net::LOAD_ONLY_FROM_CACHE |
+			 net::LOAD_SKIP_CACHE_VALIDATION;
+		break;
+	}
 	request_->SetLoadFlags(flags);
 
 	if (spec_.body) {
@@ -420,6 +442,7 @@ void crnet_transfer::FillResponseMeta(net::URLRequest *request)
 			net::HttpConnectionInfoToString(info.connection_info));
 	r.remote = request->GetResponseRemoteEndpoint().ToString();
 	r.via_proxy = info.WasFetchedViaProxy();
+	r.from_cache = info.was_cached;
 	FillTiming(request);
 }
 

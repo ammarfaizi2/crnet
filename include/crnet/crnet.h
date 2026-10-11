@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 11
+#define CRNET_VERSION_MINOR 12
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.11.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.12.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -284,6 +284,33 @@ CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
 #define CRNET_HAS_CONNECT_TIMEOUT 1
 CRNET_API void crnet_client_config_set_connect_timeout(
 		crnet_client_config *cfg, uint64_t timeout_ms);
+
+/*
+ * Chromium's HTTP cache (the one Chrome uses), off by default: every
+ * request then goes to the network, as with a cache that is always
+ * empty. A client with a cache stores responses the server allows it to
+ * and revalidates stale ones (If-None-Match, If-Modified-Since), like a
+ * returning browser. As in Chrome, a response whose certificate had an
+ * error (accepted with the insecure option) is never stored.
+ */
+#define CRNET_HAS_HTTP_CACHE 1
+typedef enum crnet_http_cache {
+	CRNET_HTTP_CACHE_OFF = 0,
+	CRNET_HTTP_CACHE_MEMORY = 1,
+	/* On disk under |path|, kept across runs. One client at a time
+	 * per directory. */
+	CRNET_HTTP_CACHE_DISK = 2,
+} crnet_http_cache;
+
+/*
+ * |max_size| in bytes, 0 = Chromium's default (derived from free disk
+ * space for a disk cache); at most 2 GiB. |path| is required for
+ * CRNET_HTTP_CACHE_DISK and ignored otherwise.
+ */
+CRNET_API int crnet_client_config_set_http_cache(crnet_client_config *cfg,
+						 crnet_http_cache type,
+						 const char *path,
+						 uint64_t max_size);
 
 /*
  * Write a Chromium NetLog (JSON, viewable with netlog-viewer) to |path|
@@ -459,6 +486,28 @@ CRNET_API int crnet_request_set_response_stream(crnet_request *req,
 						int enable);
 
 CRNET_API int crnet_request_set_mode(crnet_request *req, crnet_mode mode);
+
+/*
+ * How the request uses the client's HTTP cache, as fetch()'s |cache|
+ * option (Chrome maps it to the same Chromium load flags). Without a
+ * cache only CRNET_CACHE_ONLY_IF_CACHED matters: it always fails.
+ */
+typedef enum crnet_cache_mode {
+	/* Use a fresh entry, revalidate a stale one, store the result. */
+	CRNET_CACHE_DEFAULT = 0,
+	/* Neither read nor write the cache. */
+	CRNET_CACHE_NO_STORE = 1,
+	/* Go to the network unconditionally; store the result. */
+	CRNET_CACHE_RELOAD = 2,
+	/* Revalidate any entry with the server, even a fresh one. */
+	CRNET_CACHE_NO_CACHE = 3,
+	/* Use any entry, however stale; the network only on a miss. */
+	CRNET_CACHE_FORCE_CACHE = 4,
+	/* Use any entry; fail with net::ERR_CACHE_MISS (-400) on a miss. */
+	CRNET_CACHE_ONLY_IF_CACHED = 5,
+} crnet_cache_mode;
+CRNET_API int crnet_request_set_cache_mode(crnet_request *req,
+					   crnet_cache_mode mode);
 CRNET_API int crnet_request_set_priority(crnet_request *req,
 					 crnet_priority priority);
 
@@ -960,6 +1009,12 @@ CRNET_API const char *crnet_response_remote_address(
 		const crnet_response *resp);
 /* Whether the response was obtained through a proxy. */
 CRNET_API int crnet_response_via_proxy(const crnet_response *resp);
+/*
+ * Whether the response came from the HTTP cache, including one the
+ * server confirmed with 304 Not Modified (the status is then that of
+ * the stored response).
+ */
+CRNET_API int crnet_response_from_cache(const crnet_response *resp);
 
 /*
  * Connection and timing information, from Chromium's LoadTimingInfo

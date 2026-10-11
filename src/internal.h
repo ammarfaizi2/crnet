@@ -86,6 +86,9 @@ struct ClientConfig {
 	std::vector<std::string> trust_anchors;
 	bool trust_anchors_only = false;
 	std::string host_rules;
+	crnet_http_cache http_cache = CRNET_HTTP_CACHE_OFF;
+	std::string http_cache_path;
+	uint64_t http_cache_max_size = 0;
 	uint64_t timeout_ms = 0;
 	uint64_t connect_timeout_ms = 0;
 	std::string netlog_path;
@@ -109,6 +112,7 @@ struct RequestSpec {
 	bool stream_response = false;
 	crnet_mode mode = CRNET_MODE_NAVIGATE;
 	crnet_priority priority = CRNET_PRIORITY_DEFAULT;
+	crnet_cache_mode cache_mode = CRNET_CACHE_DEFAULT;
 	int max_redirects = 20;
 	std::optional<uint64_t> timeout_ms;
 	std::optional<uint64_t> connect_timeout_ms;
@@ -223,6 +227,7 @@ struct crnet_response {
 	std::string protocol;
 	std::string remote;
 	bool via_proxy = false;
+	bool from_cache = false;
 	// Content codings removed from the body, "" when it is as received.
 	std::string decoded_codings;
 	bool socket_reused = false;

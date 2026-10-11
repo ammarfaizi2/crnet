@@ -92,6 +92,7 @@ crnet_client_config_free(cfg);
 | `host_rules` | none | Chrome's `--host-resolver-rules` syntax, e.g. `MAP api.example.com 10.0.0.5:8443` |
 | `timeout` | none | default per-request timeout in ms |
 | `connect_timeout` | none | default limit in ms on getting a connection ready (proxy resolution, DNS, TCP/QUIC, proxy handshake, TLS), per redirect hop; fails with `CRNET_E_TIMEOUT` and net error `ERR_CONNECTION_TIMED_OUT` (-118) instead of the request timeout's `ERR_TIMED_OUT` (-7) |
+| `http_cache` | off | Chromium's HTTP cache in memory or on disk (`crnet_client_config_set_http_cache()`); requests pick a fetch()-style mode with `crnet_request_set_cache_mode()`, and `crnet_response_from_cache()` tells where a response came from. Responses accepted only through `insecure` are never cached. |
 | `netlog` | none | write a Chromium NetLog JSON file (view it with the netlog-viewer) |
 
 ## Describing a request
@@ -482,6 +483,7 @@ feature can be used:
 | `CRNET_HAS_WRITE_FD` | 0.9.0 | `crnet_transfer_write_fd()` |
 | `CRNET_HAS_TRUST_ANCHORS` | 0.10.0 | `crnet_client_config_add_trust_anchors()`, `_add_trust_anchors_file()`, `_set_trust_anchors_only()` |
 | `CRNET_HAS_COOKIE_JAR_IO` | 0.11.0 | `crnet_client_export_cookies()`, `crnet_client_import_cookies()` |
+| `CRNET_HAS_HTTP_CACHE` | 0.12.0 | `crnet_client_config_set_http_cache()`, `crnet_request_set_cache_mode()`, `crnet_response_from_cache()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

@@ -314,7 +314,17 @@ bool crnet_client::InitOnNetworkThread()
 	b.set_accept_language(cfg_.accept_language);
 	b.set_enable_brotli(true);
 	b.set_enable_zstd(true);
-	b.DisableHttpCache();
+	if (cfg_.http_cache == CRNET_HTTP_CACHE_OFF) {
+		b.DisableHttpCache();
+	} else {
+		net::URLRequestContextBuilder::HttpCacheParams cp;
+		cp.type = cfg_.http_cache == CRNET_HTTP_CACHE_DISK
+				  ? net::URLRequestContextBuilder::HttpCacheParams::DISK
+				  : net::URLRequestContextBuilder::HttpCacheParams::IN_MEMORY;
+		cp.path = base::FilePath(cfg_.http_cache_path);
+		cp.max_size = static_cast<int>(cfg_.http_cache_max_size);
+		b.EnableHttpCache(cp);
+	}
 	b.set_proxy_config_service(MakeProxyConfigService(cfg_));
 	b.set_ssl_config_service(std::make_unique<ChromeSSLConfigService>());
 	b.set_network_delegate(std::make_unique<CrNetworkDelegate>(cfg_.cookies));

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <limits>
 #include <new>
 
 #include "base/strings/escape.h"
@@ -347,6 +348,31 @@ CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
 		cfg->cfg.timeout_ms = timeout_ms;
 }
 
+CRNET_API int crnet_client_config_set_http_cache(crnet_client_config *cfg,
+						 crnet_http_cache type,
+						 const char *path,
+						 uint64_t max_size)
+{
+	if (!cfg || max_size > std::numeric_limits<int>::max())
+		return CRNET_E_INVAL;
+	switch (type) {
+	case CRNET_HTTP_CACHE_OFF:
+	case CRNET_HTTP_CACHE_MEMORY:
+		path = nullptr;
+		break;
+	case CRNET_HTTP_CACHE_DISK:
+		if (!path || !*path)
+			return CRNET_E_INVAL;
+		break;
+	default:
+		return CRNET_E_INVAL;
+	}
+	cfg->cfg.http_cache = type;
+	cfg->cfg.http_cache_path = path ? path : "";
+	cfg->cfg.http_cache_max_size = max_size;
+	return CRNET_OK;
+}
+
 CRNET_API int crnet_client_config_set_netlog(crnet_client_config *cfg,
 					     const char *path)
 {
@@ -571,6 +597,16 @@ CRNET_API int crnet_request_set_max_redirects(crnet_request *req,
 	if (!req || max_redirects < 0)
 		return CRNET_E_INVAL;
 	req->spec.max_redirects = max_redirects;
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_request_set_cache_mode(crnet_request *req,
+					   crnet_cache_mode mode)
+{
+	if (!req || mode < CRNET_CACHE_DEFAULT ||
+	    mode > CRNET_CACHE_ONLY_IF_CACHED)
+		return CRNET_E_INVAL;
+	req->spec.cache_mode = mode;
 	return CRNET_OK;
 }
 
@@ -1103,6 +1139,11 @@ CRNET_API const char *crnet_response_remote_address(const crnet_response *r)
 CRNET_API int crnet_response_via_proxy(const crnet_response *r)
 {
 	return r && r->via_proxy;
+}
+
+CRNET_API int crnet_response_from_cache(const crnet_response *r)
+{
+	return r && r->from_cache;
 }
 
 CRNET_API int crnet_response_socket_reused(const crnet_response *r)

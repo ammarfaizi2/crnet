@@ -71,6 +71,11 @@ public:
 	ClientConfig &trust_anchors_only(bool on = true) { crnet_client_config_set_trust_anchors_only(get(), on); return *this; }
 	ClientConfig &host_rules(const std::string &r) { check(crnet_client_config_set_host_rules(get(), r.c_str())); return *this; }
 	ClientConfig &timeout_ms(uint64_t ms) { crnet_client_config_set_timeout(get(), ms); return *this; }
+	ClientConfig &http_cache(crnet_http_cache type, const std::string &path = "", uint64_t max_size = 0)
+	{
+		check(crnet_client_config_set_http_cache(get(), type, path.empty() ? nullptr : path.c_str(), max_size));
+		return *this;
+	}
 	ClientConfig &connect_timeout_ms(uint64_t ms) { crnet_client_config_set_connect_timeout(get(), ms); return *this; }
 	ClientConfig &netlog(const std::string &path) { check(crnet_client_config_set_netlog(get(), path.c_str())); return *this; }
 
@@ -115,6 +120,7 @@ public:
 	Request &priority(crnet_priority p) { check(crnet_request_set_priority(get(), p)); return *this; }
 	Request &max_redirects(int n) { check(crnet_request_set_max_redirects(get(), n)); return *this; }
 	Request &timeout_ms(uint64_t ms) { check(crnet_request_set_timeout(get(), ms)); return *this; }
+	Request &cache_mode(crnet_cache_mode mode) { check(crnet_request_set_cache_mode(get(), mode)); return *this; }
 	Request &connect_timeout_ms(uint64_t ms) { check(crnet_request_set_connect_timeout(get(), ms)); return *this; }
 	Request &decompress(bool on) { check(crnet_request_set_decompress(get(), on)); return *this; }
 	Request &max_body_size(uint64_t n) { check(crnet_request_set_max_body_size(get(), n)); return *this; }
@@ -146,6 +152,7 @@ public:
 	std::string protocol() const { return detail::str(crnet_response_protocol(r_)); }
 	std::string remote_address() const { return detail::str(crnet_response_remote_address(r_)); }
 	bool via_proxy() const { return crnet_response_via_proxy(r_) != 0; }
+	bool from_cache() const { return crnet_response_from_cache(r_) != 0; }
 	bool content_decoded() const { return crnet_response_content_decoded(r_) != 0; }
 	bool socket_reused() const { return crnet_response_socket_reused(r_) != 0; }
 	uint64_t connection_id() const { return crnet_response_connection_id(r_); }

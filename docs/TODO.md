@@ -154,18 +154,6 @@ Consistent per-OS browser profiles.
   other per-platform difference together, verified against captures
   from real Chrome on each platform.
 
-### http-cache
-
-An optional HTTP cache.
-
-- Today: the context is built with `DisableHttpCache()`, so repeat
-  fetches never send `If-None-Match` / `If-Modified-Since` and always
-  re-download.
-- Wanted: off by default; an in-memory or on-disk cache with a size
-  limit, and a per-request "bypass cache" flag.
-- Why: saves bandwidth for crawlers that revisit pages, and makes
-  revisits look like a real browser's conditional requests.
-
 ## Persistence
 
 ### network-state-persistence
