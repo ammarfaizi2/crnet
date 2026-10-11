@@ -17,6 +17,7 @@
 #include "net/socket/datagram_client_socket.h"
 #include "net/socket/socket_performance_watcher.h"
 #include "net/socket/tcp_client_socket.h"
+#include "net/socket/tcp_socket.h"
 #include "net/socket/udp_client_socket.h"
 
 namespace crnet {
@@ -26,6 +27,32 @@ namespace {
 // were no route to it, which is how Chrome's Happy Eyeballs treats a
 // family it cannot use.
 constexpr int kNoLocalAddress = net::ERR_ADDRESS_UNREACHABLE;
+
+// Opens a non-blocking socket of |peer|'s family and binds it to the
+// local address of that family. Returns a net error; on success |*fd|
+// is the caller's.
+int OpenBoundSocket(const LocalAddresses &local, int type,
+		    const net::IPEndPoint &peer, int *fd)
+{
+	const net::IPAddress *addr = local.For(peer);
+	if (!addr)
+		return kNoLocalAddress;
+	net::SockaddrStorage storage;
+	if (!net::IPEndPoint(*addr, 0).ToSockAddr(storage.addr(),
+						   &storage.addr_len))
+		return net::ERR_ADDRESS_INVALID;
+	int s = socket(storage.addr()->sa_family,
+		       type | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+	if (s < 0)
+		return net::MapSystemError(errno);
+	if (bind(s, storage.addr(), storage.addr_len) < 0) {
+		int err = net::MapSystemError(errno);
+		close(s);
+		return err;
+	}
+	*fd = s;
+	return net::OK;
+}
 
 // UDPClientSocket is final, and binds only implicitly on connect, so
 // QUIC's sockets are wrapped: Connect*() first opens a socket of the
@@ -197,24 +224,11 @@ public:
 private:
 	int Prepare(const net::IPEndPoint &peer)
 	{
-		const net::IPAddress *addr = local_.For(peer);
-		if (!addr)
-			return kNoLocalAddress;
-		net::SockaddrStorage storage;
-		if (!net::IPEndPoint(*addr, 0).ToSockAddr(storage.addr(),
-							   &storage.addr_len))
-			return net::ERR_ADDRESS_INVALID;
-		int fd = socket(storage.addr()->sa_family,
-				SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
-				IPPROTO_UDP);
-		if (fd < 0)
-			return net::MapSystemError(errno);
-		if (bind(fd, storage.addr(), storage.addr_len) < 0) {
-			int err = net::MapSystemError(errno);
-			close(fd);
-			return err;
-		}
-		int rv = inner_->AdoptOpenedSocket(peer.GetFamily(), fd);
+		int fd;
+		int rv = OpenBoundSocket(local_, SOCK_DGRAM, peer, &fd);
+		if (rv != net::OK)
+			return rv;
+		rv = inner_->AdoptOpenedSocket(peer.GetFamily(), fd);
 		// Only a refusal for the socket limit leaves |fd| ours; any
 		// later failure has closed it already.
 		if (rv == net::ERR_INSUFFICIENT_RESOURCES)
@@ -254,27 +268,40 @@ public:
 		net::NetworkQualityEstimator *nqe, net::NetLog *net_log,
 		const net::NetLogSource &source) override
 	{
-		auto sock = std::make_unique<net::TCPClientSocket>(
-			addresses, std::move(watcher), nqe, net_log, source,
-			target_network);
 		// //net's connect jobs make one socket per address, so the
-		// first address decides. TCPClientSocket binds again before
-		// each connect attempt.
-		const net::IPAddress *addr =
-			addresses.empty() ? nullptr : local_.For(addresses.front());
-		int rv = addr ? sock->Bind(net::IPEndPoint(*addr, 0))
-			      : kNoLocalAddress;
+		// first address decides.
+		auto tcp = net::TCPSocket::Create(std::move(watcher), net_log,
+						  source);
+		int fd;
+		int rv = addresses.empty()
+				 ? kNoLocalAddress
+				 : OpenBoundSocket(local_, SOCK_STREAM,
+						   addresses.front(), &fd);
 		if (rv == net::OK)
+			rv = tcp->AdoptUnconnectedSocket(fd);	// owns |fd| now
+		if (rv != net::OK) {
+			// Fail the connect rather than return no socket.
+			auto sock = std::make_unique<net::TCPClientSocket>(
+				addresses, nullptr, nqe, net_log, source,
+				target_network);
+			sock->SetBeforeConnectCallback(base::BindRepeating(
+				[](int err) { return err; }, rv));
 			return sock;
+		}
 
-		// A failed Bind() leaves an unbound socket behind that would
-		// connect from the default address: replace it with one that
-		// fails to connect.
-		sock = std::make_unique<net::TCPClientSocket>(
-			addresses, nullptr, nqe, net_log, source,
-			target_network);
+		auto sock = std::make_unique<net::TCPClientSocket>(
+			std::move(tcp), addresses, nullptr, nqe);
+		// A connect attempt after the first (to another address, or
+		// after a disconnect) would use a socket TCPClientSocket opened
+		// itself, unbound. //net makes none of these, so this only
+		// keeps such a socket from leaving from the default address.
 		sock->SetBeforeConnectCallback(base::BindRepeating(
-			[](int err) { return err; }, rv));
+			[](bool &first) -> int {
+				bool ok = first;
+				first = false;
+				return ok ? net::OK : net::ERR_UNEXPECTED;
+			},
+			base::OwnedRef(true)));
 		return sock;
 	}
 
