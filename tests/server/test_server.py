@@ -10,7 +10,11 @@ Listens on 127.0.0.1 (ephemeral ports) and serves:
   * HTTPS requiring a client certificate issued by the same CA
     ("https_mtls"; the client's PEM files are "client_cert", "client_key")
   * plain HTTP/1.1
-  * a SOCKS5 proxy (no auth, CONNECT only, remote name resolution)
+  * a SOCKS5 proxy (no auth, CONNECT only, remote name resolution) with
+    fault injection: destinations rep-N.crnet-test (reply code N),
+    close.crnet-test, truncate.crnet-test and badatyp.crnet-test fail
+    after the greeting; /socks5-fault?greeting=close|noauth|badmethod|
+    badversion breaks the next greeting
   * an HTTP CONNECT proxy requiring Basic auth (user "crnet", pass "secret")
 
 On start-up it prints one JSON line with the ports to stdout, then runs
@@ -69,6 +73,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import signal
 import socket
 import ssl
@@ -97,6 +102,7 @@ STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
          "ws_h2_connects": 0, "ws_pongs": 0, "ws_last_close": None,
          "doh_queries": []}
 CACHE_STATS = {}    # /cache/<key> -> {"requests": n, "conditional": n}
+SOCKS_FAULT = {"greeting": None}  # one-shot, set by /socks5-fault
 
 
 def pattern(n):
@@ -272,6 +278,9 @@ def route(req):
         if q.get("dict") == "1":
             headers.append(("use-as-dictionary", 'match="/encoded/*"'))
         return Response(200, headers, data)
+    if p == "/socks5-fault":
+        SOCKS_FAULT["greeting"] = q.get("greeting")
+        return Response(200, [("content-type", "text/plain")], b"ok")
     if p == "/response-headers":
         return Response(200, [("content-type", "text/plain")] +
                         [(k.lower(), v) for k, v in req.query], b"ok")
@@ -850,7 +859,16 @@ async def serve_socks5(reader, writer):
         if ver != 5:
             writer.close()
             return
-        writer.write(b"\x05\x00")
+        fault, SOCKS_FAULT["greeting"] = SOCKS_FAULT["greeting"], None
+        if fault == "close":
+            writer.close()
+            return
+        writer.write({"noauth": b"\x05\xff", "badmethod": b"\x05\x02",
+                      "badversion": b"\x04\x00"}.get(fault, b"\x05\x00"))
+        if fault:
+            await writer.drain()
+            writer.close()
+            return
         ver, cmd, _, atyp = await reader.readexactly(4)
         if atyp == 1:
             host = socket.inet_ntoa(await reader.readexactly(4))
@@ -864,6 +882,21 @@ async def serve_socks5(reader, writer):
             writer.close()
             return
         port = struct.unpack("!H", await reader.readexactly(2))[0]
+        m = re.fullmatch(r"rep-(\d+)\.crnet-test", host)
+        if m:
+            writer.write(bytes([5, int(m.group(1)), 0, 1]) + b"\x00" * 6)
+            await writer.drain()
+            writer.close()
+            return
+        if host == "close.crnet-test":
+            writer.close()
+            return
+        if host in ("truncate.crnet-test", "badatyp.crnet-test"):
+            writer.write(b"\x05\x00\x00" if host.startswith("truncate")
+                         else b"\x05\x00\x00\x09" + b"\x00" * 6)
+            await writer.drain()
+            writer.close()
+            return
         if cmd != 1:
             writer.write(b"\x05\x07\x00\x01" + b"\x00" * 6)
             writer.close()
