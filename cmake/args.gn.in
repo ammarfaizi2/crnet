@@ -4,6 +4,7 @@ root_extra_deps = [ "//crnet" ]
 
 is_debug = @CRNET_GN_IS_DEBUG@
 is_asan = @CRNET_GN_IS_ASAN@
+is_tsan = @CRNET_GN_IS_TSAN@
 is_component_build = false
 is_official_build = false
 dcheck_always_on = false

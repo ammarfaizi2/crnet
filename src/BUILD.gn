@@ -4,6 +4,8 @@
 # directory is symlinked to chromium/src/crnet by
 # scripts/fetch-chromium.sh). Driven by the top-level CMakeLists.txt.
 
+import("//build/config/sanitizers/sanitizers.gni")
+
 declare_args() {
   # Absolute path of the crnet source tree (for include/crnet/*.h).
   crnet_root = ""
@@ -68,6 +70,11 @@ shared_library("crnet") {
   ldflags = [
     "-Wl,--version-script=" + rebase_path("crnet.map", root_build_dir),
     "-Wl,-soname,libcrnet.so.0",
-    "-Wl,-z,defs",
   ]
+
+  # Every symbol must resolve inside the library, except under TSan,
+  # where the runtime comes with the executable.
+  if (!is_tsan) {
+    ldflags += [ "-Wl,-z,defs" ]
+  }
 }

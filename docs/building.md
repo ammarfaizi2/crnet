@@ -94,10 +94,11 @@ Outputs:
 | Option | Default | Meaning |
 |---|---|---|
 | `CRNET_CHROMIUM_DIR` | `<repo>/chromium` | directory containing `src/` and `depot_tools/` |
-| `CRNET_GN_OUT` | `out/crnet` | GN output directory, relative to `src/` |
+| `CRNET_GN_OUT` | `out/crnet` (`out/crnet-asan`, `out/crnet-tsan` with a sanitizer) | GN output directory, relative to `src/` |
 | `CRNET_GN_EXTRA_ARGS` | empty | extra `args.gn` lines, e.g. `symbol_level=0` |
 | `CRNET_CHROMIUM_DEBUG` | OFF | build Chromium and crnet with `is_debug=true` (DCHECKs on, slow) |
 | `CRNET_ASAN` | OFF | build with AddressSanitizer; consumers must link the ASan runtime too |
+| `CRNET_TSAN` | OFF | build with ThreadSanitizer, see below |
 | `CRNET_NINJA_JOBS` | ninja default | parallelism of the Chromium build |
 | `CRNET_BUILD_TESTS` | ON | build the test suite |
 | `CRNET_BUILD_EXAMPLES` | ON | build the examples |
@@ -110,6 +111,28 @@ cmake -S . -B build -G Ninja -DCRNET_GN_EXTRA_ARGS="symbol_level=0"
 
 To use different debug and release configurations side by side, give
 each its own `CRNET_GN_OUT` (e.g. `out/crnet-debug`).
+
+### ThreadSanitizer
+
+`CRNET_TSAN=ON` builds Chromium and crnet with ThreadSanitizer, so that
+races between your threads and crnet's are reported with crnet's side
+of the stack. The library then expects the TSan runtime from the
+executable, which only clang provides, so build your code (and crnet's
+tests) with clang and `-fsanitize=thread`; the `crnet::crnet` CMake
+target adds that flag, and `-fsanitize-link-c++-runtime` for C
+programs. Chromium's own clang will do:
+
+```bash
+CL=chromium/src/third_party/llvm-build/Release+Asserts/bin
+cmake -S . -B build-tsan -G Ninja -DCRNET_TSAN=ON \
+      -DCMAKE_C_COMPILER=$CL/clang -DCMAKE_CXX_COMPILER=$CL/clang++
+cmake --build build-tsan
+ctest --test-dir build-tsan
+```
+
+It rebuilds all of Chromium's network stack in its own output directory
+(`out/crnet-tsan`). The test suite runs clean under it, without
+suppressions; a race report makes a test fail.
 
 ### GN arguments crnet relies on
 

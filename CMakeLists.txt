@@ -30,12 +30,25 @@ include(GNUInstallDirs)
 
 set(CRNET_CHROMIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/chromium" CACHE PATH
     "Directory holding depot_tools/ and src/ (see scripts/fetch-chromium.sh)")
-set(CRNET_GN_OUT "out/crnet" CACHE STRING
+option(CRNET_ASAN "Build Chromium/crnet with AddressSanitizer" OFF)
+option(CRNET_TSAN "Build Chromium/crnet with ThreadSanitizer" OFF)
+if(CRNET_ASAN AND CRNET_TSAN)
+  message(FATAL_ERROR "CRNET_ASAN and CRNET_TSAN cannot be combined.")
+endif()
+# A sanitizer rebuilds all of Chromium; give it its own output directory
+# so that switching does not invalidate the regular build.
+if(CRNET_TSAN)
+  set(_crnet_default_out "out/crnet-tsan")
+elseif(CRNET_ASAN)
+  set(_crnet_default_out "out/crnet-asan")
+else()
+  set(_crnet_default_out "out/crnet")
+endif()
+set(CRNET_GN_OUT "${_crnet_default_out}" CACHE STRING
     "GN output directory, relative to the Chromium src/ directory")
 set(CRNET_GN_EXTRA_ARGS "" CACHE STRING
     "Extra GN args appended to args.gn (newline or space separated)")
 option(CRNET_CHROMIUM_DEBUG "Build Chromium/crnet with is_debug=true" OFF)
-option(CRNET_ASAN "Build Chromium/crnet with AddressSanitizer" OFF)
 option(CRNET_BUILD_TESTS "Build the test suite" ON)
 option(CRNET_BUILD_EXAMPLES "Build the examples" ON)
 set(CRNET_NINJA_JOBS "" CACHE STRING "ninja -j for the Chromium build (empty = ninja default)")
@@ -101,6 +114,21 @@ if(CRNET_ASAN)
 else()
   set(CRNET_GN_IS_ASAN false)
 endif()
+if(CRNET_TSAN)
+  set(CRNET_GN_IS_TSAN true)
+  # libcrnet.so then calls into the TSan runtime, which only an
+  # executable built by clang with -fsanitize=thread provides. GCC's
+  # libtsan is a different runtime.
+  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+     NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    message(FATAL_ERROR
+      "CRNET_TSAN needs clang for the code linking libcrnet.so, e.g.\n"
+      "  -DCMAKE_C_COMPILER=${CR_SRC}/third_party/llvm-build/Release+Asserts/bin/clang\n"
+      "  -DCMAKE_CXX_COMPILER=${CR_SRC}/third_party/llvm-build/Release+Asserts/bin/clang++")
+  endif()
+else()
+  set(CRNET_GN_IS_TSAN false)
+endif()
 string(REPLACE ";" "\n" CRNET_GN_EXTRA_ARGS_NL "${CRNET_GN_EXTRA_ARGS}")
 set(CRNET_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 
@@ -164,6 +192,16 @@ set_target_properties(crnet PROPERTIES
   IMPORTED_SONAME "libcrnet.so.${CRNET_SOVERSION}"
   INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include")
 add_dependencies(crnet crnet_chromium_build)
+if(CRNET_TSAN)
+  # Code using an instrumented library is instrumented too and links
+  # the runtime, including its C++ part (operator new and delete),
+  # which the C driver leaves out by default.
+  set_property(TARGET crnet APPEND PROPERTY
+               INTERFACE_COMPILE_OPTIONS -fsanitize=thread)
+  set_property(TARGET crnet APPEND PROPERTY
+               INTERFACE_LINK_OPTIONS -fsanitize=thread
+               -fsanitize-link-c++-runtime)
+endif()
 add_library(crnet::crnet ALIAS crnet)
 
 # Convenience: (re)fetch / update the Chromium checkout.

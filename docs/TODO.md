@@ -154,16 +154,6 @@ the message size limit (max_body_size) and the idle timeout crnet has.
 
 ## Build and tooling
 
-### tsan-build
-
-ThreadSanitizer support.
-
-- Today: `libcrnet.so` is not instrumented, so applications running
-  under TSan must suppress reports from it.
-- Wanted: an optional `CRNET_TSAN` build (`is_tsan=true`), like
-  `CRNET_ASAN`. Likely needs clang-built tests and dropping `-z defs`
-  for the instrumented build.
-
 ### continuous-integration
 
 Automated builds and tests on push.
