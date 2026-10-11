@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 24
+#define CRNET_VERSION_MINOR 25
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -917,6 +917,21 @@ CRNET_API int crnet_transfer_read(crnet_transfer *t, void *buf, size_t len,
 CRNET_API int crnet_transfer_fd(const crnet_transfer *t);
 
 /*
+ * Waits as file descriptors, for event loops: each is readable from the
+ * moment the matching wait would return at once, and stays readable.
+ * crnet_transfer_response_fd() goes with crnet_transfer_wait_response()
+ * (headers arrived, or the transfer failed first), and
+ * crnet_transfer_done_fd() with crnet_transfer_wait() (on_complete
+ * returned). Any transfer, streamed or not. The descriptor is made on
+ * the first call and belongs to the transfer: do not read from it or
+ * close it; it is valid until crnet_transfer_free(). -1 if it could not
+ * be made (out of descriptors). See also crnet_ws_open_fd().
+ */
+#define CRNET_HAS_WAIT_FDS 1
+CRNET_API int crnet_transfer_response_fd(const crnet_transfer *t);
+CRNET_API int crnet_transfer_done_fd(const crnet_transfer *t);
+
+/*
  * Release the handle. If the transfer is still running it is canceled
  * and, unless called from one of this transfer's callbacks, this waits
  * until on_complete has run, so user_data may be freed afterwards.
@@ -1174,6 +1189,16 @@ CRNET_API void crnet_ws_resume(crnet_ws *ws);
  * on_close). CRNET_E_TIMEOUT if still open after |timeout_ms|.
  */
 CRNET_API int crnet_ws_wait_closed(crnet_ws *ws, uint64_t timeout_ms);
+
+/*
+ * Waits as file descriptors (CRNET_HAS_WAIT_FDS, as for transfers):
+ * crnet_ws_open_fd() is readable once crnet_ws_wait_open() would return
+ * at once (open, or failed), crnet_ws_closed_fd() once
+ * crnet_ws_wait_closed() would. Owned by the handle; valid until
+ * crnet_ws_free(). -1 if it could not be made.
+ */
+CRNET_API int crnet_ws_open_fd(const crnet_ws *ws);
+CRNET_API int crnet_ws_closed_fd(const crnet_ws *ws);
 
 CRNET_API crnet_ws_state crnet_ws_get_state(const crnet_ws *ws);
 

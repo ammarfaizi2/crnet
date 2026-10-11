@@ -108,7 +108,10 @@ with `crnet_ws_recv(ws, &type, &data, &len, timeout_ms)`. The data is a
 `malloc()`ed, NUL-terminated copy that you free with `crnet_free()`.
 `crnet_ws_fd()` is readable while `crnet_ws_recv()` would not block (a
 message is queued or the connection is closed), so a socket fits into
-`poll`/`epoll`/libuv loops. See `examples/crws.c`.
+`poll`/`epoll`/libuv loops. See `examples/crws.c`. `crnet_ws_open_fd()`
+and `crnet_ws_closed_fd()` do the same for `crnet_ws_wait_open()` and
+`crnet_ws_wait_closed()`, so such a loop need not block while the
+handshake or the closing handshake runs.
 
 `crnet_ws_recv()` returns `CRNET_E_STATE` once the connection is closed
 and every queued message has been read.

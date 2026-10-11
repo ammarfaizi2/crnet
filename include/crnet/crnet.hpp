@@ -302,6 +302,9 @@ public:
 	int fd() const { return crnet_transfer_fd(t_); }
 	// Readable while write() would not block (streamed request body).
 	int write_fd() const { return crnet_transfer_write_fd(t_); }
+	// Readable once wait_response() / wait() would return at once.
+	int response_fd() const { return crnet_transfer_response_fd(t_); }
+	int done_fd() const { return crnet_transfer_done_fd(t_); }
 
 	// Cancels if still running and waits for on_complete.
 	void reset()
@@ -401,6 +404,9 @@ public:
 
 	crnet_ws_state state() const { return crnet_ws_get_state(ws_); }
 	int fd() const { return crnet_ws_fd(ws_); }
+	// Readable once wait_open() / wait_closed() would return at once.
+	int open_fd() const { return crnet_ws_open_fd(ws_); }
+	int closed_fd() const { return crnet_ws_closed_fd(ws_); }
 	uint64_t buffered_amount() const { return crnet_ws_buffered_amount(ws_); }
 	std::string protocol() const { return detail::str(crnet_ws_protocol(ws_)); }
 	std::string extensions() const { return detail::str(crnet_ws_extensions(ws_)); }

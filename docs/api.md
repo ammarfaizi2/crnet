@@ -368,6 +368,25 @@ crnet_queue_free(q);
 - One queue may receive transfers from several clients.
 - `crnet_queue_free()` cancels what is still running and waits for it.
 
+### Waits as descriptors
+
+An event loop that keeps the transfer handle (to cancel it, or to read
+a streamed body) can wait on the transfer itself instead: every wait has
+a descriptor that becomes readable when the wait would return at once,
+and stays readable.
+
+| Descriptor | Readable once | Wait |
+|---|---|---|
+| `crnet_transfer_response_fd(t)` | the headers arrived or the transfer failed | `crnet_transfer_wait_response()` |
+| `crnet_transfer_done_fd(t)` | the transfer finished (`on_complete` returned) | `crnet_transfer_wait()` |
+| `crnet_ws_open_fd(ws)` | the WebSocket opened or failed | `crnet_ws_wait_open()` |
+| `crnet_ws_closed_fd(ws)` | the WebSocket closed | `crnet_ws_wait_closed()` |
+
+Each is an eventfd made on the first call, owned by the handle: do not
+read from it or close it. Together with `crnet_transfer_fd()`,
+`crnet_transfer_write_fd()` and `crnet_ws_fd()` they let one thread
+drive transfers and WebSockets without blocking and without callbacks.
+
 ## Cookies
 
 The jar is in memory and per client. Besides what servers set, you can
@@ -528,6 +547,7 @@ feature can be used:
 | `CRNET_HAS_PLATFORM_PROFILE` | 0.22.0 | `crnet_client_config_set_platform_profile()`, `crnet_platform_user_agent()` |
 | `CRNET_HAS_LOCAL_ADDRESS` | 0.23.0 | `crnet_client_config_set_local_address()` |
 | `CRNET_HAS_BIND_INTERFACE` | 0.24.0 | `crnet_client_config_set_bind_interface()` |
+| `CRNET_HAS_WAIT_FDS` | 0.25.0 | `crnet_transfer_response_fd()`, `_done_fd()`, `crnet_ws_open_fd()`, `_closed_fd()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

@@ -5,7 +5,8 @@
 // Completion of a transfer or a WebSocket is published through one of
 // these instead of a mutex and condition variable. It is a futex on a
 // single word: checking it is one atomic load, signalling is a store
-// plus a wake-up only when a thread is actually asleep on it.
+// plus a wake-up only when a thread is actually asleep on it. An event
+// loop can watch it through a descriptor, made only when asked for.
 //
 #ifndef CRNET_SRC_EVENT_H
 #define CRNET_SRC_EVENT_H
@@ -19,6 +20,7 @@ namespace crnet {
 class OneShotEvent {
 public:
 	OneShotEvent() = default;
+	~OneShotEvent();
 	OneShotEvent(const OneShotEvent &) = delete;
 	OneShotEvent &operator=(const OneShotEvent &) = delete;
 
@@ -36,9 +38,16 @@ public:
 	// Returns whether the event is signalled.
 	bool Wait(uint64_t timeout_ms) const;
 
+	// An eventfd that is readable from the moment the event is
+	// signalled (and stays so: nobody reads it), for poll()/epoll.
+	// Made on the first call and closed with the event; -1 if it
+	// cannot be made. Thread-safe.
+	int fd() const;
+
 private:
 	mutable std::atomic<uint32_t> state_{0};
 	mutable std::atomic<uint32_t> waiters_{0};
+	mutable std::atomic<int> fd_{-1};
 };
 
 } // namespace crnet

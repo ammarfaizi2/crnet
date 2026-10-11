@@ -50,6 +50,8 @@ public:
 	}
 	uint64_t buffered_amount() const { return buffered_.load(); }
 	bool done() const { return closed_.IsSignaled(); }
+	int open_fd() const { return settled_.fd(); }
+	int closed_fd() const { return closed_.fd(); }
 
 	// Valid once open / once done (read-only from then on).
 	const std::string &protocol() const { return protocol_; }

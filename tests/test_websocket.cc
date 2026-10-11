@@ -469,6 +469,40 @@ TEST_F(ClientTest, WsHandshakeTimeout)
 	crnet_ws_free(ws);
 }
 
+TEST_F(ClientTest, WsWaitFds)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/slow-handshake?ms=300"),
+			       nullptr, nullptr);
+	ASSERT_NE(ws, nullptr);
+	pollfd open = {crnet_ws_open_fd(ws), POLLIN, 0};
+	pollfd closed = {crnet_ws_closed_fd(ws), POLLIN, 0};
+	ASSERT_GE(open.fd, 0);
+	ASSERT_GE(closed.fd, 0);
+	EXPECT_EQ(poll(&open, 1, 0), 0);
+	ASSERT_EQ(poll(&open, 1, 5000), 1);
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_OPEN);
+	EXPECT_EQ(crnet_ws_wait_open(ws, 0), CRNET_OK);
+	EXPECT_EQ(poll(&closed, 1, 0), 0);
+	ASSERT_EQ(crnet_ws_close(ws, 1000, nullptr), CRNET_OK);
+	ASSERT_EQ(poll(&closed, 1, 5000), 1);
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_CLOSED);
+	EXPECT_EQ(poll(&open, 1, 0), 1);	// stays readable
+	crnet_ws_free(ws);
+
+	// A refused handshake settles both.
+	ws = Connect(client_, WssUrl("/ws/reject"), nullptr, nullptr);
+	ASSERT_NE(ws, nullptr);
+	open.fd = crnet_ws_open_fd(ws);
+	ASSERT_EQ(poll(&open, 1, 5000), 1);
+	EXPECT_EQ(crnet_ws_wait_open(ws, 0), CRNET_E_NET);
+	closed.fd = crnet_ws_closed_fd(ws);
+	EXPECT_EQ(poll(&closed, 1, 5000), 1);
+	crnet_ws_free(ws);
+
+	EXPECT_EQ(crnet_ws_open_fd(nullptr), -1);
+	EXPECT_EQ(crnet_ws_closed_fd(nullptr), -1);
+}
+
 TEST_F(ClientTest, WsArgumentValidation)
 {
 	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, nullptr);

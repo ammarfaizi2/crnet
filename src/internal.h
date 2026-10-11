@@ -285,6 +285,8 @@ public:
 	void Resume();
 	int Wait(uint64_t timeout_ms);
 	bool done() const { return done_.IsSignaled(); }
+	int done_fd() const { return done_.fd(); }
+	int response_fd() const { return headers_.fd(); }
 	int WaitResponse(uint64_t timeout_ms);
 	// Streamed bodies (stream.h); null unless requested.
 	crnet::UploadPipe *upload() const { return upload_.get(); }

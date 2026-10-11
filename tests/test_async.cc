@@ -149,6 +149,82 @@ TEST_F(ClientTest, WaitTimeoutDoesNotStopTransfer)
 	crnet_transfer_free(t);
 }
 
+bool Readable(int fd, int timeout_ms = 0)
+{
+	pollfd p = {fd, POLLIN, 0};
+	return poll(&p, 1, timeout_ms) == 1;
+}
+
+TEST_F(ClientTest, WaitFdsFollowTheTransfer)
+{
+	crnet_transfer *t = StartGet(client_, HttpsUrl("/delay/600"), nullptr, nullptr);
+	int resp = crnet_transfer_response_fd(t);
+	int done = crnet_transfer_done_fd(t);
+	ASSERT_GE(resp, 0);
+	ASSERT_GE(done, 0);
+	EXPECT_EQ(crnet_transfer_response_fd(t), resp);
+	EXPECT_EQ(crnet_transfer_done_fd(t), done);
+	EXPECT_FALSE(Readable(resp));
+	EXPECT_FALSE(Readable(done));
+	ASSERT_TRUE(Readable(done, 5000));
+	EXPECT_TRUE(crnet_transfer_done(t));
+	EXPECT_TRUE(Readable(resp));
+	EXPECT_EQ(crnet_transfer_wait(t, 0), CRNET_OK);
+	EXPECT_TRUE(Readable(done));	// and stays so
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, ResponseFdBeforeTheBody)
+{
+	crnet_request *req = crnet_request_new(
+		"GET", HttpsUrl("/stream/100000?chunk=1000&delay_ms=10").c_str());
+	crnet_request_set_response_stream(req, 1);
+	crnet_transfer *t = crnet_start(client_, req, nullptr, nullptr);
+	crnet_request_free(req);
+	ASSERT_NE(t, nullptr);
+	ASSERT_TRUE(Readable(crnet_transfer_response_fd(t), 5000));
+	EXPECT_EQ(crnet_transfer_wait_response(t, 0), CRNET_OK);
+	EXPECT_EQ(crnet_response_status(crnet_transfer_response(t)), 200);
+	// About a second of body is still to come, and unread.
+	EXPECT_FALSE(Readable(crnet_transfer_done_fd(t)));
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, WaitFdsOfAFinishedTransferAreReadable)
+{
+	crnet_transfer *t = StartGet(client_, HttpsUrl("/echo"), nullptr, nullptr);
+	ASSERT_EQ(crnet_transfer_wait(t, UINT64_MAX), CRNET_OK);
+	EXPECT_TRUE(Readable(crnet_transfer_response_fd(t)));
+	EXPECT_TRUE(Readable(crnet_transfer_done_fd(t)));
+	crnet_transfer_free(t);
+
+	// Failed before any response.
+	t = StartGet(client_, "http://127.0.0.1:1/", nullptr, nullptr);
+	int resp = crnet_transfer_response_fd(t);
+	ASSERT_TRUE(Readable(resp, 5000));
+	EXPECT_EQ(crnet_transfer_wait_response(t, 0), CRNET_E_NET);
+	EXPECT_TRUE(Readable(crnet_transfer_done_fd(t), 5000));
+	crnet_transfer_free(t);
+
+	EXPECT_EQ(crnet_transfer_response_fd(nullptr), -1);
+	EXPECT_EQ(crnet_transfer_done_fd(nullptr), -1);
+}
+
+TEST_F(ClientTest, WaitFdIsMadeOnceForManyThreads)
+{
+	crnet_transfer *t = StartGet(client_, HttpsUrl("/delay/300"), nullptr, nullptr);
+	std::vector<int> fds(16, -1);
+	std::vector<std::thread> threads;
+	for (size_t i = 0; i < fds.size(); i++)
+		threads.emplace_back([&, i] { fds[i] = crnet_transfer_done_fd(t); });
+	for (auto &th : threads)
+		th.join();
+	for (int fd : fds)
+		EXPECT_EQ(fd, fds[0]);
+	EXPECT_TRUE(Readable(fds[0], 5000));
+	crnet_transfer_free(t);
+}
+
 TEST_F(ClientTest, CancelMidStream)
 {
 	Recorder rec;

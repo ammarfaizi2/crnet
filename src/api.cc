@@ -1001,6 +1001,16 @@ CRNET_API int crnet_transfer_fd(const crnet_transfer *t)
 	return t && t->download() ? t->download()->fd() : -1;
 }
 
+CRNET_API int crnet_transfer_response_fd(const crnet_transfer *t)
+{
+	return t ? t->response_fd() : -1;
+}
+
+CRNET_API int crnet_transfer_done_fd(const crnet_transfer *t)
+{
+	return t ? t->done_fd() : -1;
+}
+
 CRNET_API void crnet_transfer_free(crnet_transfer *t)
 {
 	if (!t)
@@ -1193,6 +1203,16 @@ CRNET_API int crnet_ws_wait_closed(crnet_ws *ws, uint64_t timeout_ms)
 	if (timeout_ms && !ws->done() && crnet::OnNetworkThread())
 		return CRNET_E_WOULD_DEADLOCK;
 	return ws->WaitClosed(timeout_ms);
+}
+
+CRNET_API int crnet_ws_open_fd(const crnet_ws *ws)
+{
+	return ws ? ws->open_fd() : -1;
+}
+
+CRNET_API int crnet_ws_closed_fd(const crnet_ws *ws)
+{
+	return ws ? ws->closed_fd() : -1;
 }
 
 CRNET_API crnet_ws_state crnet_ws_get_state(const crnet_ws *ws)
