@@ -788,3 +788,117 @@ TEST_F(ClientTest, WsCompressionStaysChromesDefault)
 		  "permessage-deflate; client_max_window_bits");
 	crnet_ws_free(ws);
 }
+
+// ------------------------------------------------------------------
+// Pings and pongs
+// ------------------------------------------------------------------
+
+namespace {
+
+struct Pongs {
+	std::mutex mu;
+	std::condition_variable cv;
+	std::vector<std::string> payloads;
+
+	bool WaitFor(size_t n, int ms)
+	{
+		std::unique_lock<std::mutex> lk(mu);
+		return cv.wait_for(lk, std::chrono::milliseconds(ms),
+				   [&] { return payloads.size() >= n; });
+	}
+};
+
+void OnPong(crnet_ws *, const void *data, size_t len, void *ud)
+{
+	auto *p = static_cast<Pongs *>(ud);
+	std::lock_guard<std::mutex> lk(p->mu);
+	p->payloads.emplace_back(static_cast<const char *>(data), len);
+	p->cv.notify_all();
+}
+
+int ServerPings(crnet_ws *ws)
+{
+	crnet_ws_send(ws, CRNET_WS_TEXT, "stats", 5);
+	return json::parse(RecvText(ws))["ws_pings"].get<int>();
+}
+
+} // namespace
+
+TEST_F(ClientTest, WsPingIsAnsweredWithPong)
+{
+	Pongs pongs;
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, &pongs);
+	crnet_ws_set_pong_callback(ws, OnPong);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	int before = ServerPings(ws);
+	ASSERT_EQ(crnet_ws_ping(ws, "hello", 5), CRNET_OK);
+	ASSERT_TRUE(pongs.WaitFor(1, 5000));
+	EXPECT_EQ(pongs.payloads[0], "hello");
+	EXPECT_EQ(ServerPings(ws), before + 1);
+	crnet_ws_free(ws);
+}
+
+TEST_F(ClientTest, WsUnsolicitedPongIsReported)
+{
+	Pongs pongs;
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/pong"), nullptr, &pongs);
+	crnet_ws_set_pong_callback(ws, OnPong);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	ASSERT_TRUE(pongs.WaitFor(1, 5000));
+	EXPECT_EQ(pongs.payloads[0], "unsolicited");
+	crnet_ws_free(ws);
+}
+
+TEST_F(ClientTest, WsAutoPing)
+{
+	Pongs pongs;
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, &pongs);
+	crnet_ws_set_pong_callback(ws, OnPong);
+	crnet_ws_set_auto_ping(ws, 100);	// before it is open
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	ASSERT_TRUE(pongs.WaitFor(3, 5000));
+	crnet_ws_set_auto_ping(ws, 0);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	size_t stopped_at;
+	{
+		std::lock_guard<std::mutex> lk(pongs.mu);
+		stopped_at = pongs.payloads.size();
+	}
+	std::this_thread::sleep_for(std::chrono::milliseconds(400));
+	std::lock_guard<std::mutex> lk(pongs.mu);
+	EXPECT_EQ(pongs.payloads.size(), stopped_at) << "pings after auto-ping was stopped";
+	crnet_ws_free(ws);
+}
+
+// Auto-ping plus an idle timeout: pongs keep a silent connection alive,
+// and once the pings stop, the idle timeout ends it.
+TEST_F(ClientTest, WsAutoPingKeepsTheIdleTimeoutAtBay)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	crnet_ws_set_auto_ping(ws, 100);
+	crnet_ws_set_idle_timeout(ws, 400);
+	std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_OPEN);
+	crnet_ws_set_auto_ping(ws, 0);
+	crnet_ws_wait_closed(ws, 5000);
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_CLOSED);
+	EXPECT_EQ(crnet_ws_net_error(ws), -7);	// ERR_TIMED_OUT
+	crnet_ws_free(ws);
+}
+
+TEST_F(ClientTest, WsPingArguments)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/slow-handshake?ms=500"), nullptr, nullptr);
+	EXPECT_EQ(crnet_ws_ping(ws, "x", 1), CRNET_E_STATE) << "not open yet";
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	std::string big(126, 'p');
+	EXPECT_EQ(crnet_ws_ping(ws, big.data(), big.size()), CRNET_E_INVAL);
+	EXPECT_EQ(crnet_ws_ping(ws, big.data(), 125), CRNET_OK);
+	EXPECT_EQ(crnet_ws_ping(ws, nullptr, 0), CRNET_OK);
+	crnet_ws_close(ws, 1000, nullptr);
+	crnet_ws_wait_closed(ws, 5000);
+	EXPECT_EQ(crnet_ws_ping(ws, "x", 1), CRNET_E_STATE);
+	EXPECT_EQ(crnet_ws_ping(nullptr, "x", 1), CRNET_E_INVAL);
+	crnet_ws_free(ws);
+}

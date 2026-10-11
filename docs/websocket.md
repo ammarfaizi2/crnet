@@ -127,11 +127,21 @@ and every queued message has been read.
 `crnet_ws_set_idle_timeout(ws, ms)` drops a connection on which no
 message arrived for `ms` milliseconds, without a closing handshake
 (the peer is presumed gone); `on_close` reports `CRNET_E_TIMEOUT`, code
-1006 and `ERR_TIMED_OUT`. Every received message restarts it, and it
+1006 and `ERR_TIMED_OUT`. Every received message or pong restarts it, and it
 waits while the application is not taking messages (paused, or a full
-receive queue). Pings and pongs do not count: Chromium answers pings on
-its own and reports neither. 0 turns it off; it may be changed at any
-time.
+receive queue). The server's pings do not count: Chromium answers them
+on its own without reporting them. 0 turns it off; it may be changed at
+any time.
+
+### Pings
+
+`crnet_ws_ping(ws, data, len)` sends a Ping frame (up to 125 bytes),
+and `crnet_ws_set_pong_callback()` reports every Pong frame with its
+payload. `crnet_ws_set_auto_ping(ws, ms)` pings at a fixed interval;
+with an idle timeout somewhat longer than that interval, a connection
+whose peer stopped answering is dropped even when no messages are
+expected. Chrome offers pages none of this; it changes nothing about
+the handshake.
 
 ## Closing
 

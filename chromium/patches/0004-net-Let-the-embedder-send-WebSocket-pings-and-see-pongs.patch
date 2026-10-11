@@ -1,0 +1,75 @@
+net: Let the embedder send WebSocket pings and see pongs
+
+WebSocketChannel answers the server's pings itself and swallows every
+pong, and SendFrame() takes only data frames, so an embedder can
+neither ping the server nor learn that it answered. Pages have no such
+API, but a non-browser client wants it to detect a dead peer on an
+otherwise silent connection.
+
+Add WebSocketChannel::SendPing(), and WebSocketEventInterface::OnPong(),
+called for every Pong frame. OnPong() has an empty default, so the
+existing event interfaces, Chrome's among them, are unaffected.
+
+diff --git a/net/websockets/websocket_channel.cc b/net/websockets/websocket_channel.cc
+index 0b5ed0e778..e0f1c1d5b5 100644
+--- a/net/websockets/websocket_channel.cc
++++ b/net/websockets/websocket_channel.cc
+@@ -776,7 +776,8 @@ ChannelState WebSocketChannel::HandleFrameByState(
+ 
+     case WebSocketFrameHeader::kOpCodePong:
+       DVLOG(1) << "Got Pong of size " << payload.size();
+-      // There is no need to do anything with pong messages.
++      // crnet: let the embedder see it.
++      event_interface_->OnPong(payload);
+       return CHANNEL_ALIVE;
+ 
+     case WebSocketFrameHeader::kOpCodeClose: {
+@@ -923,6 +924,17 @@ ChannelState WebSocketChannel::RespondToClosingHandshake() {
+   return CHANNEL_ALIVE;
+ }
+ 
++ChannelState WebSocketChannel::SendPing(base::span<const uint8_t> payload) {
++  CHECK_LE(payload.size(), 125u);
++  if (state_ != CONNECTED) {
++    return CHANNEL_ALIVE;
++  }
++  auto buffer = base::MakeRefCounted<VectorIOBuffer>(
++      std::vector<uint8_t>(payload.begin(), payload.end()));
++  return SendFrameInternal(true, WebSocketFrameHeader::kOpCodePing,
++                           std::move(buffer), payload.size());
++}
++
+ ChannelState WebSocketChannel::SendFrameInternal(
+     bool fin,
+     WebSocketFrameHeader::OpCode op_code,
+diff --git a/net/websockets/websocket_channel.h b/net/websockets/websocket_channel.h
+index 646770d5d6..ff24bd2b76 100644
+--- a/net/websockets/websocket_channel.h
++++ b/net/websockets/websocket_channel.h
+@@ -119,6 +119,11 @@ class NET_EXPORT WebSocketChannel {
+                                        scoped_refptr<IOBuffer> buffer,
+                                        size_t buffer_size);
+ 
++  // crnet: sends a Ping frame carrying |payload| (at most 125 bytes, RFC
++  // 6455 section 5.5). Does nothing unless the connection is open. As for
++  // SendFrame(), the result may be CHANNEL_DELETED.
++  [[nodiscard]] ChannelState SendPing(base::span<const uint8_t> payload);
++
+   // Calls WebSocketStream::ReadFrames() with the appropriate arguments. Stops
+   // calling ReadFrames if no writable buffer in dataframe or WebSocketStream
+   // starts async read.
+diff --git a/net/websockets/websocket_event_interface.h b/net/websockets/websocket_event_interface.h
+index fb2da15663..6b45699b9d 100644
+--- a/net/websockets/websocket_event_interface.h
++++ b/net/websockets/websocket_event_interface.h
+@@ -71,6 +71,10 @@ class NET_EXPORT WebSocketEventInterface {
+   // out. The network service should not read more from network until that.
+   virtual bool HasPendingDataFrames() = 0;
+ 
++  // crnet: called when a Pong frame arrives. |payload| is valid only during
++  // the call.
++  virtual void OnPong(base::span<const char> payload) {}
++
+   // Called once for each call to SendFrame() once the frame has been passed to
+   // the OS.
+   virtual void OnSendDataFrameDone() = 0;

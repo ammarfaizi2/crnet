@@ -1106,6 +1106,23 @@ CRNET_API int crnet_ws_close(crnet_ws *ws, int code, const char *reason)
 	return ws->Close(code, reason ? reason : "");
 }
 
+CRNET_API int crnet_ws_ping(crnet_ws *ws, const void *data, size_t len)
+{
+	return ws ? ws->Ping(data, len) : CRNET_E_INVAL;
+}
+
+CRNET_API void crnet_ws_set_pong_callback(crnet_ws *ws, crnet_ws_pong_cb cb)
+{
+	if (ws)
+		ws->SetPongCallback(cb);
+}
+
+CRNET_API void crnet_ws_set_auto_ping(crnet_ws *ws, uint64_t interval_ms)
+{
+	if (ws)
+		ws->SetAutoPing(interval_ms);
+}
+
 CRNET_API void crnet_ws_set_idle_timeout(crnet_ws *ws, uint64_t timeout_ms)
 {
 	if (ws)

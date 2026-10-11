@@ -81,19 +81,6 @@ Consistent per-OS browser profiles.
   other per-platform difference together, verified against captures
   from real Chrome on each platform.
 
-## WebSocket
-
-### websocket-parity
-
-Sending a ping and receiving pong events, or an auto-ping interval, as
-other WebSocket clients offer (crnet has the message size limit, the
-idle timeout and the compression switch).
-
-- Needs a Chromium patch: `WebSocketChannel` sends only data frames
-  from outside, and answers and consumes pings and pongs itself
-  without telling its event interface.
-- Chrome offers neither to pages, so keep it opt-in.
-
 ## Build and tooling
 
 ### continuous-integration

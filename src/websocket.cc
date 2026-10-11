@@ -120,6 +120,11 @@ public:
 					  selected_subprotocol, extensions);
 	}
 
+	void OnPong(base::span<const char> payload) override
+	{
+		ws_->OnPong(payload);
+	}
+
 	void OnDataFrame(bool fin, WebSocketMessageType type,
 			 base::span<const char> payload) override
 	{
@@ -317,6 +322,75 @@ void crnet_ws::SetIdleTimeout(uint64_t ms)
 				  base::WrapRefCounted(this), ms));
 }
 
+int crnet_ws::Ping(const void *data, size_t len)
+{
+	if (len > 125 || (len && !data))
+		return CRNET_E_INVAL;
+	if (state() != CRNET_WS_OPEN)
+		return CRNET_E_STATE;
+	std::string payload;
+	if (len)
+		UNSAFE_BUFFERS(payload.assign(static_cast<const char *>(data), len));
+	runner_->PostTask(FROM_HERE,
+			  base::BindOnce(&crnet_ws::SendPingOnNetworkThread,
+					 base::WrapRefCounted(this),
+					 std::move(payload)));
+	return CRNET_OK;
+}
+
+void crnet_ws::SendPingOnNetworkThread(std::string payload)
+{
+	if (finished_ || !channel_ || state() != CRNET_WS_OPEN)
+		return;
+	// A CHANNEL_DELETED result means Finish() already ran.
+	std::ignore = channel_->SendPing(base::as_byte_span(payload));
+}
+
+void crnet_ws::SetPongCallback(crnet_ws_pong_cb cb)
+{
+	runner_->PostTask(FROM_HERE,
+			  base::BindOnce(
+				  [](scoped_refptr<crnet_ws> ws,
+				     crnet_ws_pong_cb cb) { ws->pong_cb_ = cb; },
+				  base::WrapRefCounted(this), cb));
+}
+
+void crnet_ws::SetAutoPing(uint64_t interval_ms)
+{
+	runner_->PostTask(FROM_HERE,
+			  base::BindOnce(
+				  [](scoped_refptr<crnet_ws> ws, uint64_t ms) {
+					  ws->auto_ping_ms_ = ms;
+					  ws->RestartAutoPing();
+				  },
+				  base::WrapRefCounted(this), interval_ms));
+}
+
+void crnet_ws::RestartAutoPing()
+{
+	if (finished_ || state() != CRNET_WS_OPEN || !auto_ping_ms_) {
+		auto_ping_timer_.Stop();
+		return;
+	}
+	auto_ping_timer_.Start(
+		FROM_HERE,
+		base::Milliseconds(std::min<uint64_t>(
+			auto_ping_ms_, std::numeric_limits<int64_t>::max())),
+		base::BindRepeating(&crnet_ws::SendPingOnNetworkThread,
+				    base::Unretained(this), std::string()));
+}
+
+void crnet_ws::OnPong(base::span<const char> payload)
+{
+	if (finished_)
+		return;
+	// The peer answered: it is alive, whatever the application reads.
+	if (idle_timer_.IsRunning())
+		idle_timer_.Reset();
+	if (pong_cb_)
+		pong_cb_(this, payload.data(), payload.size(), user_data_);
+}
+
 void crnet_ws::RestartIdleTimer()
 {
 	if (finished_ || state() != CRNET_WS_OPEN || !idle_ms_ || paused_ ||
@@ -510,6 +584,7 @@ void crnet_ws::OnAddChannelResponse(
 	opened_ = true;
 	state_.store(CRNET_WS_OPEN);
 	RestartIdleTimer();
+	RestartAutoPing();
 
 	if (cb_.on_open)
 		cb_.on_open(this, handshake_.get(), protocol_.c_str(),
@@ -693,6 +768,7 @@ void crnet_ws::Finish(int err, int code, const std::string &reason,
 	finished_ = true;
 	timer_.Stop();
 	idle_timer_.Stop();
+	auto_ping_timer_.Stop();
 
 	if (channel_) {
 		// We may be inside one of the channel's callbacks; delete it on

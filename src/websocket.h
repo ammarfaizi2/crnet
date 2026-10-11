@@ -36,6 +36,9 @@ public:
 	void Pause();
 	void Resume();
 	void SetIdleTimeout(uint64_t ms);
+	int Ping(const void *data, size_t len);
+	void SetPongCallback(crnet_ws_pong_cb cb);
+	void SetAutoPing(uint64_t interval_ms);
 	int WaitOpen(uint64_t timeout_ms);
 	int WaitClosed(uint64_t timeout_ms);
 	int Recv(crnet_ws_msg_type *type, void **data, size_t *len,
@@ -94,6 +97,11 @@ private:
 	void OnTimeout();
 	// (Re)arms the idle timer if the connection is open and one is set.
 	void RestartIdleTimer();
+	// (Re)arms the auto-ping timer if the connection is open and one is
+	// set.
+	void RestartAutoPing();
+	void OnPong(base::span<const char> payload);
+	void SendPingOnNetworkThread(std::string payload);
 	void Finish(int err, int code, const std::string &reason,
 		    int net_error);
 	// Keeps the fd readable exactly while Recv() would not block.
@@ -113,6 +121,9 @@ private:
 	base::OneShotTimer timer_;
 	base::OneShotTimer idle_timer_;
 	uint64_t idle_ms_ = 0;
+	base::RepeatingTimer auto_ping_timer_;
+	uint64_t auto_ping_ms_ = 0;
+	crnet_ws_pong_cb pong_cb_ = nullptr;
 	bool finished_ = false;
 	bool paused_ = false;
 	bool reading_stopped_ = false;

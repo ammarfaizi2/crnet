@@ -519,6 +519,7 @@ feature can be used:
 | `CRNET_HAS_SOCKS_ERRORS` | 0.17.0 | distinct SOCKS5 net errors, `crnet_response_socks_reply()` |
 | `CRNET_HAS_WS_COMPRESSION_SWITCH` | 0.18.0 | `crnet_request_set_ws_compression()` |
 | `CRNET_HAS_PROGRESS_CALLBACK` | 0.19.0 | `crnet_transfer_set_progress_callback()` |
+| `CRNET_HAS_WS_PING` | 0.20.0 | `crnet_ws_ping()`, `crnet_ws_set_pong_callback()`, `crnet_ws_set_auto_ping()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built
