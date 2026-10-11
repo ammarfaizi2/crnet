@@ -948,8 +948,9 @@ CRNET_API crnet_ws *crnet_ws_connect(crnet_client *client,
 
 /*
  * Wait until the connection is open (CRNET_OK) or failed (the close
- * error). CRNET_E_TIMEOUT if neither happened within |timeout_ms|
- * (UINT64_MAX = forever). Not on the network thread.
+ * error), and on_open or on_close has returned, so what the callback did
+ * is visible to the caller. CRNET_E_TIMEOUT if neither happened within
+ * |timeout_ms| (UINT64_MAX = forever). Not on the network thread.
  */
 CRNET_API int crnet_ws_wait_open(crnet_ws *ws, uint64_t timeout_ms);
 

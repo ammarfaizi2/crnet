@@ -509,12 +509,14 @@ void crnet_ws::OnAddChannelResponse(
 	handshake_ = std::move(h);
 	opened_ = true;
 	state_.store(CRNET_WS_OPEN);
-	settled_.Signal();
 	RestartIdleTimer();
 
 	if (cb_.on_open)
 		cb_.on_open(this, handshake_.get(), protocol_.c_str(),
 			    extensions_.c_str(), user_data_);
+	// Only now: a thread woken by crnet_ws_wait_open() may rely on what
+	// on_open did (as crnet_transfer_wait() relies on on_complete).
+	settled_.Signal();
 	if (finished_)
 		return;
 	// Start receiving outside the channel's own callback.
@@ -712,9 +714,9 @@ void crnet_ws::Finish(int err, int code, const std::string &reason,
 	net_error_ = err == CRNET_OK ? 0 : net_error;
 	result_ = err;
 	state_.store(CRNET_WS_CLOSED);
-	settled_.Signal();
 	if (cb_.on_close)
 		cb_.on_close(this, err, code, close_reason_.c_str(), user_data_);
+	settled_.Signal();
 	closed_.Signal();
 	{
 		// Wake Recv() callers and make the fd readable. Taking the lock
