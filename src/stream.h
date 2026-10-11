@@ -43,6 +43,8 @@ public:
 	int Write(const char *data, size_t len, size_t *written,
 		  uint64_t timeout_ms);
 	int End();
+	// Readable while Write() would not block (crnet_transfer_write_fd()).
+	int fd() const { return writable_.fd(); }
 
 	// Transfer side, when it finishes: refuse further data and wake
 	// writers, which then get |result|.
@@ -60,6 +62,8 @@ private:
 	friend class base::RefCountedThreadSafe<UploadPipe>;
 	~UploadPipe();
 
+	void UpdateFdLocked();
+
 	const int64_t length_;
 	const scoped_refptr<base::SingleThreadTaskRunner> runner_;
 
@@ -75,6 +79,7 @@ private:
 	int close_result_ = 0;
 	bool reader_waiting_ = false;
 	base::WeakPtr<PipeUploadDataStream> stream_;
+	FdFlag writable_;
 };
 
 // The UploadDataStream handed to the URLRequest for a streamed body. Not

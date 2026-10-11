@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 8
+#define CRNET_VERSION_MINOR 9
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.8.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.9.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -597,6 +597,16 @@ CRNET_API int crnet_transfer_write(crnet_transfer *t, const void *data,
  * declared fail the transfer with CRNET_E_INVAL.
  */
 CRNET_API int crnet_transfer_write_end(crnet_transfer *t);
+
+/*
+ * Streaming upload: a file descriptor that is readable while
+ * crnet_transfer_write() would not block (the send buffer has room, or
+ * the write would fail at once because the body was ended or the
+ * transfer finished). With it and |timeout_ms| = 0 an event loop can
+ * feed the body without a thread of its own. -1 for other transfers.
+ */
+#define CRNET_HAS_WRITE_FD 1
+CRNET_API int crnet_transfer_write_fd(const crnet_transfer *t);
 
 /*
  * Streaming download (crnet_request_set_response_stream()): read up to

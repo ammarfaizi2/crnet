@@ -655,3 +655,112 @@ TEST_F(ClientTest, ProgressCountsEncodedAndDecodedBytes)
 	EXPECT_LT(wire, static_cast<int64_t>(len));
 	crnet_transfer_free(t);
 }
+
+// ------------------------------------------------------------------
+// Event-loop uploads (crnet_transfer_write_fd)
+// ------------------------------------------------------------------
+
+namespace {
+
+bool Readable(int fd, int timeout_ms)
+{
+	pollfd p = {fd, POLLIN, 0};
+	return poll(&p, 1, timeout_ms) == 1 && (p.revents & POLLIN);
+}
+
+} // namespace
+
+// The whole body is fed from a poll() loop with non-blocking writes;
+// the fd must report room exactly when a write can make progress.
+TEST_F(ClientTest, StreamUploadDrivenByWriteFd)
+{
+	const std::string data = RandomData(12 * 1024 * 1024 + 3, 31);
+	for (const std::string &url : {HttpsUrl("/upload-digest"), HttpsH1Url("/upload-digest")}) {
+		crnet_transfer *t = StartUpload(client_, url, data.size());
+		ASSERT_NE(t, nullptr);
+		int fd = crnet_transfer_write_fd(t);
+		ASSERT_GE(fd, 0);
+		EXPECT_EQ(crnet_transfer_fd(t), -1) << "download fd is separate";
+		size_t off = 0;
+		int would_block = 0;
+		while (off < data.size()) {
+			ASSERT_TRUE(Readable(fd, 10000)) << "no room after 10 s at " << off;
+			size_t w = 0;
+			int rc = crnet_transfer_write(t, data.data() + off, data.size() - off, &w, 0);
+			ASSERT_TRUE(rc == CRNET_OK || rc == CRNET_E_TIMEOUT) << rc;
+			EXPECT_GT(w, 0u) << "readable fd but no progress";
+			off += w;
+			if (rc == CRNET_E_TIMEOUT)
+				would_block++;
+		}
+		EXPECT_GT(would_block, 0) << "12 MB should not fit in the 1 MiB buffer";
+		ASSERT_EQ(crnet_transfer_write_end(t), CRNET_OK);
+		EXPECT_TRUE(Readable(fd, 0)) << "an ended body never blocks";
+		json d = Digest(t);
+		EXPECT_EQ(d["len"], data.size()) << url;
+		EXPECT_EQ(d["sha256"], Sha256Hex(data));
+		crnet_transfer_free(t);
+	}
+}
+
+// While the server does not read, the buffer stays full and the fd must
+// stay quiet; it wakes up once the server starts reading.
+TEST_F(ClientTest, WriteFdIsQuietWhileTheBufferIsFull)
+{
+	const std::string data = RandomData(48 * 1024 * 1024, 32);
+	crnet_transfer *t = StartUpload(client_, HttpsH1Url("/slow-upload?pause_ms=3000"),
+					data.size());
+	ASSERT_NE(t, nullptr);
+	int fd = crnet_transfer_write_fd(t);
+	size_t off = 0;
+	bool saw_quiet = false;
+	while (off < data.size()) {
+		size_t w = 0;
+		int rc = crnet_transfer_write(t, data.data() + off, data.size() - off, &w, 0);
+		off += w;
+		if (rc == CRNET_OK)
+			break;
+		ASSERT_EQ(rc, CRNET_E_TIMEOUT);
+		if (!saw_quiet && !Readable(fd, 300)) {
+			// Full, and nothing drained it for 300 ms.
+			saw_quiet = true;
+			size_t w2 = 1;
+			EXPECT_EQ(crnet_transfer_write(t, data.data() + off, 1, &w2, 0),
+				  CRNET_E_TIMEOUT);
+			EXPECT_EQ(w2, 0u);
+		}
+		ASSERT_TRUE(Readable(fd, 10000)) << "never woke up at " << off;
+	}
+	EXPECT_TRUE(saw_quiet) << "the server pause should have filled the buffer";
+	ASSERT_EQ(crnet_transfer_write_end(t), CRNET_OK);
+	json d = Digest(t);
+	EXPECT_EQ(d["sha256"], Sha256Hex(data));
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, WriteFdIsReadableWhenTheTransferFailed)
+{
+	crnet_request *req = crnet_request_new("POST", "https://127.0.0.1:1/");
+	crnet_request_set_body_stream(req, CRNET_LENGTH_UNKNOWN);
+	crnet_transfer *t = crnet_start(client_, req, nullptr, nullptr);
+	crnet_request_free(req);
+	ASSERT_NE(t, nullptr);
+	int fd = crnet_transfer_write_fd(t);
+	ASSERT_GE(fd, 0);
+	std::string chunk(256 * 1024, 'x');
+	for (int i = 0; i < 4; i++)	// fill the 1 MiB buffer
+		crnet_transfer_write(t, chunk.data(), chunk.size(), nullptr, 0);
+	EXPECT_EQ(crnet_transfer_wait(t, 10000), CRNET_E_NET);
+	EXPECT_TRUE(Readable(fd, 0));
+	EXPECT_NE(crnet_transfer_write(t, "x", 1, nullptr, 0), CRNET_OK);
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, WriteFdOnlyForStreamedUploads)
+{
+	crnet_transfer *t = StartDownload(client_, HttpsUrl("/echo"));
+	EXPECT_EQ(crnet_transfer_write_fd(t), -1);
+	EXPECT_EQ(crnet_transfer_write_fd(nullptr), -1);
+	crnet_transfer_wait(t, 10000);
+	crnet_transfer_free(t);
+}

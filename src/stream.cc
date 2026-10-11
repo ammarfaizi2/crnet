@@ -51,9 +51,17 @@ UploadPipe::UploadPipe(int64_t length,
 		       scoped_refptr<base::SingleThreadTaskRunner> runner)
 	: length_(length), runner_(std::move(runner))
 {
+	writable_.Set(true);
 }
 
 UploadPipe::~UploadPipe() = default;
+
+void UploadPipe::UpdateFdLocked()
+{
+	// Write() returns at once when there is room, and also when it can
+	// only fail.
+	writable_.Set(buffered_ < kStreamBufferSize || ended_ || closed_);
+}
 
 int UploadPipe::Write(const char *data, size_t len, size_t *written,
 		      uint64_t timeout_ms)
@@ -102,6 +110,7 @@ int UploadPipe::Write(const char *data, size_t len, size_t *written,
 						       stream_));
 			}
 		}
+		UpdateFdLocked();
 	}
 	if (written)
 		*written = done;
@@ -114,6 +123,7 @@ int UploadPipe::End()
 	if (ended_ || closed_)
 		return CRNET_E_STATE;
 	ended_ = true;
+	UpdateFdLocked();
 	if (reader_waiting_) {
 		reader_waiting_ = false;
 		runner_->PostTask(FROM_HERE,
@@ -131,6 +141,7 @@ void UploadPipe::Close(int result)
 		std::lock_guard<std::mutex> lk(mu_);
 		closed_ = true;
 		close_result_ = result;
+		UpdateFdLocked();
 	}
 	space_cv_.notify_all();
 }
@@ -149,6 +160,7 @@ int UploadPipe::Take(char *buf, size_t len, bool *eof)
 		n = Drain(&chunks_, &front_offset_, buf, len);
 		buffered_ -= n;
 		consumed_ += n;
+		UpdateFdLocked();
 		*eof = ended_ && buffered_ == 0;
 		if (n == 0 && !*eof) {
 			reader_waiting_ = true;

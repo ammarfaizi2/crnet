@@ -273,6 +273,8 @@ public:
 		return s;
 	}
 	int fd() const { return crnet_transfer_fd(t_); }
+	// Readable while write() would not block (streamed request body).
+	int write_fd() const { return crnet_transfer_write_fd(t_); }
 
 	// Cancels if still running and waits for on_complete.
 	void reset()

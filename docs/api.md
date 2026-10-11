@@ -242,6 +242,16 @@ crnet_transfer_wait(t, UINT64_MAX);
   while it is full, so a fast producer is paced by the network. With a
   timeout (0 = never block) it returns `CRNET_E_TIMEOUT` and reports in
   `*written` how much it accepted, for event-loop style producers.
+- `crnet_transfer_write_fd(t)` is readable while a write would not
+  block, so an event loop can wait for room with `poll()`/`epoll` and
+  then write with a timeout of 0:
+
+  ```c
+  struct pollfd p = { crnet_transfer_write_fd(t), POLLIN };
+  /* in the loop, when poll() reports p readable: */
+  crnet_transfer_write(t, buf + off, len - off, &w, 0);
+  off += w;
+  ```
 - Writing may start before the transfer reached the network, from any
   thread.
 - With a declared size, writing more fails with `CRNET_E_INVAL`, and
@@ -448,6 +458,7 @@ feature can be used:
 | `CRNET_HAS_TIMING` | 0.6.0 | `crnet_response_socket_reused()`, `_connection_id()`, `_timing()` |
 | `CRNET_HAS_PROGRESS` | 0.7.0 | `crnet_transfer_progress()` |
 | `CRNET_HAS_CONNECT_TIMEOUT` | 0.8.0 | `crnet_client_config_set_connect_timeout()`, `crnet_request_set_connect_timeout()` |
+| `CRNET_HAS_WRITE_FD` | 0.9.0 | `crnet_transfer_write_fd()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

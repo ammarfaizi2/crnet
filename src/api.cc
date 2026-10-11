@@ -702,6 +702,11 @@ CRNET_API int crnet_transfer_read(crnet_transfer *t, void *buf, size_t len,
 	return rc;
 }
 
+CRNET_API int crnet_transfer_write_fd(const crnet_transfer *t)
+{
+	return t && t->upload() ? t->upload()->fd() : -1;
+}
+
 CRNET_API int crnet_transfer_fd(const crnet_transfer *t)
 {
 	return t && t->download() ? t->download()->fd() : -1;

@@ -198,20 +198,6 @@ Persist what Chrome keeps between runs besides cookies.
   `TransportSecurityPersister`). Pairs with `cookie-jar-persistence`;
   one "profile directory" option could cover all three.
 
-## Streaming
-
-### stream-write-readiness
-
-A pollable "can write" signal for streamed uploads.
-
-- Today: `crnet_transfer_write()` blocks (or times out) when the 1 MiB
-  pipe is full, and `crnet_transfer_fd()` only signals readability of
-  the response stream. An event-loop caller cannot wait for upload
-  space without a thread.
-- Wanted: an fd (or the existing one with a direction flag) that is
-  readable while the upload pipe has free space, plus a non-blocking
-  write that returns how much it accepted.
-
 ## WebSocket
 
 ### websocket-parity
