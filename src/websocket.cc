@@ -271,8 +271,14 @@ int crnet_ws::Send(crnet_ws_msg_type type, const void *data, size_t len)
 
 int crnet_ws::Close(int code, const std::string &reason)
 {
-	if (code != net::kWebSocketNormalClosure &&
-	    (code < 3000 || code > 4999))
+	// What an endpoint may send (RFC 6455 section 7.4 and the IANA
+	// registry): not 1004 (reserved), 1005, 1006 and 1015 (only ever
+	// reported, never sent) or anything below 1000, from 1016 to 2999 or
+	// above 4999.
+	const bool sendable = (code >= 1000 && code <= 1003) ||
+			      (code >= 1007 && code <= 1014) ||
+			      (code >= 3000 && code <= 4999);
+	if (!sendable)
 		return CRNET_E_INVAL;
 	if (reason.size() > 123 || !base::IsStringUTF8(reason))
 		return CRNET_E_INVAL;

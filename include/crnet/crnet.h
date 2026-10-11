@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 31
+#define CRNET_VERSION_MINOR 32
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -1207,11 +1207,16 @@ CRNET_API int crnet_ws_recv(crnet_ws *ws, crnet_ws_msg_type *type,
 CRNET_API int crnet_ws_fd(const crnet_ws *ws);
 
 /*
- * Start the closing handshake. |code| is 1000 or 3000-4999; |reason|
- * may be NULL and must be valid UTF-8 of at most 123 bytes. Closing a
- * connection that is still connecting aborts it (CRNET_E_CANCELED).
- * Thread-safe; on_close follows.
+ * Start the closing handshake. |code| is any code an endpoint may send
+ * (RFC 6455 section 7.4 and the IANA registry): 1000-1003, 1007-1014 or
+ * 3000-4999. Before 0.32.0 (CRNET_HAS_WS_CLOSE_CODES) only 1000 and
+ * 3000-4999 were accepted, the rule browsers apply to pages. 1004-1006,
+ * 1015 and the rest give CRNET_E_INVAL. |reason| may be NULL and must be
+ * valid UTF-8 of at most 123 bytes. Closing a connection that is still
+ * connecting aborts it (CRNET_E_CANCELED). Thread-safe; on_close
+ * follows.
  */
+#define CRNET_HAS_WS_CLOSE_CODES 1
 CRNET_API int crnet_ws_close(crnet_ws *ws, int code, const char *reason);
 
 /*

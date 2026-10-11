@@ -574,6 +574,7 @@ feature can be used:
 | `CRNET_HAS_PROXY_NO_CREDENTIALS` | 0.29.0 | `socks5://@host:port`: explicitly no proxy credentials |
 | `CRNET_HAS_PROXY_CREDENTIALS` | 0.30.0 | `crnet_client_config_set_proxy_credentials()`, `crnet_request_set_proxy_credentials()` |
 | `CRNET_HAS_WS_PING_CALLBACK` | 0.31.0 | `crnet_ws_set_ping_callback()`; server pings restart the idle timeout |
+| `CRNET_HAS_WS_CLOSE_CODES` | 0.32.0 | `crnet_ws_close()` takes every code an endpoint may send |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

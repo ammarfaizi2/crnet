@@ -1,0 +1,23 @@
+net: Accept WebSocket close code 1014
+
+IsStrictlyValidCloseStatusCode() treats 1014 as unassigned, but the
+IANA WebSocket close code registry has it as "Bad Gateway", next to
+1012 and 1013. StartClosingHandshake() checks the code with it, so a
+close the embedder starts with 1014 goes out as 1011 instead. (Close
+frames from the server are checked elsewhere and accept 1014 already.)
+
+Treat 1014 as valid, like 1012 and 1013.
+
+diff --git a/net/websockets/websocket_channel.cc b/net/websockets/websocket_channel.cc
+--- a/net/websockets/websocket_channel.cc
++++ b/net/websockets/websocket_channel.cc
+@@ -88,7 +88,8 @@
+       // [BAD, OK)
+       0,    1000,   // 1000 is the first valid code
+       1006, 1007,   // 1006 MUST NOT be set.
+-      1014, 3000,   // 1014 unassigned; 1015 up to 2999 are reserved.
++      // crnet: 1014 (Bad Gateway) is registered by IANA, as 1012 and 1013.
++      1015, 3000,   // 1015 up to 2999 are reserved.
+       5000, 65536,  // Codes above 5000 are invalid.
+   };
+ 

@@ -150,7 +150,7 @@ the handshake.
 ## Closing
 
 ```c
-crnet_ws_close(ws, 1000, "bye");      /* 1000 or 3000-4999, reason <= 123 bytes */
+crnet_ws_close(ws, 1000, "bye");      /* 1000-1003, 1007-1014, 3000-4999; reason <= 123 bytes */
 int rc = crnet_ws_wait_closed(ws, 5000);
 ```
 

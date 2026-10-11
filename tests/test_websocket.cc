@@ -521,6 +521,46 @@ TEST_F(ClientTest, WsArgumentValidation)
 	EXPECT_EQ(crnet_ws_connect(nullptr, nullptr, nullptr, nullptr, nullptr), nullptr);
 }
 
+// Any code an endpoint may send on the wire, not only the ones browsers
+// let pages use (1000 and 3000-4999).
+TEST_F(ClientTest, WsCloseCodesAnEndpointMaySend)
+{
+	auto last_close = [] {
+		crnet_client *c = NewTestClient();
+		Result r = Get(c, HttpsUrl("/echo"));
+		crnet_client_free(c);
+		return r.echo()["stats"]["ws_last_close"];
+	};
+	for (int code : {1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014,
+			 3000, 4999}) {
+		crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, nullptr);
+		ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+		ASSERT_EQ(crnet_ws_close(ws, code, "why"), CRNET_OK) << code;
+		crnet_ws_wait_closed(ws, 5000);
+		EXPECT_EQ(last_close(), json::array({code, "why"})) << code;
+		crnet_ws_free(ws);
+	}
+
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo"), nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	for (int code : {0, 999, 1004, 1005, 1006, 1015, 2999, 5000, 65535})
+		EXPECT_EQ(crnet_ws_close(ws, code, nullptr), CRNET_E_INVAL) << code;
+	crnet_ws_free(ws);
+}
+
+// Received, 1014 was accepted all along; kept beside the sending side.
+TEST_F(ClientTest, WsServerClosesWith1014)
+{
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/close?code=1014&reason=upstream"), nullptr,
+			       nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	crnet_ws_wait_closed(ws, 5000);
+	EXPECT_EQ(crnet_ws_close_code(ws), 1014);
+	EXPECT_STREQ(crnet_ws_close_reason(ws), "upstream");
+	EXPECT_EQ(crnet_ws_net_error(ws), 0);
+	crnet_ws_free(ws);
+}
+
 TEST_F(ClientTest, WsCloseWhileConnectingAborts)
 {
 	Events ev;
