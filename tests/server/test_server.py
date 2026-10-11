@@ -10,6 +10,8 @@ Listens on 127.0.0.1 (ephemeral ports) and serves:
   * HTTPS requiring a client certificate issued by the same CA
     ("https_mtls"; the client's PEM files are "client_cert", "client_key")
   * plain HTTP/1.1
+  * a SOCKS5 proxy requiring username "crnet" and password "secret"
+    (RFC 1929, "socks5_auth"), otherwise like the next one
   * a SOCKS5 proxy (no auth, CONNECT only, remote name resolution) with
     fault injection: destinations rep-N.crnet-test (reply code N),
     close.crnet-test, truncate.crnet-test and badatyp.crnet-test fail
@@ -102,7 +104,7 @@ PROXY_USER = "crnet"
 PROXY_PASS = "secret"
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
          "ws_h2_connects": 0, "ws_pings": 0, "ws_pongs": 0,
-         "ws_last_close": None,
+         "ws_last_close": None, "socks5_auths": [],
          "doh_queries": []}
 CACHE_STATS = {}    # /cache/<key> -> {"requests": n, "conditional": n}
 SOCKS_FAULT = {"greeting": None}  # one-shot, set by /socks5-fault
@@ -858,12 +860,33 @@ async def tunnel(reader, writer, host, port):
     await asyncio.gather(pipe(reader, up_w), pipe(up_r, writer))
 
 
-async def serve_socks5(reader, writer):
+async def serve_socks5(reader, writer, auth=False):
     try:
         ver, nmethods = await reader.readexactly(2)
-        await reader.readexactly(nmethods)
+        methods = await reader.readexactly(nmethods)
         if ver != 5:
             writer.close()
+            return
+        if auth:
+            # RFC 1929: user "crnet", password "secret".
+            if 2 not in methods:
+                writer.write(b"\x05\xff")
+                await writer.drain()
+                writer.close()
+                return
+            writer.write(b"\x05\x02")
+            subver, ulen = await reader.readexactly(2)
+            user = await reader.readexactly(ulen)
+            plen = (await reader.readexactly(1))[0]
+            password = await reader.readexactly(plen)
+            ok = subver == 1 and user == b"crnet" and password == b"secret"
+            STATS["socks5_auths"].append([user.decode("latin-1"), ok])
+            writer.write(b"\x01\x00" if ok else b"\x01\x01")
+            await writer.drain()
+            if not ok:
+                writer.close()
+                return
+            await read_socks5_request(reader, writer)
             return
         fault, SOCKS_FAULT["greeting"] = SOCKS_FAULT["greeting"], None
         if fault == "close":
@@ -875,6 +898,14 @@ async def serve_socks5(reader, writer):
             await writer.drain()
             writer.close()
             return
+        await read_socks5_request(reader, writer)
+    except (ConnectionError, asyncio.IncompleteReadError, OSError):
+        writer.close()
+
+
+async def read_socks5_request(reader, writer):
+    """The CONNECT request after a successful greeting; faults by name."""
+    try:
         ver, cmd, _, atyp = await reader.readexactly(4)
         if atyp == 1:
             host = socket.inet_ntoa(await reader.readexactly(4))
@@ -1035,6 +1066,8 @@ async def main():
         "http": await asyncio.start_server(
             lambda r, w: serve_h1(r, w, False), host, 0),
         "socks5": await asyncio.start_server(serve_socks5, host, 0),
+        "socks5_auth": await asyncio.start_server(
+            lambda r, w: serve_socks5(r, w, auth=True), host, 0),
         "http_proxy": await asyncio.start_server(serve_http_proxy, host, 0),
     }
     ports = {k: s.sockets[0].getsockname()[1] for k, s in servers.items()}
