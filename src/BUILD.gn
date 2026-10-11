@@ -33,6 +33,8 @@ shared_library("crnet") {
     "client.cc",
     "event.cc",
     "event.h",
+    "fd_flag.cc",
+    "fd_flag.h",
     "global.cc",
     "internal.h",
     "profile.cc",

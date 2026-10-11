@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "crnet/stream.h"
 
-#include <errno.h>
 #include <string.h>
-#include <sys/eventfd.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <chrono>
@@ -239,33 +236,13 @@ void PipeUploadDataStream::OnPipeReady()
 // DownloadBuffer
 // ------------------------------------------------------------------
 
-DownloadBuffer::DownloadBuffer()
-{
-	efd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-}
+DownloadBuffer::DownloadBuffer() = default;
 
-DownloadBuffer::~DownloadBuffer()
-{
-	if (efd_ >= 0)
-		close(efd_);
-}
+DownloadBuffer::~DownloadBuffer() = default;
 
 void DownloadBuffer::UpdateFdLocked()
 {
-	bool want = buffered_ > 0 || finished_;
-	uint64_t v = 1;
-	ssize_t r;
-	if (want && !fd_readable_) {
-		do {
-			r = write(efd_, &v, sizeof(v));
-		} while (r < 0 && errno == EINTR);
-		fd_readable_ = true;
-	} else if (!want && fd_readable_) {
-		do {
-			r = read(efd_, &v, sizeof(v));
-		} while (r < 0 && errno == EINTR);
-		fd_readable_ = false;
-	}
+	readable_.Set(buffered_ > 0 || finished_);
 }
 
 bool DownloadBuffer::Push(const char *data, size_t len)

@@ -17,6 +17,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
+#include "crnet/fd_flag.h"
 #include "net/base/io_buffer.h"
 #include "net/base/upload_data_stream.h"
 
@@ -110,8 +111,8 @@ public:
 	DownloadBuffer(const DownloadBuffer &) = delete;
 	DownloadBuffer &operator=(const DownloadBuffer &) = delete;
 
-	bool ok() const { return efd_ >= 0; }
-	int fd() const { return efd_; }
+	bool ok() const { return readable_.fd() >= 0; }
+	int fd() const { return readable_.fd(); }
 
 	// Network thread. Returns true when the buffer is full and reading
 	// from the network should stop until the reader asks to resume.
@@ -127,7 +128,7 @@ public:
 private:
 	void UpdateFdLocked();
 
-	int efd_ = -1;
+	FdFlag readable_;
 	std::mutex mu_;
 	std::condition_variable cv_;
 	std::deque<std::string> chunks_;
@@ -136,7 +137,6 @@ private:
 	bool stopped_ = false;
 	bool finished_ = false;
 	int result_ = 0;
-	bool fd_readable_ = false;
 };
 
 } // namespace crnet

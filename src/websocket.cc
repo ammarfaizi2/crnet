@@ -12,11 +12,8 @@
 //
 #include "crnet/websocket.h"
 
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/eventfd.h>
-#include <unistd.h>
 
 #include <chrono>
 
@@ -212,32 +209,14 @@ crnet_ws::crnet_ws(crnet_client *client, crnet::RequestSpec spec, GURL url,
 {
 	if (cb)
 		cb_ = *cb;
-	efd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
 }
 
-crnet_ws::~crnet_ws()
-{
-	if (efd_ >= 0)
-		close(efd_);
-}
+crnet_ws::~crnet_ws() = default;
 
 
 void crnet_ws::UpdateFdLocked()
 {
-	bool want = !queue_.empty() || done();
-	uint64_t v = 1;
-	ssize_t r;
-	if (want && !fd_readable_) {
-		do {
-			r = write(efd_, &v, sizeof(v));
-		} while (r < 0 && errno == EINTR);
-		fd_readable_ = true;
-	} else if (!want && fd_readable_) {
-		do {
-			r = read(efd_, &v, sizeof(v));
-		} while (r < 0 && errno == EINTR);
-		fd_readable_ = false;
-	}
+	readable_.Set(!queue_.empty() || done());
 }
 
 // ------------------------------------------------------------------

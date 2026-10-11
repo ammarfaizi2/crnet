@@ -8,6 +8,7 @@
 
 #include <deque>
 
+#include "crnet/fd_flag.h"
 #include "crnet/internal.h"
 #include "net/websockets/websocket_frame.h"
 
@@ -26,7 +27,7 @@ public:
 	crnet_ws(const crnet_ws &) = delete;
 	crnet_ws &operator=(const crnet_ws &) = delete;
 
-	bool ok() const { return efd_ >= 0; }
+	bool ok() const { return readable_.fd() >= 0; }
 
 	// Any thread.
 	int Send(crnet_ws_msg_type type, const void *data, size_t len);
@@ -38,7 +39,7 @@ public:
 	int WaitClosed(uint64_t timeout_ms);
 	int Recv(crnet_ws_msg_type *type, void **data, size_t *len,
 		 uint64_t timeout_ms);
-	int fd() const { return efd_; }
+	int fd() const { return readable_.fd(); }
 	crnet_ws_state state() const
 	{
 		return static_cast<crnet_ws_state>(state_.load());
@@ -102,7 +103,7 @@ private:
 	crnet::WsHeaders headers_;
 	crnet_ws_callbacks cb_{};
 	void *user_data_;
-	int efd_ = -1;
+	crnet::FdFlag readable_;
 
 	// Network thread only.
 	std::unique_ptr<net::WebSocketChannel> channel_;
@@ -140,7 +141,6 @@ private:
 	mutable std::mutex mu_;
 	std::condition_variable cv_;
 	std::deque<Message> queue_;
-	bool fd_readable_ = false;
 	// Changed under mu_, read without it by the network thread's
 	// flow-control checks.
 	std::atomic<size_t> queued_bytes_{0};
