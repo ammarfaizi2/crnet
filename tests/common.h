@@ -25,6 +25,7 @@ struct Ports {
 	int http = 0;
 	int socks5 = 0;
 	int http_proxy = 0;
+	std::string ca_file;	// PEM of the CA that issued the server cert
 };
 
 // Ports of the running test server (started on first use).
@@ -34,7 +35,7 @@ std::string HttpsUrl(const std::string &path);
 std::string HttpsH1Url(const std::string &path);
 std::string HttpUrl(const std::string &path);
 
-// A client that trusts the test server's self-signed certificate.
+// A client that accepts any certificate (the `insecure` option).
 crnet_client *NewTestClient(crnet_client_config *cfg = nullptr);
 
 // Owns the pieces of one blocking request.

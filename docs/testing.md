@@ -38,8 +38,10 @@ which is asked about a `.invalid` name.
 127.0.0.1 ports and prints them as one JSON line. It provides:
 
 - HTTPS with ALPN `h2` and `http/1.1`, HTTPS restricted to HTTP/1.1, and
-  plain HTTP. It uses a self-signed certificate generated at start-up,
-  so test clients use the `insecure` option.
+  plain HTTP. Its certificate is issued at start-up by a throwaway CA
+  whose PEM file the server reports as `ca`. Most test clients use the
+  `insecure` option; tests of certificate verification trust the CA
+  instead.
 - A SOCKS5 proxy and an HTTP CONNECT proxy with Basic auth
   (`crnet:secret`). Both resolve `*.crnet-test` to 127.0.0.1
   themselves. Those names do not exist in DNS, so a successful request

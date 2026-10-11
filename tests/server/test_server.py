@@ -3,7 +3,8 @@
 """Local test server for the crnet test suite.
 
 Listens on 127.0.0.1 (ephemeral ports) and serves:
-  * HTTPS with ALPN h2 + http/1.1 (self-signed certificate)
+  * HTTPS with ALPN h2 + http/1.1 (certificate issued by a throwaway CA,
+    whose path is reported as "ca")
   * HTTPS restricted to http/1.1
   * plain HTTP/1.1
   * a SOCKS5 proxy (no auth, CONNECT only, remote name resolution)
@@ -742,16 +743,37 @@ async def serve_http_proxy(reader, writer):
 # ----------------------------------------------------------------------
 
 def make_cert(tmpdir):
+    """A throwaway CA and a server certificate it issued, so that clients
+    can verify the server by trusting the CA."""
+    ca_key = os.path.join(tmpdir, "ca-key.pem")
+    ca = os.path.join(tmpdir, "ca.pem")
     key = os.path.join(tmpdir, "key.pem")
+    csr = os.path.join(tmpdir, "server.csr")
     crt = os.path.join(tmpdir, "cert.pem")
+    ext = os.path.join(tmpdir, "server.ext")
+    ec = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+          "-nodes"]
+    quiet = {"check": True, "stdout": subprocess.DEVNULL,
+             "stderr": subprocess.DEVNULL}
     subprocess.run(
-        ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
-         "ec_paramgen_curve:prime256v1", "-nodes", "-days", "2",
-         "-subj", "/CN=crnet test", "-keyout", key, "-out", crt,
-         "-addext",
-         "subjectAltName=DNS:localhost,DNS:*.crnet-test,IP:127.0.0.1"],
-        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return crt, key
+        ["openssl", "req", "-x509", *ec, "-days", "2",
+         "-subj", "/CN=crnet test CA", "-keyout", ca_key, "-out", ca,
+         "-addext", "basicConstraints=critical,CA:TRUE",
+         "-addext", "keyUsage=critical,keyCertSign,cRLSign"], **quiet)
+    subprocess.run(
+        ["openssl", "req", "-new", *ec, "-subj", "/CN=crnet test",
+         "-keyout", key, "-out", csr], **quiet)
+    with open(ext, "w") as f:
+        f.write("basicConstraints=critical,CA:FALSE\n"
+                "keyUsage=critical,digitalSignature\n"
+                "extendedKeyUsage=serverAuth\n"
+                "subjectAltName=DNS:localhost,DNS:*.crnet-test,"
+                "IP:127.0.0.1\n")
+    subprocess.run(
+        ["openssl", "x509", "-req", "-in", csr, "-CA", ca, "-CAkey", ca_key,
+         "-CAcreateserial", "-days", "2", "-extfile", ext, "-out", crt],
+        **quiet)
+    return ca, crt, key
 
 
 def tls_context(crt, key, alpn):
@@ -763,7 +785,7 @@ def tls_context(crt, key, alpn):
 
 async def main():
     tmpdir = tempfile.mkdtemp(prefix="crnet-test-")
-    crt, key = make_cert(tmpdir)
+    ca, crt, key = make_cert(tmpdir)
     host = "127.0.0.1"
     servers = {
         "https": await asyncio.start_server(
@@ -777,6 +799,7 @@ async def main():
     }
     ports = {k: s.sockets[0].getsockname()[1] for k, s in servers.items()}
     ports["cert"] = crt
+    ports["ca"] = ca
     print(json.dumps(ports), flush=True)
 
     loop = asyncio.get_event_loop()

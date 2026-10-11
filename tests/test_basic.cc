@@ -168,7 +168,7 @@ TEST(Protocols, Http2CanBeDisabled)
 	crnet_client_free(c);
 }
 
-TEST(Tls, SelfSignedCertificateIsRejectedByDefault)
+TEST(Tls, UnknownCaIsRejectedByDefault)
 {
 	ServerPorts();
 	crnet_client *c = crnet_client_new(nullptr);
