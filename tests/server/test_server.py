@@ -944,7 +944,7 @@ def make_cert(tmpdir):
                 "keyUsage=critical,digitalSignature\n"
                 "extendedKeyUsage=serverAuth\n"
                 "subjectAltName=DNS:localhost,DNS:*.crnet-test,"
-                "IP:127.0.0.1\n")
+                "DNS:hsts.crnet-test,IP:127.0.0.1\n")
     subprocess.run(
         ["openssl", "x509", "-req", "-in", csr, "-CA", ca, "-CAkey", ca_key,
          "-CAcreateserial", "-days", "2", "-extfile", ext, "-out", crt],
