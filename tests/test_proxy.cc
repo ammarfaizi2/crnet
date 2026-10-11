@@ -189,3 +189,83 @@ TEST(Proxy, MalformedBypassRulesAreRejected)
 	EXPECT_EQ(crnet_client_config_set_proxy_bypass(nullptr, ""), CRNET_E_INVAL);
 	crnet_client_config_free(cfg);
 }
+
+// ------------------------------------------------------------------
+// SOCKS5 failures (the test proxy fails on request)
+// ------------------------------------------------------------------
+
+namespace {
+
+Result ViaFaultySocks(const std::string &dest_host)
+{
+	crnet_client *c = ProxyClient("socks5h://127.0.0.1:" +
+				      std::to_string(ServerPorts().socks5));
+	Result r = Get(c, RemoteOnlyUrl(ServerPorts().https, "/echo").replace(
+				  8, std::string("www.crnet-test").size(), dest_host));
+	crnet_client_free(c);
+	return r;
+}
+
+void SetGreetingFault(const std::string &mode)
+{
+	crnet_client *c = NewTestClient();
+	Result r = Get(c, HttpsUrl("/socks5-fault?greeting=" + mode));
+	EXPECT_EQ(r.status(), 200);
+	crnet_client_free(c);
+}
+
+} // namespace
+
+TEST(Proxy, Socks5ReplyCodesAreReported)
+{
+	for (int rep = 1; rep <= 8; rep++) {
+		SCOPED_TRACE(rep);
+		Result r = ViaFaultySocks("rep-" + std::to_string(rep) + ".crnet-test");
+		EXPECT_EQ(r.rc, CRNET_E_NET);
+		EXPECT_EQ(r.net_error(), -190 - rep);
+		EXPECT_EQ(crnet_response_socks_reply(r.resp), rep);
+	}
+	// Unknown codes stay a generic SOCKS failure.
+	Result r = ViaFaultySocks("rep-9.crnet-test");
+	EXPECT_EQ(r.net_error(), -120);
+	EXPECT_EQ(crnet_response_socks_reply(r.resp), -1);
+}
+
+TEST(Proxy, Socks5HandshakeFailures)
+{
+	const struct {
+		const char *host;
+		int net_error;
+	} cases[] = {
+		{"close.crnet-test", -100},	// ERR_CONNECTION_CLOSED
+		{"truncate.crnet-test", -100},
+		{"badatyp.crnet-test", -120},	// malformed reply
+	};
+	for (const auto &c : cases) {
+		SCOPED_TRACE(c.host);
+		Result r = ViaFaultySocks(c.host);
+		EXPECT_EQ(r.rc, CRNET_E_NET);
+		EXPECT_EQ(r.net_error(), c.net_error);
+		EXPECT_EQ(crnet_response_socks_reply(r.resp), -1);
+	}
+}
+
+TEST(Proxy, Socks5GreetingFailures)
+{
+	const struct {
+		const char *mode;
+		int net_error;
+	} cases[] = {
+		{"close", -100},
+		{"noauth", -199},	// no acceptable method
+		{"badmethod", -120},	// a method that was not offered
+		{"badversion", -120},
+	};
+	for (const auto &c : cases) {
+		SCOPED_TRACE(c.mode);
+		SetGreetingFault(c.mode);
+		Result r = ViaFaultySocks("www.crnet-test");
+		EXPECT_EQ(r.rc, CRNET_E_NET);
+		EXPECT_EQ(r.net_error(), c.net_error);
+	}
+}

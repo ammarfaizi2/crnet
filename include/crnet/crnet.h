@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 16
+#define CRNET_VERSION_MINOR 17
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.16.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.17.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -1086,6 +1086,27 @@ CRNET_API const char *crnet_response_remote_address(
 		const crnet_response *resp);
 /* Whether the response was obtained through a proxy. */
 CRNET_API int crnet_response_via_proxy(const crnet_response *resp);
+/*
+ * SOCKS5 failures. crnet's Chromium reports them precisely instead of
+ * folding them all into ERR_SOCKS_CONNECTION_FAILED (-120):
+ *   -191 .. -198  the proxy refused the CONNECT with reply code 1 .. 8
+ *                 (general failure, not allowed by ruleset, network
+ *                 unreachable, host unreachable, connection refused,
+ *                 TTL expired, command not supported, address type not
+ *                 supported);
+ *   -199          the proxy accepted none of the offered authentication
+ *                 methods;
+ *   -100          ERR_CONNECTION_CLOSED: the proxy closed the connection
+ *                 during the handshake (other transport errors, such as
+ *                 a reset, keep their own codes);
+ *   -120          a malformed reply, an unknown reply code or a method
+ *                 that was never offered.
+ * crnet_response_socks_reply() returns the reply code (1 .. 8) of a
+ * refused CONNECT, and -1 for anything else.
+ */
+#define CRNET_HAS_SOCKS_ERRORS 1
+CRNET_API int crnet_response_socks_reply(const crnet_response *resp);
+
 /*
  * Whether the response came from the HTTP cache, including one the
  * server confirmed with 304 Not Modified (the status is then that of

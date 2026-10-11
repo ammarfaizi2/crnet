@@ -201,9 +201,10 @@ final set is known, also after redirects.
 keep `Referer`, disable decompression and so on. Current `//net` offers
 proper hooks for all of this: `URLRequest::SetReferrer()` with
 `NEVER_CLEAR`, `set_client_side_content_decoding_enabled()`, the
-NetworkDelegate. crnet patches only what has no hook (such as a race
-on a global that only multi-threaded use exposes), and keeps each
-patch small, since every patch makes upgrades costlier.
+NetworkDelegate. crnet patches only what has no hook (a race on a
+global that only multi-threaded use exposes, SOCKS5 error detail that
+Chromium discards), and keeps each patch small, since every patch
+makes upgrades costlier.
 
 **Allocator.** PartitionAlloc's malloc shim is disabled
 (`use_allocator_shim=false`). A library must not take over the host

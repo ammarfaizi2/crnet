@@ -401,6 +401,13 @@ for `.com`) rejects all of it.
 | `CRNET_E_CALLBACK` | `on_response` or `on_data` returned non-zero |
 | `CRNET_E_PENDING` | `crnet_transfer_result()`: the transfer is still running |
 
+SOCKS5 proxy failures are told apart, unlike in Chrome: a refused
+CONNECT reports its reply code as net error -191 (code 1) to -198
+(code 8), also available as `crnet_response_socks_reply()`; -199 means
+the proxy accepted no offered authentication method; a proxy closing
+the connection during the handshake gives `ERR_CONNECTION_CLOSED`; a
+malformed reply stays `ERR_SOCKS_CONNECTION_FAILED` (-120).
+
 Network errors carry Chromium's net error codes (`net/base/net_error_list.h`),
 for example `-105 ERR_NAME_NOT_RESOLVED`, `-102 ERR_CONNECTION_REFUSED`,
 `-202 ERR_CERT_AUTHORITY_INVALID`, `-312 ERR_UNSAFE_PORT`. Chromium
@@ -491,6 +498,7 @@ feature can be used:
 | `CRNET_HAS_SECURE_DNS` | 0.14.0 | `crnet_client_config_set_secure_dns()` |
 | `CRNET_HAS_STATE_DIR` | 0.15.0 | `crnet_client_config_set_state_dir()` |
 | `CRNET_HAS_WS_IDLE_TIMEOUT` | 0.16.0 | `crnet_ws_set_idle_timeout()` |
+| `CRNET_HAS_SOCKS_ERRORS` | 0.17.0 | distinct SOCKS5 net errors, `crnet_response_socks_reply()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

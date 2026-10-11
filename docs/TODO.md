@@ -22,44 +22,6 @@ How to use it:
 
 ## Errors and diagnostics
 
-### socks5-error-detail
-
-Tell SOCKS5 failures apart.
-
-- Today: `net/socket/socks5_client_socket.cc` returns
-  `ERR_SOCKS_CONNECTION_FAILED` (-120) for every SOCKS failure, and
-  `proxy_fallback.cc` passes it through unchanged. That covers a close
-  during the greeting, a method other than 0x00, any non-zero REP, a
-  bad version or ATYP, and a truncated reply. The REP byte appears only
-  in the NetLog event `SOCKS_SERVER_ERROR`.
-- Impact: a caller deciding whether to retry cannot separate a flaky
-  proxy (REP 0x04, a truncated reply, a close mid-handshake) from one
-  that refuses on principle, so it must treat all of them as final.
-- What a caller needs to classify:
-  - REP 0x01 and 0x03 to 0x06, and transport failures (EOF, RST,
-    timeout): retryable.
-  - REP 0x02, 0x07, 0x08 and anything above 0x08: not retryable.
-  - Method refused (0xFF): authentication failure.
-- Possible designs:
-  - A per-response accessor such as `crnet_response_socks_reply(resp)`
-    returning the REP byte, or -1 when no reply was read, plus the
-    stage that failed (greeting, auth, connect reply) and whether the
-    failure was transport or protocol.
-  - Distinct net errors via a Chromium patch:
-    `ERR_SOCKS_CONNECTION_HOST_UNREACHABLE` (-121) for REP 0x03 and
-    0x04 (the code exists and the SOCKS4 client uses it); the original
-    transport error kept for a socket that dies mid-handshake instead
-    of rewriting it to -120; a separate code for "no acceptable
-    method".
-  - Without a Chromium patch: a per-transfer NetLog observer that
-    captures `SOCKS_SERVER_ERROR.error_code`,
-    `SOCKS_UNEXPECTED_AUTH.method`,
-    `SOCKS_UNEXPECTEDLY_CLOSED_DURING_*` and
-    `SOCKS_UNKNOWN_ADDRESS_TYPE`.
-- Testing needs fault injection in the SOCKS5 stub of
-  `tests/server/test_server.py` (each REP value, a refused method, a
-  truncated reply, a close at each stage); today it only ever accepts.
-
 ### progress-callback
 
 An `on_progress` callback, as an alternative to polling

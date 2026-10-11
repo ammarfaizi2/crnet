@@ -160,6 +160,7 @@ public:
 	std::string protocol() const { return detail::str(crnet_response_protocol(r_)); }
 	std::string remote_address() const { return detail::str(crnet_response_remote_address(r_)); }
 	bool via_proxy() const { return crnet_response_via_proxy(r_) != 0; }
+	int socks_reply() const { return crnet_response_socks_reply(r_); }
 	bool from_cache() const { return crnet_response_from_cache(r_) != 0; }
 	bool content_decoded() const { return crnet_response_content_decoded(r_) != 0; }
 	bool socket_reused() const { return crnet_response_socket_reused(r_) != 0; }

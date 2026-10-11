@@ -1255,6 +1255,16 @@ CRNET_API int crnet_response_via_proxy(const crnet_response *r)
 	return r && r->via_proxy;
 }
 
+CRNET_API int crnet_response_socks_reply(const crnet_response *r)
+{
+	// The net errors chromium/patches/*-Tell-SOCKS5-failures-apart.patch
+	// adds, one per reply code.
+	if (!r || r->net_error > net::ERR_SOCKS_GENERAL_FAILURE ||
+	    r->net_error < net::ERR_SOCKS_ADDRESS_TYPE_NOT_SUPPORTED)
+		return -1;
+	return net::ERR_SOCKS_GENERAL_FAILURE - r->net_error + 1;
+}
+
 CRNET_API int crnet_response_from_cache(const crnet_response *r)
 {
 	return r && r->from_cache;

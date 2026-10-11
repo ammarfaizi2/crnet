@@ -1,0 +1,122 @@
+net: Tell SOCKS5 failures apart
+
+SOCKS5ClientSocket reports ERR_SOCKS_CONNECTION_FAILED for every
+failure: a close during the handshake, a refused CONNECT whatever its
+reply code, a method other than the one offered, a malformed reply.
+The reply code only reaches the NetLog. A caller deciding whether to
+retry cannot tell a proxy that is briefly overloaded (general failure,
+host unreachable) from one that refuses the request on principle.
+
+Report a close during the handshake as ERR_CONNECTION_CLOSED, the
+transport error it is, give each reply code 1 to 8 a net error of its
+own (-191 to -198), and add one for "no acceptable methods" (-199).
+Malformed replies, unknown reply codes and unoffered methods keep
+ERR_SOCKS_CONNECTION_FAILED. The new codes are outside proxy fallback's
+list, so they reach the caller unchanged; ERR_SOCKS_CONNECTION_HOST_
+UNREACHABLE would have been turned into ERR_ADDRESS_UNREACHABLE.
+
+diff --git a/net/base/net_error_list.h b/net/base/net_error_list.h
+index fa9cf124d0..af5afaf463 100644
+--- a/net/base/net_error_list.h
++++ b/net/base/net_error_list.h
+@@ -490,6 +490,38 @@ NET_ERROR(CONTROL_MSG_TOO_BIG, -189)
+ // address without 'direct-sockets-multicast' permissions policy.
+ NET_ERROR(MULTICAST_NOT_ALLOWED, -190)
+ 
++// crnet: a SOCKS5 proxy refused the CONNECT request; one code per reply
++// code (RFC 1928 section 6) instead of SOCKS_CONNECTION_FAILED, so that
++// callers can tell a transient proxy failure from a refusal.
++// REP 0x01, general SOCKS server failure.
++NET_ERROR(SOCKS_GENERAL_FAILURE, -191)
++
++// REP 0x02, connection not allowed by ruleset.
++NET_ERROR(SOCKS_CONNECTION_NOT_ALLOWED, -192)
++
++// REP 0x03, network unreachable.
++NET_ERROR(SOCKS_NETWORK_UNREACHABLE, -193)
++
++// REP 0x04, host unreachable. Unlike SOCKS_CONNECTION_HOST_UNREACHABLE
++// it is not turned into ADDRESS_UNREACHABLE by proxy fallback.
++NET_ERROR(SOCKS_HOST_UNREACHABLE, -194)
++
++// REP 0x05, connection refused by the destination.
++NET_ERROR(SOCKS_CONNECTION_REFUSED, -195)
++
++// REP 0x06, TTL expired.
++NET_ERROR(SOCKS_TTL_EXPIRED, -196)
++
++// REP 0x07, command not supported.
++NET_ERROR(SOCKS_COMMAND_NOT_SUPPORTED, -197)
++
++// REP 0x08, address type not supported.
++NET_ERROR(SOCKS_ADDRESS_TYPE_NOT_SUPPORTED, -198)
++
++// crnet: the SOCKS5 proxy accepted none of the offered authentication
++// methods (method 0xFF).
++NET_ERROR(SOCKS_NO_ACCEPTABLE_METHODS, -199)
++
+ // Certificate error codes
+ //
+ // The values of certificate error codes must be consecutive.
+diff --git a/net/socket/socks5_client_socket.cc b/net/socket/socks5_client_socket.cc
+index 3eeeb7e204..9f8c33a341 100644
+--- a/net/socket/socks5_client_socket.cc
++++ b/net/socket/socks5_client_socket.cc
+@@ -306,7 +306,8 @@ int SOCKS5ClientSocket::DoGreetReadComplete(int result) {
+   if (result == 0) {
+     net_log_.AddEvent(
+         NetLogEventType::SOCKS_UNEXPECTEDLY_CLOSED_DURING_GREETING);
+-    return ERR_SOCKS_CONNECTION_FAILED;
++    // crnet: a transport failure, not a SOCKS protocol error.
++    return ERR_CONNECTION_CLOSED;
+   }
+ 
+   read_buf_->set_offset(read_buf_->offset() + result);
+@@ -326,7 +327,10 @@ int SOCKS5ClientSocket::DoGreetReadComplete(int result) {
+   if (read_data[1] != 0x00) {
+     net_log_.AddEventWithIntParams(NetLogEventType::SOCKS_UNEXPECTED_AUTH,
+                                    "method", read_data[1]);
+-    return ERR_SOCKS_CONNECTION_FAILED;
++    // crnet: 0xFF means none of the offered methods is acceptable;
++    // anything else was never offered and is a protocol error.
++    return read_data[1] == 0xFF ? ERR_SOCKS_NO_ACCEPTABLE_METHODS
++                                : ERR_SOCKS_CONNECTION_FAILED;
+   }
+ 
+   read_buf_.reset();
+@@ -410,7 +414,8 @@ int SOCKS5ClientSocket::DoHandshakeReadComplete(int result) {
+   if (result == 0) {
+     net_log_.AddEvent(
+         NetLogEventType::SOCKS_UNEXPECTEDLY_CLOSED_DURING_HANDSHAKE);
+-    return ERR_SOCKS_CONNECTION_FAILED;
++    // crnet: a transport failure, not a SOCKS protocol error.
++    return ERR_CONNECTION_CLOSED;
+   }
+ 
+   read_buf_->set_offset(read_buf_->offset() + result);
+@@ -428,6 +433,25 @@ int SOCKS5ClientSocket::DoHandshakeReadComplete(int result) {
+     if (read_data[1] != 0x00) {
+       net_log_.AddEventWithIntParams(NetLogEventType::SOCKS_SERVER_ERROR,
+                                      "error_code", read_data[1]);
++      // crnet: report which reply code the proxy sent.
++      switch (read_data[1]) {
++        case 0x01:
++          return ERR_SOCKS_GENERAL_FAILURE;
++        case 0x02:
++          return ERR_SOCKS_CONNECTION_NOT_ALLOWED;
++        case 0x03:
++          return ERR_SOCKS_NETWORK_UNREACHABLE;
++        case 0x04:
++          return ERR_SOCKS_HOST_UNREACHABLE;
++        case 0x05:
++          return ERR_SOCKS_CONNECTION_REFUSED;
++        case 0x06:
++          return ERR_SOCKS_TTL_EXPIRED;
++        case 0x07:
++          return ERR_SOCKS_COMMAND_NOT_SUPPORTED;
++        case 0x08:
++          return ERR_SOCKS_ADDRESS_TYPE_NOT_SUPPORTED;
++      }
+       return ERR_SOCKS_CONNECTION_FAILED;
+     }
+ 
