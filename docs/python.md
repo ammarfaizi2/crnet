@@ -81,9 +81,11 @@ request and returns a `crnet.Response`; `get()`, `head()`, `post()`,
   chunked encoding).
 - Other keywords: `mode` (`MODE_NAVIGATE`, `MODE_FETCH`, `MODE_RAW`),
   `priority`, `timeout`, `connect_timeout`, `max_redirects`,
-  `decompress`, `max_body_size`, `cache_mode`, and `proxy`: this
+  `decompress`, `max_body_size`, `cache_mode`, `proxy`: this
   request's proxy URL (`"direct://"` for none), as
-  `crnet_request_set_proxy()` (`websocket()` takes it too).
+  `crnet_request_set_proxy()`, and `fresh_connection`: connections of
+  its own, as `crnet_request_set_fresh_connection()` (`websocket()`
+  takes these two too).
 
 A `Response` is a plain Python object: `status`, `reason`, `url`,
 `headers` (pairs in received order), `header(name)`,

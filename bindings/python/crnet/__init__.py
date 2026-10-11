@@ -309,7 +309,7 @@ class _Request:
                  priority=None, timeout=None, connect_timeout=None,
                  max_redirects=None, decompress=None, max_body_size=None,
                  cache_mode=None, body_length=None, stream_response=False,
-                 ws_compression=None, proxy=None):
+                 ws_compression=None, proxy=None, fresh_connection=None):
         self.ptr = _lib.crnet_request_new(_b(method), _b(url))
         if not self.ptr:
             raise ValueError("invalid request: %s %s" % (method, url))
@@ -317,7 +317,8 @@ class _Request:
             self._apply(headers, body, mode, priority, timeout,
                         connect_timeout, max_redirects, decompress,
                         max_body_size, cache_mode, body_length,
-                        stream_response, ws_compression, proxy)
+                        stream_response, ws_compression, proxy,
+                        fresh_connection)
         except BaseException:
             self.free()
             raise
@@ -325,7 +326,7 @@ class _Request:
     def _apply(self, headers, body, mode, priority, timeout,
                connect_timeout, max_redirects, decompress, max_body_size,
                cache_mode, body_length, stream_response, ws_compression,
-               proxy):
+               proxy, fresh_connection):
         p = self.ptr
         for name, value in _items(headers):
             # None removes a header crnet would add.
@@ -372,6 +373,9 @@ class _Request:
                 p, int(ws_compression)), "ws_compression")
         if proxy is not None:
             _check(_lib.crnet_request_set_proxy(p, _b(proxy)), "proxy")
+        if fresh_connection is not None:
+            _check(_lib.crnet_request_set_fresh_connection(
+                p, int(fresh_connection)), "fresh_connection")
 
     def free(self):
         if self.ptr:
@@ -758,7 +762,8 @@ class Client:
         (streamed; pass body_length if known). Other keywords: mode
         (MODE_*), priority, timeout, connect_timeout, max_redirects,
         decompress, max_body_size, cache_mode, proxy (this request's
-        proxy URL, "direct://" for none).
+        proxy URL, "direct://" for none), fresh_connection (connections
+        of its own, closed afterwards).
 
         Raises Error (Timeout for timeouts) when the request fails; an
         HTTP error status is a Response, not an exception.
@@ -817,11 +822,11 @@ class Client:
             req.free()
 
     def websocket(self, url, protocols=None, headers=None, timeout=None,
-                  compression=None, proxy=None):
+                  compression=None, proxy=None, fresh_connection=None):
         """Open a WebSocket (ws:// or wss://) and wait until it is open.
         protocols: comma-separated subprotocols to offer."""
         req = _Request(None, url, headers, ws_compression=compression,
-                       proxy=proxy)
+                       proxy=proxy, fresh_connection=fresh_connection)
         try:
             return WebSocket(self, req, protocols, timeout)
         finally:

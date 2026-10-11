@@ -80,7 +80,7 @@ class ClientTest(unittest.TestCase):
 class Library(unittest.TestCase):
     def test_versions(self):
         major, minor, _ = (int(x) for x in crnet.version().split("."))
-        self.assertGreaterEqual((major, minor), (0, 26))
+        self.assertGreaterEqual((major, minor), (0, 27))
         self.assertRegex(crnet.chromium_version(), r"^\d+\.\d+\.\d+\.\d+$")
         self.assertIn("Chrome/", crnet.default_user_agent())
         self.assertIn("Windows NT 10.0",
@@ -173,6 +173,14 @@ class Requests(ClientTest):
             for chunk in t:
                 total += len(chunk)
         self.assertEqual(total, n)
+
+    def test_fresh_connection(self):
+        a = self.c.get(url("/echo"))
+        f = self.c.get(url("/echo"), fresh_connection=True)
+        self.assertFalse(f.socket_reused)
+        self.assertNotEqual(f.connection_id, a.connection_id)
+        self.assertEqual(self.c.get(url("/echo")).connection_id,
+                         a.connection_id)
 
     def test_status_is_not_an_exception(self):
         r = self.c.get(url("/status/404"))
