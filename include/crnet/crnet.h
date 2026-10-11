@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 33
+#define CRNET_VERSION_MINOR 34
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -1330,6 +1330,14 @@ CRNET_API const crnet_response *crnet_ws_handshake_response(
 CRNET_API int crnet_ws_close_code(const crnet_ws *ws);
 CRNET_API const char *crnet_ws_close_reason(const crnet_ws *ws);
 CRNET_API int crnet_ws_net_error(const crnet_ws *ws);
+
+/*
+ * Once closed: the reply code (1 .. 8) of a SOCKS5 proxy that refused
+ * the connection's CONNECT, -1 for anything else; as
+ * crnet_response_socks_reply() does for transfers. Valid inside on_close.
+ */
+#define CRNET_HAS_WS_SOCKS_REPLY 1
+CRNET_API int crnet_ws_socks_reply(const crnet_ws *ws);
 
 /*
  * Release the handle. A connection that is not closed yet is aborted

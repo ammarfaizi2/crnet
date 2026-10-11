@@ -719,6 +719,32 @@ TEST(WebSocket, ThroughSocks5Proxy)
 	crnet_client_free(c);
 }
 
+TEST(WebSocket, Socks5ReplyCodeIsReported)
+{
+	crnet_client_config *cfg = crnet_client_config_new();
+	std::string p = "socks5h://127.0.0.1:" + std::to_string(ServerPorts().socks5);
+	crnet_client_config_set_proxy(cfg, p.c_str());
+	crnet_client *c = NewTestClient(cfg);
+	crnet_client_config_free(cfg);
+	// The test proxy answers a CONNECT to rep-<n>.crnet-test with reply n.
+	const std::string port = std::to_string(ServerPorts().https_h1);
+	crnet_ws *ws = Connect(c, "wss://rep-3.crnet-test:" + port + "/ws/echo", nullptr, nullptr);
+	EXPECT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_E_NET);
+	EXPECT_EQ(crnet_ws_net_error(ws), -193);
+	EXPECT_EQ(crnet_ws_socks_reply(ws), 3);	// network unreachable
+	crnet_ws_free(ws);
+
+	ws = Connect(c, "wss://www.crnet-test:" + port + "/ws/echo", nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	EXPECT_EQ(crnet_ws_socks_reply(ws), -1);	// not closed
+	crnet_ws_close(ws, 1000, nullptr);
+	crnet_ws_wait_closed(ws, 5000);
+	EXPECT_EQ(crnet_ws_socks_reply(ws), -1);
+	crnet_ws_free(ws);
+	EXPECT_EQ(crnet_ws_socks_reply(nullptr), -1);
+	crnet_client_free(c);
+}
+
 TEST(WebSocket, ThroughHttpProxyWithAuth)
 {
 	crnet_client_config *cfg = crnet_client_config_new();

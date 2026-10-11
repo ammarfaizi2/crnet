@@ -129,6 +129,17 @@ int StoreString(std::string *dst, const char *src, const std::string &def)
 	return CRNET_OK;
 }
 
+// The SOCKS5 reply code a net error stands for, -1 for none: the net
+// errors chromium/patches/*-Tell-SOCKS5-failures-apart.patch adds, one
+// per reply code.
+int SocksReplyOf(int net_error)
+{
+	if (net_error > net::ERR_SOCKS_GENERAL_FAILURE ||
+	    net_error < net::ERR_SOCKS_ADDRESS_TYPE_NOT_SUPPORTED)
+		return -1;
+	return net::ERR_SOCKS_GENERAL_FAILURE - net_error + 1;
+}
+
 } // namespace
 
 extern "C" {
@@ -1358,6 +1369,11 @@ CRNET_API int crnet_ws_net_error(const crnet_ws *ws)
 	return ws && ws->state() == CRNET_WS_CLOSED ? ws->net_error() : 0;
 }
 
+CRNET_API int crnet_ws_socks_reply(const crnet_ws *ws)
+{
+	return SocksReplyOf(crnet_ws_net_error(ws));
+}
+
 CRNET_API void crnet_ws_free(crnet_ws *ws)
 {
 	if (!ws)
@@ -1460,12 +1476,7 @@ CRNET_API int crnet_response_via_proxy(const crnet_response *r)
 
 CRNET_API int crnet_response_socks_reply(const crnet_response *r)
 {
-	// The net errors chromium/patches/*-Tell-SOCKS5-failures-apart.patch
-	// adds, one per reply code.
-	if (!r || r->net_error > net::ERR_SOCKS_GENERAL_FAILURE ||
-	    r->net_error < net::ERR_SOCKS_ADDRESS_TYPE_NOT_SUPPORTED)
-		return -1;
-	return net::ERR_SOCKS_GENERAL_FAILURE - r->net_error + 1;
+	return r ? SocksReplyOf(r->net_error) : -1;
 }
 
 CRNET_API int crnet_response_from_cache(const crnet_response *r)
