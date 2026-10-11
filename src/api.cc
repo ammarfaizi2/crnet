@@ -281,6 +281,13 @@ CRNET_API int crnet_client_config_set_host_rules(crnet_client_config *cfg,
 	return StoreString(&cfg->cfg.host_rules, rules, "");
 }
 
+CRNET_API void crnet_client_config_set_connect_timeout(
+	crnet_client_config *cfg, uint64_t timeout_ms)
+{
+	if (cfg)
+		cfg->cfg.connect_timeout_ms = timeout_ms;
+}
+
 CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
 					       uint64_t timeout_ms)
 {
@@ -484,6 +491,15 @@ CRNET_API int crnet_request_set_max_redirects(crnet_request *req,
 	if (!req || max_redirects < 0)
 		return CRNET_E_INVAL;
 	req->spec.max_redirects = max_redirects;
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_request_set_connect_timeout(crnet_request *req,
+						uint64_t timeout_ms)
+{
+	if (!req)
+		return CRNET_E_INVAL;
+	req->spec.connect_timeout_ms = timeout_ms;
 	return CRNET_OK;
 }
 

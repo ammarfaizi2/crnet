@@ -74,21 +74,6 @@ An `on_progress` callback, as an alternative to polling
 
 ## Connections and proxies
 
-### connect-timeout
-
-A connect timeout, separate from the whole-request timeout.
-
-- Today: only a whole-request timeout exists, so a stalled proxy or
-  an unreachable host costs the full request deadline.
-- Wanted: `crnet_request_set_connect_timeout(req, ms)` plus a client
-  default. It should cover DNS, TCP, the proxy handshake and TLS, and
-  fail with a distinguishable error.
-- Hook: `URLRequest::Delegate::OnConnected` exists in the pinned
-  Chromium (`net/url_request/url_request.h`) and `transfer.cc` does not
-  implement it. Arm a timer at start and stop it there.
-- Check that it behaves correctly on a reused pooled socket and that
-  it applies on each redirect hop.
-
 ### per-request-proxy
 
 Choose the proxy per request instead of per client.

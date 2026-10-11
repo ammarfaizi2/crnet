@@ -84,6 +84,7 @@ struct ClientConfig {
 	bool insecure = false;
 	std::string host_rules;
 	uint64_t timeout_ms = 0;
+	uint64_t connect_timeout_ms = 0;
 	std::string netlog_path;
 };
 
@@ -107,6 +108,7 @@ struct RequestSpec {
 	crnet_priority priority = CRNET_PRIORITY_DEFAULT;
 	int max_redirects = 20;
 	std::optional<uint64_t> timeout_ms;
+	std::optional<uint64_t> connect_timeout_ms;
 	bool decompress = true;
 	uint64_t max_body = 0;
 
@@ -284,6 +286,9 @@ public:
 	const crnet::RequestSpec &spec() const { return spec_; }
 
 	// net::URLRequest::Delegate
+	int OnConnected(net::URLRequest *request,
+			const net::TransportInfo &info,
+			net::CompletionOnceCallback callback) override;
 	void OnReceivedRedirect(net::URLRequest *request,
 				const net::RedirectInfo &redirect_info,
 				bool *defer_redirect) override;
@@ -315,6 +320,7 @@ private:
 	bool HandleRead(int bytes);
 	void Finish(int err, int net_error);
 	void OnTimeout();
+	void StartConnectTimer();
 	void ResumeOnNetworkThread();
 	void ResumeDownloadOnNetworkThread();
 
@@ -333,6 +339,7 @@ private:
 	scoped_refptr<net::IOBufferWithSize> buf_;
 	base::OneShotTimer timer_;
 	base::RepeatingTimer upload_timer_;
+	base::OneShotTimer connect_timer_;
 	bool started_reading_ = false;
 	bool read_pending_ = false;
 	bool paused_ = false;

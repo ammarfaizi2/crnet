@@ -90,6 +90,7 @@ crnet_client_config_free(cfg);
 | `insecure` | off | accept any certificate (testing only; the handshake itself is unchanged) |
 | `host_rules` | none | Chrome's `--host-resolver-rules` syntax, e.g. `MAP api.example.com 10.0.0.5:8443` |
 | `timeout` | none | default per-request timeout in ms |
+| `connect_timeout` | none | default limit in ms on getting a connection ready (proxy resolution, DNS, TCP/QUIC, proxy handshake, TLS), per redirect hop; fails with `CRNET_E_TIMEOUT` and net error `ERR_CONNECTION_TIMED_OUT` (-118) instead of the request timeout's `ERR_TIMED_OUT` (-7) |
 | `netlog` | none | write a Chromium NetLog JSON file (view it with the netlog-viewer) |
 
 ## Describing a request
@@ -101,6 +102,7 @@ crnet_request_set_header(req, "Content-Type", "application/json");
 crnet_request_set_header(req, "Referer", "https://www.example.com/app");
 crnet_request_set_body(req, json, strlen(json));
 crnet_request_set_timeout(req, 10000);
+crnet_request_set_connect_timeout(req, 3000);          /* overrides the client default */
 ```
 
 - **Mode** selects which browser request crnet imitates:
@@ -445,6 +447,7 @@ feature can be used:
 | `CRNET_HAS_CONTENT_DECODED` | 0.5.0 | `crnet_response_content_decoded()`, `crnet_response_decoded_codings()` |
 | `CRNET_HAS_TIMING` | 0.6.0 | `crnet_response_socket_reused()`, `_connection_id()`, `_timing()` |
 | `CRNET_HAS_PROGRESS` | 0.7.0 | `crnet_transfer_progress()` |
+| `CRNET_HAS_CONNECT_TIMEOUT` | 0.8.0 | `crnet_client_config_set_connect_timeout()`, `crnet_request_set_connect_timeout()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

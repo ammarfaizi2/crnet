@@ -68,6 +68,7 @@ public:
 	ClientConfig &insecure(bool on) { crnet_client_config_set_insecure(get(), on); return *this; }
 	ClientConfig &host_rules(const std::string &r) { check(crnet_client_config_set_host_rules(get(), r.c_str())); return *this; }
 	ClientConfig &timeout_ms(uint64_t ms) { crnet_client_config_set_timeout(get(), ms); return *this; }
+	ClientConfig &connect_timeout_ms(uint64_t ms) { crnet_client_config_set_connect_timeout(get(), ms); return *this; }
 	ClientConfig &netlog(const std::string &path) { check(crnet_client_config_set_netlog(get(), path.c_str())); return *this; }
 
 	crnet_client_config *get() const noexcept { return cfg_.get(); }
@@ -111,6 +112,7 @@ public:
 	Request &priority(crnet_priority p) { check(crnet_request_set_priority(get(), p)); return *this; }
 	Request &max_redirects(int n) { check(crnet_request_set_max_redirects(get(), n)); return *this; }
 	Request &timeout_ms(uint64_t ms) { check(crnet_request_set_timeout(get(), ms)); return *this; }
+	Request &connect_timeout_ms(uint64_t ms) { check(crnet_request_set_connect_timeout(get(), ms)); return *this; }
 	Request &decompress(bool on) { check(crnet_request_set_decompress(get(), on)); return *this; }
 	Request &max_body_size(uint64_t n) { check(crnet_request_set_max_body_size(get(), n)); return *this; }
 

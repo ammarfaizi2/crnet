@@ -2,7 +2,13 @@
 //
 // Request/response bodies, content decoding, redirects and cookies.
 //
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <chrono>
 
 #include "common.h"
 
@@ -439,4 +445,120 @@ TEST_F(ClientTest, TimingOfAFailedTransfer)
 	EXPECT_EQ(crnet_response_connection_id(r.resp), 0u);
 	EXPECT_EQ(T(r, CRNET_TIMING_SEND_START), -1);
 	EXPECT_GE(T(r, CRNET_TIMING_COMPLETE), 0);
+}
+
+// ------------------------------------------------------------------
+// Connect timeout
+// ------------------------------------------------------------------
+
+namespace {
+
+// A TCP listener that never accepts: the kernel completes the TCP
+// handshake from its backlog, and nothing ever answers after that, so
+// a TLS or SOCKS handshake with it stalls.
+class Staller {
+public:
+	Staller()
+	{
+		fd_ = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+		sockaddr_in a = {};
+		a.sin_family = AF_INET;
+		a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		EXPECT_EQ(bind(fd_, reinterpret_cast<sockaddr *>(&a), sizeof(a)), 0);
+		EXPECT_EQ(listen(fd_, 64), 0);
+		socklen_t len = sizeof(a);
+		getsockname(fd_, reinterpret_cast<sockaddr *>(&a), &len);
+		port_ = ntohs(a.sin_port);
+	}
+	~Staller() { close(fd_); }
+	int port() const { return port_; }
+
+private:
+	int fd_ = -1;
+	int port_ = 0;
+};
+
+Result GetWithTimeouts(crnet_client *c, const std::string &url,
+		       uint64_t connect_ms, uint64_t total_ms)
+{
+	crnet_request *req = crnet_request_new("GET", url.c_str());
+	crnet_request_set_connect_timeout(req, connect_ms);
+	crnet_request_set_timeout(req, total_ms);
+	Result r = Perform(c, req);
+	crnet_request_free(req);
+	return r;
+}
+
+int64_t ElapsedMs(std::chrono::steady_clock::time_point since)
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		       std::chrono::steady_clock::now() - since)
+		.count();
+}
+
+} // namespace
+
+TEST_F(ClientTest, ConnectTimeoutCoversTheTlsHandshake)
+{
+	Staller s;
+	auto t0 = std::chrono::steady_clock::now();
+	Result r = GetWithTimeouts(client_, "https://127.0.0.1:" + std::to_string(s.port()) + "/",
+				   300, 20000);
+	EXPECT_EQ(r.rc, CRNET_E_TIMEOUT);
+	EXPECT_EQ(r.net_error(), -118);	// ERR_CONNECTION_TIMED_OUT
+	EXPECT_LT(ElapsedMs(t0), 5000);
+}
+
+TEST_F(ClientTest, ConnectTimeoutCoversTheProxyHandshake)
+{
+	Staller s;
+	crnet_client_config *cfg = crnet_client_config_new();
+	std::string proxy = "socks5h://127.0.0.1:" + std::to_string(s.port());
+	ASSERT_EQ(crnet_client_config_set_proxy(cfg, proxy.c_str()), CRNET_OK);
+	crnet_client_config_set_connect_timeout(cfg, 300);	// client default
+	crnet_client *c = NewTestClient(cfg);
+	crnet_client_config_free(cfg);
+	auto t0 = std::chrono::steady_clock::now();
+	Result r = Get(c, "https://www.crnet-test:" + std::to_string(ServerPorts().https) + "/echo");
+	EXPECT_EQ(r.rc, CRNET_E_TIMEOUT);
+	EXPECT_EQ(r.net_error(), -118);
+	EXPECT_LT(ElapsedMs(t0), 5000);
+	crnet_client_free(c);
+}
+
+// The request timeout still reports itself differently.
+TEST_F(ClientTest, RequestTimeoutIsNotAConnectTimeout)
+{
+	Staller s;
+	Result r = GetWithTimeouts(client_, "https://127.0.0.1:" + std::to_string(s.port()) + "/",
+				   20000, 300);
+	EXPECT_EQ(r.rc, CRNET_E_TIMEOUT);
+	EXPECT_EQ(r.net_error(), -7);	// ERR_TIMED_OUT
+}
+
+// Once connected, a slow server is not a connect timeout, on a new
+// connection or on a reused one.
+TEST_F(ClientTest, ConnectTimeoutStopsOnceConnected)
+{
+	crnet_client *c = NewTestClient();
+	for (int i = 0; i < 2; i++) {
+		SCOPED_TRACE(i);
+		Result r = GetWithTimeouts(c, HttpsH1Url("/delay/600"), 300, 20000);
+		EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+		EXPECT_EQ(crnet_response_socket_reused(r.resp), i == 1);
+	}
+	crnet_client_free(c);
+}
+
+TEST_F(ClientTest, ConnectTimeoutAppliesToEachRedirectHop)
+{
+	Staller s;
+	// The first hop connects fine; the redirect target never answers.
+	std::string target = "https://127.0.0.1:" + std::to_string(s.port()) + "/";
+	auto t0 = std::chrono::steady_clock::now();
+	Result r = GetWithTimeouts(client_, HttpsUrl("/redirect-to?url=" + target), 300, 20000);
+	EXPECT_EQ(r.rc, CRNET_E_TIMEOUT);
+	EXPECT_EQ(r.net_error(), -118);
+	EXPECT_EQ(crnet_response_redirect_count(r.resp), 1);
+	EXPECT_LT(ElapsedMs(t0), 5000);
 }

@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 7
+#define CRNET_VERSION_MINOR 8
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.7.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.8.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -247,6 +247,20 @@ CRNET_API int crnet_client_config_set_host_rules(crnet_client_config *cfg,
 /* Default per-request timeout in milliseconds, 0 = none (default). */
 CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
 					       uint64_t timeout_ms);
+
+/*
+ * Default connect timeout in milliseconds, 0 = none (default). It
+ * limits the time until a request has a connection ready to send on:
+ * proxy resolution, DNS, TCP (or QUIC), the proxy handshake and TLS,
+ * including Chromium's own fallbacks between addresses and protocols.
+ * It restarts for every redirect hop, and is met at once by a reused
+ * connection. On expiry the transfer fails with CRNET_E_TIMEOUT and net
+ * error ERR_CONNECTION_TIMED_OUT (-118); the request timeout reports
+ * ERR_TIMED_OUT (-7) instead. HTTP transfers only, not WebSockets.
+ */
+#define CRNET_HAS_CONNECT_TIMEOUT 1
+CRNET_API void crnet_client_config_set_connect_timeout(
+		crnet_client_config *cfg, uint64_t timeout_ms);
 
 /*
  * Write a Chromium NetLog (JSON, viewable with netlog-viewer) to |path|
@@ -392,6 +406,9 @@ CRNET_API int crnet_request_set_max_redirects(crnet_request *req,
 /* Overrides the client default; 0 = no timeout. */
 CRNET_API int crnet_request_set_timeout(crnet_request *req,
 					uint64_t timeout_ms);
+/* Overrides the client's connect timeout; 0 = none. */
+CRNET_API int crnet_request_set_connect_timeout(crnet_request *req,
+						uint64_t timeout_ms);
 
 /*
  * Decode gzip/deflate/br/zstd bodies. Default on. When off, the body is

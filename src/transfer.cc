@@ -263,6 +263,7 @@ void crnet_transfer::StartOnNetworkThread()
 
 	resp_ = std::make_unique<crnet_response>();
 	resp_->url = spec_.url.spec();
+	StartConnectTimer();
 	request_->Start();
 	if (!finished_ && request_->has_upload()) {
 		// Chromium reports no upload progress events; sample it at
@@ -298,6 +299,32 @@ void crnet_transfer::FailOnNetworkThread(int err, int net_error)
 void crnet_transfer::OnTimeout()
 {
 	FailOnNetworkThread(CRNET_E_TIMEOUT, net::ERR_TIMED_OUT);
+}
+
+void crnet_transfer::StartConnectTimer()
+{
+	uint64_t ms = spec_.connect_timeout_ms.value_or(
+		client_->config().connect_timeout_ms);
+	if (!ms)
+		return;
+	connect_timer_.Start(
+		FROM_HERE,
+		base::Milliseconds(std::min<uint64_t>(
+			ms, std::numeric_limits<int64_t>::max())),
+		base::BindOnce(&crnet_transfer::FailOnNetworkThread,
+			       base::Unretained(this), CRNET_E_TIMEOUT,
+			       net::ERR_CONNECTION_TIMED_OUT));
+}
+
+// Chromium calls this once a hop has a stream to send on: after proxy
+// resolution, DNS, connect, any proxy tunnel and TLS, or right away on a
+// reused connection.
+int crnet_transfer::OnConnected(net::URLRequest *request,
+				const net::TransportInfo &info,
+				net::CompletionOnceCallback callback)
+{
+	connect_timer_.Stop();
+	return net::OK;
 }
 
 void crnet_transfer::ResumeOnNetworkThread()
@@ -437,6 +464,8 @@ void crnet_transfer::OnReceivedRedirect(net::URLRequest *request,
 		return;
 	}
 	resp_->redirects++;
+	// Each hop connects anew (or reuses a connection).
+	StartConnectTimer();
 }
 
 void crnet_transfer::OnAuthRequired(net::URLRequest *request,
@@ -579,6 +608,7 @@ void crnet_transfer::Finish(int err, int net_error)
 	DCHECK(!finished_);
 	finished_ = true;
 	timer_.Stop();
+	connect_timer_.Stop();
 	if (upload_timer_.IsRunning()) {
 		UpdateUploadProgress();
 		upload_timer_.Stop();
