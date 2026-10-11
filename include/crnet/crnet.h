@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 30
+#define CRNET_VERSION_MINOR 31
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -1230,10 +1230,10 @@ CRNET_API int crnet_request_set_ws_compression(crnet_request *req,
  * 1006 and net error ERR_TIMED_OUT, and no closing handshake is
  * attempted, as the peer is presumed gone. The time counts while the
  * connection is open and messages are being read; it restarts with
- * every message and every pong (see crnet_ws_set_auto_ping()), and stops
- * while crnet is not reading because the application paused or did not
- * take queued messages. The server's pings do not count: Chromium
- * answers them itself without reporting them.
+ * every message, every pong (see crnet_ws_set_auto_ping()) and, since
+ * 0.31.0 (CRNET_HAS_WS_PING_CALLBACK), every ping from the server, and
+ * stops while crnet is not reading because the application paused or
+ * did not take queued messages.
  * Thread-safe; may be called at any time, also before the connection is
  * open.
  */
@@ -1260,6 +1260,16 @@ CRNET_API int crnet_ws_ping(crnet_ws *ws, const void *data, size_t len);
 typedef void (*crnet_ws_pong_cb)(crnet_ws *ws, const void *data, size_t len,
 				 void *user_data);
 CRNET_API void crnet_ws_set_pong_callback(crnet_ws *ws, crnet_ws_pong_cb cb);
+
+/*
+ * Called on the network thread for every Ping frame the server sends,
+ * with its payload (valid during the call) and the WebSocket's
+ * user_data, before Chromium answers it with a Pong as it always does:
+ * the callback only observes. NULL removes it. Thread-safe; set it right
+ * after crnet_ws_connect() to see pings sent with the handshake.
+ */
+#define CRNET_HAS_WS_PING_CALLBACK 1
+CRNET_API void crnet_ws_set_ping_callback(crnet_ws *ws, crnet_ws_pong_cb cb);
 
 /*
  * Ping the server (empty payload) every |interval_ms| while the

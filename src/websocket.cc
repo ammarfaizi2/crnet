@@ -132,6 +132,11 @@ public:
 		ws_->OnPong(payload);
 	}
 
+	void OnPing(base::span<const char> payload) override
+	{
+		ws_->OnPing(payload);
+	}
+
 	void OnDataFrame(bool fin, WebSocketMessageType type,
 			 base::span<const char> payload) override
 	{
@@ -362,6 +367,15 @@ void crnet_ws::SetPongCallback(crnet_ws_pong_cb cb)
 				  base::WrapRefCounted(this), cb));
 }
 
+void crnet_ws::SetPingCallback(crnet_ws_pong_cb cb)
+{
+	runner_->PostTask(FROM_HERE,
+			  base::BindOnce(
+				  [](scoped_refptr<crnet_ws> ws,
+				     crnet_ws_pong_cb cb) { ws->ping_cb_ = cb; },
+				  base::WrapRefCounted(this), cb));
+}
+
 void crnet_ws::SetAutoPing(uint64_t interval_ms)
 {
 	runner_->PostTask(FROM_HERE,
@@ -396,6 +410,18 @@ void crnet_ws::OnPong(base::span<const char> payload)
 		idle_timer_.Reset();
 	if (pong_cb_)
 		pong_cb_(this, payload.data(), payload.size(), user_data_);
+}
+
+void crnet_ws::OnPing(base::span<const char> payload)
+{
+	if (finished_)
+		return;
+	// A peer that pings is alive, as one that answers pings is; servers
+	// often keep quiet connections open with nothing else.
+	if (idle_timer_.IsRunning())
+		idle_timer_.Reset();
+	if (ping_cb_)
+		ping_cb_(this, payload.data(), payload.size(), user_data_);
 }
 
 void crnet_ws::RestartIdleTimer()

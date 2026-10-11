@@ -1,0 +1,39 @@
+net: Let the embedder see WebSocket pings
+
+WebSocketChannel answers a Ping frame from the server with a Pong by
+itself and tells nobody. An embedder that observes everything a
+connection carries cannot see pings, and one with an idle timeout
+cannot tell a server that keeps a quiet connection alive with pings
+from a vanished one.
+
+Add WebSocketEventInterface::OnPing(), called with the payload of every
+Ping frame before the channel answers it, next to OnPong() from the
+WebSocket ping patch. The answer is unchanged.
+
+diff --git a/net/websockets/websocket_channel.cc b/net/websockets/websocket_channel.cc
+--- a/net/websockets/websocket_channel.cc
++++ b/net/websockets/websocket_channel.cc
+@@ -765,6 +765,8 @@
+ 
+     case WebSocketFrameHeader::kOpCodePing:
+       DVLOG(1) << "Got Ping of size " << payload.size();
++      // crnet: let the embedder see it.
++      event_interface_->OnPing(payload);
+       if (state_ == CONNECTED) {
+         auto buffer = base::MakeRefCounted<VectorIOBuffer>(
+             std::vector<uint8_t>(payload.begin(), payload.end()));
+diff --git a/net/websockets/websocket_event_interface.h b/net/websockets/websocket_event_interface.h
+--- a/net/websockets/websocket_event_interface.h
++++ b/net/websockets/websocket_event_interface.h
+@@ -75,6 +75,11 @@
+   // the call.
+   virtual void OnPong(base::span<const char> payload) {}
+ 
++  // crnet: called for every Ping frame the server sends, before the
++  // channel answers it (as it always does) with a Pong. |payload| is
++  // valid only during the call.
++  virtual void OnPing(base::span<const char> payload) {}
++
+   // Called once for each call to SendFrame() once the frame has been passed to
+   // the OS.
+   virtual void OnSendDataFrameDone() = 0;

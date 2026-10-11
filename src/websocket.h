@@ -38,6 +38,7 @@ public:
 	void SetIdleTimeout(uint64_t ms);
 	int Ping(const void *data, size_t len);
 	void SetPongCallback(crnet_ws_pong_cb cb);
+	void SetPingCallback(crnet_ws_pong_cb cb);
 	void SetAutoPing(uint64_t interval_ms);
 	int WaitOpen(uint64_t timeout_ms);
 	int WaitClosed(uint64_t timeout_ms);
@@ -102,6 +103,7 @@ private:
 	// (Re)arms the auto-ping timer if the connection is open and one is
 	// set.
 	void RestartAutoPing();
+	void OnPing(base::span<const char> payload);
 	void OnPong(base::span<const char> payload);
 	void SendPingOnNetworkThread(std::string payload);
 	void Finish(int err, int code, const std::string &reason,
@@ -126,6 +128,7 @@ private:
 	base::RepeatingTimer auto_ping_timer_;
 	uint64_t auto_ping_ms_ = 0;
 	crnet_ws_pong_cb pong_cb_ = nullptr;
+	crnet_ws_pong_cb ping_cb_ = nullptr;
 	bool finished_ = false;
 	bool paused_ = false;
 	bool reading_stopped_ = false;

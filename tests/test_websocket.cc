@@ -952,6 +952,36 @@ TEST_F(ClientTest, WsUnsolicitedPongIsReported)
 	crnet_ws_free(ws);
 }
 
+// Same signature as the pong callback; Pongs collects either.
+TEST_F(ClientTest, WsServerPingsAreReported)
+{
+	Pongs pings;
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/ping?n=3&interval_ms=50"), nullptr, &pings);
+	crnet_ws_set_ping_callback(ws, OnPong);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	ASSERT_TRUE(pings.WaitFor(3, 5000));
+	EXPECT_EQ(pings.payloads, (std::vector<std::string>{"ping 0", "ping 1", "ping 2"}));
+	// Chromium still answers each.
+	crnet_ws_send(ws, CRNET_WS_TEXT, "stats", 5);
+	EXPECT_GE(json::parse(RecvText(ws))["ws_pongs"].get<int>(), 3);
+	crnet_ws_free(ws);
+}
+
+TEST_F(ClientTest, WsServerPingsKeepTheIdleTimeoutAtBay)
+{
+	// Pings every 150 ms for ~1.5 s, nothing else, and a 400 ms timeout.
+	crnet_ws *ws = Connect(client_, WsUrl("/ws/ping?n=10&interval_ms=150"), nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	crnet_ws_set_idle_timeout(ws, 400);
+	std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_OPEN);
+	// Once they stop, the timeout drops the connection.
+	crnet_ws_wait_closed(ws, 5000);
+	EXPECT_EQ(crnet_ws_get_state(ws), CRNET_WS_CLOSED);
+	EXPECT_EQ(crnet_ws_net_error(ws), -7);
+	crnet_ws_free(ws);
+}
+
 TEST_F(ClientTest, WsAutoPing)
 {
 	Pongs pongs;

@@ -1262,6 +1262,12 @@ CRNET_API void crnet_ws_set_pong_callback(crnet_ws *ws, crnet_ws_pong_cb cb)
 		ws->SetPongCallback(cb);
 }
 
+CRNET_API void crnet_ws_set_ping_callback(crnet_ws *ws, crnet_ws_pong_cb cb)
+{
+	if (ws)
+		ws->SetPingCallback(cb);
+}
+
 CRNET_API void crnet_ws_set_auto_ping(crnet_ws *ws, uint64_t interval_ms)
 {
 	if (ws)

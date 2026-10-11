@@ -573,6 +573,7 @@ feature can be used:
 | `CRNET_HAS_PROXY_IDENTITIES` | 0.28.0 | several credentials for one proxy in `crnet_request_set_proxy()` |
 | `CRNET_HAS_PROXY_NO_CREDENTIALS` | 0.29.0 | `socks5://@host:port`: explicitly no proxy credentials |
 | `CRNET_HAS_PROXY_CREDENTIALS` | 0.30.0 | `crnet_client_config_set_proxy_credentials()`, `crnet_request_set_proxy_credentials()` |
+| `CRNET_HAS_WS_PING_CALLBACK` | 0.31.0 | `crnet_ws_set_ping_callback()`; server pings restart the idle timeout |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built
