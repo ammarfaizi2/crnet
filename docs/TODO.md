@@ -81,13 +81,11 @@ Automated builds and tests on push.
 
 ### language-bindings
 
-More from the bindings for other languages.
+Bindings for more languages.
 
-- Today: `bindings/python` covers blocking requests, streamed uploads
-  and downloads, cookies and WebSockets, without callbacks.
-- Python `asyncio`: awaitable requests and WebSockets on top of the
-  completion queue's and the WebSocket's pollable descriptors, which
-  need no callbacks into Python.
+- Today: `bindings/python` covers blocking and asyncio use (requests,
+  streamed uploads and downloads, cookies, WebSockets) and installs with
+  pip.
 - Other languages (Go through cgo, Node.js through N-API), if anyone
   needs them. Optional.
 

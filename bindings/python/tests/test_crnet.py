@@ -6,6 +6,7 @@ Run with libcrnet built:
         python3 -m unittest discover -s bindings/python/tests
 """
 
+import asyncio
 import hashlib
 import json
 import os
@@ -18,6 +19,7 @@ import threading
 import unittest
 
 import crnet
+import crnet.aio
 
 SERVER = os.environ.get("CRNET_TEST_SERVER") or str(
     pathlib.Path(__file__).resolve().parents[3] / "tests" / "server" /
@@ -78,7 +80,7 @@ class ClientTest(unittest.TestCase):
 class Library(unittest.TestCase):
     def test_versions(self):
         major, minor, _ = (int(x) for x in crnet.version().split("."))
-        self.assertGreaterEqual((major, minor), (0, 24))
+        self.assertGreaterEqual((major, minor), (0, 25))
         self.assertRegex(crnet.chromium_version(), r"^\d+\.\d+\.\d+\.\d+$")
         self.assertIn("Chrome/", crnet.default_user_agent())
         self.assertIn("Windows NT 10.0",
@@ -312,6 +314,154 @@ class WebSockets(ClientTest):
         with self.assertRaises(crnet.Error) as cm:
             self.c.websocket(url("/ws/reject", "http", "ws"), timeout=5)
         self.assertIsNotNone(cm.exception.response)
+        self.assertEqual(cm.exception.response.status, 403)
+
+
+class AsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.c = crnet.aio.AsyncClient(insecure=True)
+
+    async def asyncTearDown(self):
+        self.c.close()
+
+
+class AsyncRequests(AsyncTest):
+    async def test_get(self):
+        r = await self.c.get(url("/echo"))
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.protocol, "h2")
+        self.assertEqual(r.json()["path"], "/echo")
+
+    async def test_the_loop_keeps_running(self):
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        task = asyncio.ensure_future(ticker())
+        try:
+            r = await self.c.get(url("/delay/500"))
+        finally:
+            task.cancel()
+        self.assertEqual(r.status, 200)
+        self.assertGreater(ticks, 20)
+
+    async def test_concurrent_requests(self):
+        rs = await asyncio.gather(*(self.c.get(url("/echo?i=%d" % i))
+                                    for i in range(50)))
+        self.assertEqual([r.json()["target"] for r in rs],
+                         ["/echo?i=%d" % i for i in range(50)])
+
+    async def test_streamed_uploads(self):
+        chunks = [os.urandom(100000) for _ in range(30)]
+        whole = b"".join(chunks)
+
+        async def agen():
+            for c in chunks:
+                await asyncio.sleep(0)
+                yield c
+
+        for body in (agen(), iter(chunks)):
+            d = (await self.c.post(url("/upload-digest", "https_h1"),
+                                   body=body)).json()
+            self.assertEqual(d["len"], len(whole))
+            self.assertEqual(d["sha256"], hashlib.sha256(whole).hexdigest())
+        with self.assertRaises(ValueError):
+            await self.c.post(url("/upload-digest"), body=iter(chunks),
+                              body_length=10)
+
+    async def test_errors(self):
+        with self.assertRaises(crnet.Error) as cm:
+            await self.c.get("http://127.0.0.1:1/")
+        self.assertEqual(cm.exception.code, crnet.E_NET)
+        with self.assertRaises(crnet.Timeout):
+            await self.c.get(url("/delay/3000"), timeout=0.2)
+
+    async def test_cancel(self):
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        task = asyncio.ensure_future(self.c.get(url("/delay/3000")))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertLess(loop.time() - start, 1)
+        with self.assertRaises(asyncio.TimeoutError):
+            await asyncio.wait_for(self.c.get(url("/delay/3000")), 0.1)
+
+
+class AsyncStreams(AsyncTest):
+    async def test_download(self):
+        n = 5 * 1024 * 1024
+        total = 0
+        async with self.c.stream("GET", url("/bytes/%d" % n)) as t:
+            self.assertEqual((await t.wait_response()).status, 200)
+            async for chunk in t:
+                total += len(chunk)
+        self.assertEqual(total, n)
+
+    async def test_headers_before_the_body(self):
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        async with self.c.stream(
+                "GET", url("/stream/100?chunk=10&delay_ms=200")) as t:
+            self.assertEqual((await t.wait_response(timeout=5)).status, 200)
+            self.assertLess(loop.time() - start, 1.5)
+            body = b"".join([c async for c in t])
+        self.assertEqual(len(body), 100)
+
+    async def test_read_timeout(self):
+        async with self.c.stream("GET",
+                                 url("/stream/100?chunk=10&delay_ms=500")) \
+                as t:
+            await t.wait_response()
+            await t.read()
+            with self.assertRaises(crnet.Timeout):
+                await t.read(timeout=0.1)
+
+
+class AsyncWebSockets(AsyncTest):
+    async def test_echo(self):
+        async with await self.c.websocket(url("/ws/echo", "http", "ws"),
+                                          protocols="chat") as ws:
+            self.assertEqual(ws.protocol, "chat")
+            ws.send("hello")
+            self.assertEqual(await ws.recv(timeout=5), "hello")
+            ws.send(b"\x00\x01")
+            self.assertEqual(await ws.recv(timeout=5), b"\x00\x01")
+            with self.assertRaises(crnet.Timeout):
+                await ws.recv(timeout=0.1)
+            ws.close(1000, "bye")
+            await ws.wait_closed(5)
+            self.assertEqual(ws.state, crnet.WS_CLOSED)
+            self.assertIsNone(await ws.recv())
+
+    async def test_server_close_ends_iteration(self):
+        async with await self.c.websocket(
+                url("/ws/close?code=4001&reason=done", "http", "ws")) as ws:
+            self.assertEqual([m async for m in ws], [])
+            self.assertEqual(ws.close_code, 4001)
+
+    async def test_waiting_tasks_take_turns(self):
+        async with await self.c.websocket(url("/ws/echo", "http", "ws")) \
+                as ws:
+            waiting = [asyncio.ensure_future(ws.recv(timeout=5))
+                       for _ in range(3)]
+            await asyncio.sleep(0.05)
+            for m in ("a", "b", "c"):
+                ws.send(m)
+            self.assertEqual(sorted(await asyncio.gather(*waiting)),
+                             ["a", "b", "c"])
+
+    async def test_slow_and_refused_handshakes(self):
+        with self.assertRaises(crnet.Timeout):
+            await self.c.websocket(
+                url("/ws/slow-handshake?ms=2000", "http", "ws"), timeout=0.1)
+        with self.assertRaises(crnet.Error) as cm:
+            await self.c.websocket(url("/ws/reject", "http", "ws"))
         self.assertEqual(cm.exception.response.status, 403)
 
 

@@ -138,6 +138,52 @@ and event loops. There are also `ping()`, `set_auto_ping()`,
 `buffered_amount`. A refused handshake raises `crnet.Error` with the
 handshake response in `response`.
 
+## asyncio
+
+`crnet.aio` has the same calls as awaitables, for one thread running
+many requests:
+
+```python
+import asyncio
+import crnet.aio
+
+async def main():
+    async with crnet.aio.AsyncClient(timeout=30) as client:
+        pages = await asyncio.gather(*(client.get(u) for u in urls))
+
+        async with client.stream("GET", "https://example.com/big.iso") as t:
+            print((await t.wait_response()).status)
+            async for chunk in t:
+                ...
+
+        async with await client.websocket("wss://example.com/chat") as ws:
+            ws.send("hello")
+            async for message in ws:
+                ...
+
+asyncio.run(main())
+```
+
+- `AsyncClient(**options)` takes the options of `Client`. `request()`,
+  `get()`, `head()`, `post()`, `put()` and `delete()` are coroutines
+  returning a `Response`; a streamed body may also be an async iterable
+  of `bytes`.
+- `stream()` returns an `AsyncTransfer`, which starts when its
+  `async with` block is entered: `await wait_response()`,
+  `await read(size, timeout)`, `async for chunk in t`.
+- `await websocket()` returns an open `AsyncWebSocket`: `recv()` and
+  `wait_closed()` are coroutines, `async for` reads until the connection
+  closes, and `send()`, `close()`, `ping()` and the properties are as in
+  `WebSocket` (`send()` queues the message and returns at once).
+- Cancelling a task (or `asyncio.wait_for()` running out) cancels its
+  transfer. Errors are the same `crnet.Error` and `crnet.Timeout`.
+
+Each wait is a descriptor of the library's watched with
+`loop.add_reader()` (`crnet_transfer_done_fd()`, `crnet_ws_fd()` and
+the like), so no thread waits on the loop's behalf and no Python runs
+on the library's network thread. That takes an event loop with
+`add_reader()`: asyncio's default loop on Linux, or uvloop.
+
 ## Cookies
 
 `set_cookie(url, set_cookie)`, `get_cookies(url)`, `clear_cookies()`,
@@ -153,7 +199,7 @@ interrupts a request; the transfer is then cancelled.
 The module does not pass Python callbacks to the library: Chromium's
 network thread would run them, holding up every request of the client
 while it waits for the GIL. Use blocking calls in threads, `stream()`,
-or the WebSocket's `fileno()` instead.
+the WebSocket's `fileno()`, or `crnet.aio` instead.
 
 ## Tests
 

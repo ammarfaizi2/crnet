@@ -36,7 +36,7 @@ which is asked about a `.invalid` name.
 | `tests/test_state.cc` | the state directory: server properties (Alt-Svc, HTTP/2) and HSTS across clients, no loss when a client is freed before its state loaded, directory creation |
 | `tests/test_cache.cc` | the HTTP cache: off by default, fresh and stale entries, revalidation, every request cache mode, the disk cache across clients |
 | `tests/test_cpp.cc` | the C++ wrapper |
-| `bindings/python/tests/test_crnet.py` | the Python bindings (`python_bindings` in ctest; not in sanitizer builds), and that the package version is the library's |
+| `bindings/python/tests/test_crnet.py` | the Python bindings (`python_bindings` in ctest; not in sanitizer builds): blocking and asyncio requests, streams and WebSockets (concurrency, cancellation, the loop kept running, waiting tasks taking turns), and that the package version is the library's |
 | `tests/c_api_smoke.c` | `crnet.h` compiles as strict C99 (`-pedantic -Werror`) and works from C |
 
 ## The test server

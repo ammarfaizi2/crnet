@@ -13,7 +13,8 @@ or named by the CRNET_LIBRARY environment variable).
         print(r.status, r.header("content-type"), len(r.body))
 
 Times are in seconds (floats), None meaning no limit. Calls block the
-calling thread only; other Python threads keep running.
+calling thread only; other Python threads keep running. crnet.aio has
+the same calls for asyncio.
 """
 
 import json as _json
@@ -188,7 +189,7 @@ def _ws_closed(ws):
 
 
 def version():
-    """The loaded library's version, e.g. "0.24.0"."""
+    """The loaded library's version, e.g. "0.25.0"."""
     return _lib.crnet_version().decode().split(" ", 1)[0]
 
 

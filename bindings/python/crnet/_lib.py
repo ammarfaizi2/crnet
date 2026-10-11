@@ -12,7 +12,7 @@ from ctypes import (POINTER, c_char_p, c_int, c_int64, c_size_t, c_uint64,
                     c_void_p)
 
 # The oldest library with every function declared below.
-MIN_VERSION = (0, 24, 0)
+MIN_VERSION = (0, 25, 0)
 
 FOREVER = 2**64 - 1     # UINT64_MAX: wait without a time limit
 
@@ -123,6 +123,10 @@ _fn("crnet_transfer_read", c_int, _P, c_void_p, c_size_t,
 _fn("crnet_transfer_write", c_int, _P, c_char_p, c_size_t,
     POINTER(c_size_t), c_uint64)
 _fn("crnet_transfer_write_end", c_int, _P)
+_fn("crnet_transfer_write_fd", c_int, _P)
+_fn("crnet_transfer_fd", c_int, _P)
+_fn("crnet_transfer_response_fd", c_int, _P)
+_fn("crnet_transfer_done_fd", c_int, _P)
 _fn("crnet_transfer_free", None, _P)
 
 # Response
@@ -152,6 +156,8 @@ _fn("crnet_ws_send", c_int, _P, c_int, c_char_p, c_size_t)
 _fn("crnet_ws_recv", c_int, _P, POINTER(c_int), POINTER(c_void_p),
     POINTER(c_size_t), c_uint64)
 _fn("crnet_ws_fd", c_int, _P)
+_fn("crnet_ws_open_fd", c_int, _P)
+_fn("crnet_ws_closed_fd", c_int, _P)
 _fn("crnet_ws_close", c_int, _P, c_int, c_char_p)
 _fn("crnet_ws_ping", c_int, _P, c_char_p, c_size_t)
 _fn("crnet_ws_set_idle_timeout", None, _P, c_uint64)
