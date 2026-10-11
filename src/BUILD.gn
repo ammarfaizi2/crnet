@@ -41,6 +41,8 @@ shared_library("crnet") {
     "fd_flag.h",
     "global.cc",
     "internal.h",
+    "local_address.cc",
+    "local_address.h",
     "profile.cc",
     "queue.cc",
     "socks_auth.cc",

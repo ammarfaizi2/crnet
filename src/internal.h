@@ -28,6 +28,7 @@
 #include "base/timer/timer.h"
 #include "crnet/crnet.h"
 #include "crnet/event.h"
+#include "crnet/local_address.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/cert/x509_certificate.h"
@@ -96,6 +97,7 @@ struct ClientConfig {
 	scoped_refptr<net::X509Certificate> client_cert;
 	scoped_refptr<net::SSLPrivateKey> client_key;
 	std::string host_rules;
+	LocalAddresses local_addresses;	// empty = the system's choice
 	crnet_http_cache http_cache = CRNET_HTTP_CACHE_OFF;
 	std::string http_cache_path;
 	uint64_t http_cache_max_size = 0;

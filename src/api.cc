@@ -425,6 +425,19 @@ CRNET_API int crnet_client_config_set_host_rules(crnet_client_config *cfg,
 	return StoreString(&cfg->cfg.host_rules, rules, "");
 }
 
+CRNET_API int crnet_client_config_set_local_address(
+	crnet_client_config *cfg, const char *addresses)
+{
+	if (!cfg)
+		return CRNET_E_INVAL;
+	crnet::LocalAddresses local;
+	if (addresses && *addresses &&
+	    !crnet::ParseLocalAddresses(addresses, &local))
+		return CRNET_E_INVAL;
+	cfg->cfg.local_addresses = local;
+	return CRNET_OK;
+}
+
 CRNET_API void crnet_client_config_set_connect_timeout(
 	crnet_client_config *cfg, uint64_t timeout_ms)
 {

@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 22
+#define CRNET_VERSION_MINOR 23
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -374,6 +374,30 @@ CRNET_API void crnet_client_config_set_timeout(crnet_client_config *cfg,
 #define CRNET_HAS_CONNECT_TIMEOUT 1
 CRNET_API void crnet_client_config_set_connect_timeout(
 		crnet_client_config *cfg, uint64_t timeout_ms);
+
+/*
+ * Local (source) addresses for the client's connections, for hosts
+ * with several egress addresses: one IP literal, or an IPv4 and an IPv6
+ * literal separated by a comma ("192.0.2.10,2001:db8::10"). Every TCP
+ * and QUIC socket of the client is bound to the address of its peer's
+ * family before it connects: connections to servers and to proxies,
+ * WebSockets and DNS-over-HTTPS requests. Plain DNS queries are not
+ * bound.
+ *
+ * A connection to a family without a local address fails with net
+ * error ERR_ADDRESS_UNREACHABLE (-109) rather than leave from the
+ * system's choice of address; Chromium then tries the server's
+ * addresses of the other family, as it does when a family is
+ * unreachable. "0.0.0.0" or "::" lets that family use the system's
+ * choice. An address the host does not have fails connections with
+ * ERR_ADDRESS_INVALID (-108).
+ *
+ * NULL or "" means the system's choice for both families (default).
+ * CRNET_E_INVAL for a malformed list or two addresses of one family.
+ */
+#define CRNET_HAS_LOCAL_ADDRESS 1
+CRNET_API int crnet_client_config_set_local_address(crnet_client_config *cfg,
+						    const char *addresses);
 
 /*
  * Chromium's HTTP cache (the one Chrome uses), off by default: every

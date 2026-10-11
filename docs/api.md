@@ -94,6 +94,7 @@ crnet_client_config_free(cfg);
 | `host_rules` | none | Chrome's `--host-resolver-rules` syntax, e.g. `MAP api.example.com 10.0.0.5:8443` |
 | `timeout` | none | default per-request timeout in ms |
 | `connect_timeout` | none | default limit in ms on getting a connection ready (proxy resolution, DNS, TCP/QUIC, proxy handshake, TLS), per redirect hop; fails with `CRNET_E_TIMEOUT` and net error `ERR_CONNECTION_TIMED_OUT` (-118) instead of the request timeout's `ERR_TIMED_OUT` (-7) |
+| `local_address` | the system's choice | source addresses for the client's connections, one per family (`192.0.2.10,2001:db8::10`): TCP and QUIC sockets to servers and proxies are bound before they connect. A family without an address fails with `ERR_ADDRESS_UNREACHABLE` (-109), so Chromium moves on to the server's addresses of the other family; `0.0.0.0` or `::` leaves a family to the system. Plain DNS queries are not bound. |
 | `client_cert` | none | a certificate and key (PEM) presented to servers that ask for one, over HTTP and WebSocket; without one crnet answers with none, as Chrome does when the user picks none |
 | `state_dir` | none | a directory where the client keeps Chrome's per-profile network state across runs: Alt-Svc/HTTP/3 and HTTP/2 knowledge ("Network Persistent State") and HSTS ("TransportSecurity"); `crnet_client_free()` returns after saving it |
 | `http_cache` | off | Chromium's HTTP cache in memory or on disk (`crnet_client_config_set_http_cache()`); requests pick a fetch()-style mode with `crnet_request_set_cache_mode()`, and `crnet_response_from_cache()` tells where a response came from. Responses accepted only through `insecure` are never cached. |
@@ -524,6 +525,7 @@ feature can be used:
 | `CRNET_HAS_WS_PING` | 0.20.0 | `crnet_ws_ping()`, `crnet_ws_set_pong_callback()`, `crnet_ws_set_auto_ping()` |
 | `CRNET_HAS_SOCKS5_AUTH` | 0.21.0 | `socks5://user:pass@...` proxy URLs |
 | `CRNET_HAS_PLATFORM_PROFILE` | 0.22.0 | `crnet_client_config_set_platform_profile()`, `crnet_platform_user_agent()` |
+| `CRNET_HAS_LOCAL_ADDRESS` | 0.23.0 | `crnet_client_config_set_local_address()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

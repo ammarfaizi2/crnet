@@ -335,6 +335,9 @@ bool crnet_client::InitOnNetworkThread()
 	b.set_accept_language(cfg_.accept_language);
 	b.set_enable_brotli(true);
 	b.set_enable_zstd(true);
+	if (!cfg_.local_addresses.empty())
+		b.set_client_socket_factory(crnet::CreateLocalAddressSocketFactory(
+			cfg_.local_addresses));
 	if (cfg_.http_cache == CRNET_HTTP_CACHE_OFF) {
 		b.DisableHttpCache();
 	} else {
