@@ -10,6 +10,7 @@ works.
 | [building.md](building.md) | Prerequisites, fetching Chromium, building with CMake, build options, installing, linking from your project, deployment |
 | [api.md](api.md) | The C API: objects, lifetimes, threading rules, blocking/async/queue usage, errors, reference |
 | [cpp.md](cpp.md) | The header-only C++17 wrapper |
+| [python.md](python.md) | The Python bindings (ctypes, no compiler needed) |
 | [websocket.md](websocket.md) | WebSocket client: opening, messaging, flow control, closing semantics, Chrome's handshake |
 | [browser-emulation.md](browser-emulation.md) | What crnet makes look like Chrome, request modes, header rules, cookies, limits |
 | [architecture.md](architecture.md) | Internals: threads, request state machine, Chromium integration, design decisions |

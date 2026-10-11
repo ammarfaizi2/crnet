@@ -49,3 +49,16 @@ add_test(NAME c_api_smoke
   COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_c_smoke.sh ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/server/test_server.py
           $<TARGET_FILE:crnet_c_api_smoke>)
+
+# The Python bindings, against the library just built. A sanitizer
+# runtime cannot be loaded into python3, so sanitizer builds skip them.
+if(NOT CRNET_ASAN AND NOT CRNET_TSAN)
+  add_test(NAME python_bindings
+    COMMAND ${CMAKE_COMMAND} -E env
+            CRNET_LIBRARY=$<TARGET_FILE:crnet>
+            PYTHONPATH=${PROJECT_SOURCE_DIR}/bindings/python
+            CRNET_TEST_SERVER=${CMAKE_CURRENT_SOURCE_DIR}/server/test_server.py
+            ${Python3_EXECUTABLE} -m unittest discover
+            -s ${PROJECT_SOURCE_DIR}/bindings/python/tests)
+  set_tests_properties(python_bindings PROPERTIES TIMEOUT 300)
+endif()

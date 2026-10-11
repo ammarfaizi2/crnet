@@ -94,10 +94,17 @@ Automated builds and tests on push.
 
 ### language-bindings
 
-Bindings for other languages, starting with Python (ctypes or cffi
-over the C ABI, no compiler needed at install time). Many crawlers are
-written in Python, and the C ABI was designed so that this needs no
-C++ on the binding side. Optional.
+More from the bindings for other languages.
+
+- Today: `bindings/python` covers blocking requests, streamed uploads
+  and downloads, cookies and WebSockets, without callbacks.
+- Python packaging: a `pyproject.toml` for `pip install`, with the
+  version taken from `crnet.h` rather than written down twice.
+- Python `asyncio`: awaitable requests and WebSockets on top of the
+  completion queue's and the WebSocket's pollable descriptors, which
+  need no callbacks into Python.
+- Other languages (Go through cgo, Node.js through N-API), if anyone
+  needs them. Optional.
 
 ## Not planned
 

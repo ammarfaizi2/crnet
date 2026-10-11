@@ -76,7 +76,8 @@ build/examples/crget -i https://tls.peet.ws/api/all
 See [docs/](docs/README.md):
 
 - [Building and linking](docs/building.md)
-- [C API guide](docs/api.md) and [C++ wrapper](docs/cpp.md)
+- [C API guide](docs/api.md), [C++ wrapper](docs/cpp.md) and
+  [Python bindings](docs/python.md)
 - [WebSockets](docs/websocket.md)
 - [Browser emulation](docs/browser-emulation.md)
 - [Architecture](docs/architecture.md)
