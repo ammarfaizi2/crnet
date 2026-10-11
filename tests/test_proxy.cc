@@ -675,3 +675,62 @@ TEST(RequestProxy, Socks5CredentialsAreTheClients)
 	crnet_client_free(other2);
 	crnet_client_free(other);
 }
+
+TEST(RequestProxy, ExplicitlyNoSocks5Credentials)
+{
+	const Ports &p = ServerPorts();
+	const std::string url = RemoteOnlyUrl(p.https, "/echo");
+	const std::string none = "socks5h://@127.0.0.1:" + std::to_string(p.socks5_auth);
+	const std::string bare = "socks5h://127.0.0.1:" + std::to_string(p.socks5_auth);
+	auto expect_none = [&](const Result &r) {
+		EXPECT_EQ(r.net_error(), -199);
+		EXPECT_EQ(SocksGreetings().back(), json::array({0}));
+	};
+
+	// Beside a default with credentials.
+	crnet_client *c = NewTestClient();
+	ASSERT_EQ(GetVia(c, url, AuthProxy("crnet-a:secret")).rc, CRNET_OK);
+	expect_none(GetVia(c, url, none));
+	expect_none(Request(c, url, none, true));
+	Result d = GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"), bare);
+	EXPECT_EQ(d.rc, CRNET_OK) << "the default still applies without '@'";
+	crnet_client_free(c);
+
+	// Named first, "none" is the default, which later credentials do
+	// not replace.
+	c = NewTestClient();
+	expect_none(GetVia(c, url, none));
+	Result b = GetVia(c, url, AuthProxy("crnet-b:secret"));
+	EXPECT_EQ(b.rc, CRNET_OK) << crnet_response_error_string(b.resp);
+	expect_none(GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"), bare));
+	expect_none(GetVia(c, url, none));
+	crnet_client_free(c);
+
+	// The same syntax configures a client.
+	c = ProxyClient(none);
+	ASSERT_NE(c, nullptr);
+	expect_none(Get(c, url));
+	crnet_client_free(c);
+}
+
+TEST(RequestProxy, ExplicitlyNoHttpProxyCredentials)
+{
+	const Ports &p = ServerPorts();
+	const std::string none = "http://@127.0.0.1:" + std::to_string(p.http_proxy);
+	crnet_client *c = NewTestClient();
+	// The default answers the challenge, and Chromium remembers its
+	// credentials for the proxy.
+	ASSERT_EQ(GetVia(c, RemoteOnlyUrl(p.https, "/echo"), HttpProxy("crnet-a:secret")).rc,
+		  CRNET_OK);
+	ASSERT_EQ(GetVia(c, "http://www.crnet-test/a", HttpProxy("crnet-a:secret")).rc,
+		  CRNET_OK);
+
+	// Neither a new tunnel nor a plain request without credentials gets
+	// them.
+	size_t before = HttpProxyAuths().size();
+	EXPECT_NE(GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"), none).rc, CRNET_OK);
+	Result plain = GetVia(c, "http://www.crnet-test/b", none);
+	EXPECT_EQ(plain.status(), 407);
+	EXPECT_EQ(HttpProxyAuths().size(), before);
+	crnet_client_free(c);
+}

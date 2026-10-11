@@ -380,9 +380,13 @@ private:
 		if (!id || !server.is_http_like() ||
 		    ProxyKey(id->proxy) != net::ProxyServerToProxyUri(server))
 			return;
+		// Without credentials an empty value withholds the auth
+		// cache's (chromium/patches/0009).
 		headers->SetHeader(
 			net::HttpRequestHeaders::kProxyAuthorization,
-			"Basic " + base::Base64Encode(id->user + ":" + id->pass));
+			id->user.empty() ? std::string()
+					 : "Basic " + base::Base64Encode(
+							      id->user + ":" + id->pass));
 	}
 
 	const raw_ptr<const crnet_client> client_;
@@ -426,7 +430,7 @@ void crnet_client::AddPartitionIdentity(int partition, ProxyIdentity id)
 {
 	const std::string socks_key = crnet::SocksProxyKey(id.proxy);
 	id.socks_key.clear();
-	if (!socks_key.empty())
+	if (!socks_key.empty() && !id.user.empty())
 		id.socks_key = crnet::RegisterSocksCredentials(
 			socks_key, partition, id.user, id.pass);
 	partition_identities_[partition] = std::move(id);
@@ -457,14 +461,27 @@ const crnet_client::ProxyIdentity *crnet_client::PartitionIdentity(
 
 std::optional<int> crnet_client::ResolveProxyIdentity(const std::string &proxy,
 						      std::string *user,
-						      std::string *pass)
+						      std::string *pass,
+						      bool no_credentials)
 {
 	DCHECK(IsNetworkThread());
 	if (proxy.empty())
 		return std::nullopt;
 	const std::string key = ProxyKey(proxy);
 	auto it = proxy_creds_.find(key);
-	if (user->empty()) {
+	if (no_credentials) {
+		// Explicitly none: the proxy's default if it has none yet (so
+		// that no later request can give the default some), else an
+		// identity without credentials.
+		user->clear();
+		pass->clear();
+		if (it == proxy_creds_.end()) {
+			proxy_creds_[key] = {"", ""};
+			return std::nullopt;
+		}
+		if (it->second.first.empty())
+			return std::nullopt;
+	} else if (user->empty()) {
 		if (it != proxy_creds_.end()) {
 			*user = it->second.first;
 			*pass = it->second.second;
@@ -486,7 +503,9 @@ std::optional<int> crnet_client::ResolveProxyIdentity(const std::string &proxy,
 	auto id = identities_.find({key, *user, *pass});
 	if (id != identities_.end())
 		return id->second;
-	int partition = NewConnectionPartition(std::nullopt);
+	// No fallback to the client's partition: an identity has its own
+	// credentials, or none at all.
+	int partition = NextConnectionPartition();
 	AddPartitionIdentity(partition, {proxy, *user, *pass, ""});
 	identities_[{key, *user, *pass}] = partition;
 	return partition;

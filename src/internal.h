@@ -115,6 +115,7 @@ struct ProxySpec {
 	std::string proxy;	// Chromium proxy URI ("socks5://h:p"), "" = direct
 	std::string user;
 	std::string pass;
+	bool no_credentials = false;	// "socks5://@host": none, no default
 };
 
 // The proxy chain for a Chromium proxy URI from ParseProxy(), direct for
@@ -453,9 +454,12 @@ public:
 	// credentials are an identity with a connection partition of its own
 	// (returned), so that its connections are never shared with another
 	// identity's, whose credentials the proxy delegate sends up front.
+	// |no_credentials| asks for none at all, not the default (an
+	// identity without credentials, unless the default is none).
 	std::optional<int> ResolveProxyIdentity(const std::string &proxy,
 						std::string *user,
-						std::string *pass);
+						std::string *pass,
+						bool no_credentials);
 	// Fresh connections: a connection partition of their own for one
 	// transfer or WebSocket (patched URLRequest::set_connection_partition()),
 	// with the credentials of proxy identity |identity| if given, and

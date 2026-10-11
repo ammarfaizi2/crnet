@@ -52,13 +52,16 @@ bool ValidToken(const char *s)
 // Proxy URL -> Chromium proxy rules. Credentials are split off for the
 // proxy auth handler (Chromium never takes them from the rules).
 // A proxy URL as crnet_client_config_set_proxy() takes it, into a
-// Chromium proxy URI ("" for direct) and credentials.
+// Chromium proxy URI ("" for direct) and credentials. An empty userinfo
+// ("socks5://@host") sets |*none|: explicitly no credentials.
 int ParseProxy(const char *url, std::string *proxy, std::string *user,
-	       std::string *pass)
+	       std::string *pass, bool *none = nullptr)
 {
 	proxy->clear();
 	user->clear();
 	pass->clear();
+	if (none)
+		*none = false;
 	if (!url || !*url)
 		return CRNET_OK;
 
@@ -79,8 +82,11 @@ int ParseProxy(const char *url, std::string *proxy, std::string *user,
 	    scheme != "socks5")
 		return CRNET_E_INVAL;
 
+	std::string_view rest = s.substr(sep + 3);
+	if (none && !rest.empty() && rest.front() == '@')
+		*none = true;
 	// Parse authority with a scheme GURL understands.
-	GURL u(base::StrCat({"http://", s.substr(sep + 3)}));
+	GURL u(base::StrCat({"http://", rest}));
 	if (!u.is_valid() || !u.has_host())
 		return CRNET_E_INVAL;
 	if (u.path() != "/" || u.has_query())
@@ -844,7 +850,8 @@ CRNET_API int crnet_request_set_proxy(crnet_request *req,
 	}
 	crnet::ProxySpec p;
 	if (!*proxy_url ||
-	    ParseProxy(proxy_url, &p.proxy, &p.user, &p.pass) != CRNET_OK ||
+	    ParseProxy(proxy_url, &p.proxy, &p.user, &p.pass,
+		       &p.no_credentials) != CRNET_OK ||
 	    !crnet::ProxyChainOf(p.proxy).IsValid())
 		return CRNET_E_INVAL;
 	req->spec.proxy = std::move(p);

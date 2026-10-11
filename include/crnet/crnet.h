@@ -75,8 +75,8 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 28
-#define CRNET_VERSION_PATCH 1
+#define CRNET_VERSION_MINOR 29
+#define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
 	(CRNET_VERSION_MAJOR * 10000 + CRNET_VERSION_MINOR * 100 + \
@@ -179,7 +179,9 @@ CRNET_API void crnet_client_config_free(crnet_client_config *cfg);
  * percent-encoded as needed) they enable username/password
  * authentication (RFC 1929), offered besides "no authentication"; a
  * proxy rejecting them fails requests with net error -185. SOCKS4 has
- * no credentials. NULL means direct.
+ * no credentials. NULL means direct. An empty userinfo
+ * ("socks5://@host:port", CRNET_HAS_PROXY_NO_CREDENTIALS) means no
+ * credentials, the same as none here.
  *
  * Credentials belong to the client (and its requests, see
  * crnet_request_set_proxy()): a client given none offers none, whatever
@@ -704,20 +706,29 @@ CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable);
  *
  * Credentials: a proxy's default credentials are the client's own for
  * its configured proxy (none, if it was configured without), or else
- * those of the first request that names the proxy with credentials; a request naming the proxy without
- * credentials uses them, answering auth challenges as configured
- * clients do. Since 0.28.0 (CRNET_HAS_PROXY_IDENTITIES) a request
- * naming other credentials is another identity of the proxy, as
- * rotating proxies use ("user-session-42:pass@gateway"): requests of one
- * identity share connections only with each other, and its credentials
- * go with every request to the proxy up front, as HTTP Basic or SOCKS5
+ * those of the first request that names the proxy with credentials; a
+ * request naming the proxy without credentials uses them, answering
+ * auth challenges as configured clients do. Since 0.28.0
+ * (CRNET_HAS_PROXY_IDENTITIES) a request naming other credentials is
+ * another identity of the proxy, as rotating proxies use
+ * ("user-session-42:pass@gateway"): requests of one identity share
+ * connections only with each other, and its credentials go with every
+ * request to the proxy up front, as HTTP Basic or SOCKS5
  * username/password authentication; a proxy refusing them fails the
  * request (HTTP status 407 through an HTTP proxy, net error -185 through
  * SOCKS5) instead of being asked again. Before 0.28.0 such a request
  * failed with CRNET_E_INVAL.
+ *
+ * An empty userinfo ("socks5://@host:port", "http://@host:port") means
+ * no credentials at all, rather than the default ones: the request
+ * offers SOCKS5 "no authentication" only and sends an HTTP proxy no
+ * Proxy-Authorization, not even credentials Chromium remembers for it.
+ * Named before the proxy has default credentials, it makes "none" the
+ * default. (CRNET_HAS_PROXY_NO_CREDENTIALS, 0.29.0.)
  */
 #define CRNET_HAS_REQUEST_PROXY 1
 #define CRNET_HAS_PROXY_IDENTITIES 1
+#define CRNET_HAS_PROXY_NO_CREDENTIALS 1
 CRNET_API int crnet_request_set_proxy(crnet_request *req,
 				      const char *proxy_url);
 

@@ -144,7 +144,8 @@ crnet_request_set_connect_timeout(req, 3000);          /* overrides the client d
   identities, as rotating proxies use (`user-session-42:pass@gateway`):
   each gets connections of its own and sends its credentials up front.
   A request naming the proxy without credentials uses the client's, or
-  else those of the first request that named some.
+  else those of the first request that named some; an empty userinfo
+  (`socks5://@host:port`) sends none at all.
 - `crnet_request_set_fresh_connection(req, 1)` gives the request (or
   WebSocket) connections of its own: it takes no pooled connection or
   HTTP/2/3 session, leaves none behind for others (they are closed when
@@ -567,6 +568,7 @@ feature can be used:
 | `CRNET_HAS_REQUEST_PROXY` | 0.26.0 | `crnet_request_set_proxy()` |
 | `CRNET_HAS_FRESH_CONNECTION` | 0.27.0 | `crnet_request_set_fresh_connection()` |
 | `CRNET_HAS_PROXY_IDENTITIES` | 0.28.0 | several credentials for one proxy in `crnet_request_set_proxy()` |
+| `CRNET_HAS_PROXY_NO_CREDENTIALS` | 0.29.0 | `socks5://@host:port`: explicitly no proxy credentials |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

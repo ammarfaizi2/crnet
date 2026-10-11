@@ -510,7 +510,8 @@ void crnet_ws::StartOnNetworkThread()
 		proxy_user_ = spec_.proxy->user;
 		proxy_pass_ = spec_.proxy->pass;
 		identity_ = client_->ResolveProxyIdentity(
-			spec_.proxy->proxy, &proxy_user_, &proxy_pass_);
+			spec_.proxy->proxy, &proxy_user_, &proxy_pass_,
+			spec_.proxy->no_credentials);
 	}
 
 	if (spec_.fresh_connection)
