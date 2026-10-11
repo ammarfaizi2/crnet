@@ -6,6 +6,7 @@ Listens on 127.0.0.1 (ephemeral ports) and serves:
   * HTTPS with ALPN h2 + http/1.1 (certificate issued by a throwaway CA,
     whose path is reported as "ca")
   * HTTPS restricted to http/1.1
+  * HTTPS whose HTTP/2 also serves WebSockets (RFC 8441, "https_ws_h2")
   * HTTPS requiring a client certificate issued by the same CA
     ("https_mtls"; the client's PEM files are "client_cert", "client_key")
   * plain HTTP/1.1
@@ -78,6 +79,7 @@ import h2.config
 import h2.connection
 import h2.events
 import h2.exceptions
+import h2.settings
 
 try:
     import brotli
@@ -88,7 +90,7 @@ PLAINTEXT = (b"crnet content-encoding test payload. " * 200)
 PROXY_USER = "crnet"
 PROXY_PASS = "secret"
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
-         "ws_pongs": 0, "ws_last_close": None}
+         "ws_h2_connects": 0, "ws_pongs": 0, "ws_last_close": None}
 CACHE_STATS = {}    # /cache/<key> -> {"requests": n, "conditional": n}
 
 
@@ -553,10 +555,46 @@ async def serve_websocket(req, reader, writer):
 # HTTP/2
 # ----------------------------------------------------------------------
 
+class H2StreamWriter:
+    """The writer half of a WebSocket over an HTTP/2 stream (RFC 8441),
+    shaped like an asyncio.StreamWriter as far as WsConn needs."""
+
+    def __init__(self, session, sid):
+        self.session = session
+        self.sid = sid
+        self.buf = bytearray()
+        self.transport = self
+
+    def write(self, data):
+        self.buf += data
+
+    async def drain(self):
+        data, self.buf = bytes(self.buf), bytearray()
+        if data:
+            await self.session.send_data(self.sid, data, False)
+
+    def close(self):
+        try:
+            self.session.conn.end_stream(self.sid)
+            self.session.flush()
+        except h2.exceptions.H2Error:
+            pass
+
+    def abort(self):
+        try:
+            self.session.conn.reset_stream(self.sid)
+            self.session.flush()
+        except h2.exceptions.H2Error:
+            pass
+
+
 class H2Session:
-    def __init__(self, reader, writer):
+    def __init__(self, reader, writer, websockets=False):
         self.reader = reader
         self.writer = writer
+        # Advertise extended CONNECT (RFC 8441) and serve WebSockets.
+        self.websockets = websockets
+        self.ws_readers = {}
         # python-h2 would join HTTP/2 cookie crumbs *at the end* of the
         # header list; keep the wire order and join them in place.
         cfg = h2.config.H2Configuration(client_side=False,
@@ -574,6 +612,9 @@ class H2Session:
 
     async def run(self):
         self.conn.initiate_connection()
+        if self.websockets:
+            self.conn.update_settings(
+                {h2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL: 1})
         self.flush()
         try:
             while True:
@@ -610,12 +651,26 @@ class H2Session:
                     headers.append((k, v))
             if at is not None:
                 headers[at] = ("cookie", "; ".join(crumbs))
+            pseudo = dict(h for h in headers if h[0].startswith(":"))
+            if (self.websockets and pseudo.get(":method") == "CONNECT" and
+                    pseudo.get(":protocol") == "websocket"):
+                reader = asyncio.StreamReader()
+                self.ws_readers[ev.stream_id] = reader
+                asyncio.ensure_future(
+                    self.serve_websocket(ev.stream_id, headers, reader))
+                return
             self.streams[ev.stream_id] = [headers, bytearray()]
         elif isinstance(ev, h2.events.DataReceived):
-            self.streams[ev.stream_id][1] += ev.data
+            if ev.stream_id in self.ws_readers:
+                self.ws_readers[ev.stream_id].feed_data(ev.data)
+            else:
+                self.streams[ev.stream_id][1] += ev.data
             self.conn.acknowledge_received_data(ev.flow_controlled_length,
                                                 ev.stream_id)
         elif isinstance(ev, h2.events.StreamEnded):
+            if ev.stream_id in self.ws_readers:
+                self.ws_readers.pop(ev.stream_id).feed_eof()
+                return
             headers, body = self.streams.pop(ev.stream_id)
             asyncio.ensure_future(self.respond(ev.stream_id, headers,
                                                bytes(body)))
@@ -625,6 +680,28 @@ class H2Session:
                     fut.set_result(None)
         elif isinstance(ev, h2.events.StreamReset):
             self.streams.pop(ev.stream_id, None)
+            if ev.stream_id in self.ws_readers:
+                self.ws_readers.pop(ev.stream_id).feed_eof()
+
+    async def serve_websocket(self, sid, headers, reader):
+        pseudo = {k: v for k, v in headers if k.startswith(":")}
+        req = Request("CONNECT", pseudo.get(":path"), headers, b"", "h2",
+                      True, self.writer.get_extra_info("peername")[1])
+        await ws_handshake_delay(req)
+        neg = ws_negotiate(req)
+        if neg is None:
+            self.conn.send_headers(sid, [(":status", "403")],
+                                   end_stream=True)
+            self.flush()
+            return
+        chosen, deflate, extra = neg
+        self.conn.send_headers(
+            sid, [(":status", "200")] + [(k.lower(), v) for k, v in extra])
+        self.flush()
+        STATS["ws_connects"] += 1
+        STATS["ws_h2_connects"] += 1
+        await ws_session(WsConn(reader, H2StreamWriter(self, sid), deflate),
+                         req, chosen, deflate)
 
     async def send_data(self, sid, data, end):
         while data:
@@ -676,11 +753,11 @@ class H2Session:
             pass
 
 
-async def serve_tls(reader, writer):
+async def serve_tls(reader, writer, h2_websockets=False):
     ssl_obj = writer.get_extra_info("ssl_object")
     proto = ssl_obj.selected_alpn_protocol() if ssl_obj else None
     if proto == "h2":
-        await H2Session(reader, writer).run()
+        await H2Session(reader, writer, h2_websockets).run()
     else:
         await serve_h1(reader, writer, True)
 
@@ -855,6 +932,9 @@ async def main():
             serve_tls, host, 0, ssl=tls_context(crt, key, ["h2", "http/1.1"])),
         "https_h1": await asyncio.start_server(
             serve_tls, host, 0, ssl=tls_context(crt, key, ["http/1.1"])),
+        "https_ws_h2": await asyncio.start_server(
+            lambda r, w: serve_tls(r, w, h2_websockets=True), host, 0,
+            ssl=tls_context(crt, key, ["h2", "http/1.1"])),
         "https_mtls": await asyncio.start_server(
             serve_tls, host, 0,
             ssl=tls_context(crt, key, ["h2", "http/1.1"], client_ca=ca)),

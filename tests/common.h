@@ -25,6 +25,7 @@ struct Ports {
 	int http = 0;
 	int socks5 = 0;
 	int http_proxy = 0;
+	int https_ws_h2 = 0;	// h2 that also serves WebSockets (RFC 8441)
 	int https_mtls = 0;	// requires a client certificate
 	std::string ca_file;	// PEM of the CA that issued the server cert
 	std::string client_cert_file;	// for https_mtls, issued by the CA

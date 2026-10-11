@@ -179,13 +179,6 @@ WebSocket controls that other WebSocket clients commonly offer.
   the connection differ from Chrome's, so keep Chrome's behaviour the
   default.
 
-### ws-over-h2-test
-
-A local test for WebSocket over HTTP/2 (RFC 8441). The code path is
-Chromium's and works against public servers, but the local test
-server only speaks WebSocket over HTTP/1.1, so the suite does not
-cover it.
-
 ## Build and tooling
 
 ### tsan-build

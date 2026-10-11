@@ -28,7 +28,7 @@ which is asked about a `.invalid` name.
 | `tests/test_async.cc` | callback order, streaming, cancellation, abort from callbacks, pause/resume, release while running and from `on_complete`, deadlock refusal, 200 concurrent requests multiplexed on one HTTP/2 connection, parallelism, multi-threaded `perform`, client shutdown with transfers in flight, completion queue |
 | `tests/test_proxy.cc` | SOCKS5 with remote name resolution, HTTP CONNECT proxy with authentication, failures, headers unchanged through proxies |
 | `tests/test_stream.cc` | streamed bodies: uploads with known and unknown length over HTTP/1.1 and HTTP/2 (Content-Length vs chunked framing), empty bodies, writes from other threads, upload backpressure, length mismatches, writers released on failure, no rewind on 307, file uploads (whole, slices, resent on 307, missing file), streamed downloads (40 MiB both protocols, backpressure, headers before body, pollable fd, timeouts, errors after data, failure before headers), on_data precedence, upload and download together, 16 concurrent streamed transfers |
-| `tests/test_websocket.cc` | WebSockets: Chrome's handshake headers, both delivery modes, pollable fd, subprotocols, Origin/header overrides, cookies both ways, deflate on/off, client/server/abrupt closes, close codes, fragmentation, large messages, size limit, backpressure, pause, pings, invalid UTF-8, refused/slow handshakes, release semantics, shutdown, proxies, 50 concurrent sockets |
+| `tests/test_websocket.cc` | WebSockets: Chrome's handshake headers, both delivery modes, pollable fd, subprotocols, Origin/header overrides, cookies both ways, deflate on/off, client/server/abrupt closes, close codes, fragmentation, large messages, size limit, backpressure, pause, pings, invalid UTF-8, refused/slow handshakes, release semantics, shutdown, proxies, 50 concurrent sockets, WebSockets over HTTP/2 (RFC 8441) on an existing connection and the HTTP/1.1 upgrade without one |
 | `tests/test_cpp.cc` | the C++ wrapper |
 | `tests/c_api_smoke.c` | `crnet.h` compiles as strict C99 (`-pedantic -Werror`) and works from C |
 
@@ -37,8 +37,9 @@ which is asked about a `.invalid` name.
 `tests/server/test_server.py` (Python 3 with `h2`) listens on ephemeral
 127.0.0.1 ports and prints them as one JSON line. It provides:
 
-- HTTPS with ALPN `h2` and `http/1.1`, HTTPS restricted to HTTP/1.1, and
-  plain HTTP. Its certificate is issued at start-up by a throwaway CA
+- HTTPS with ALPN `h2` and `http/1.1`, HTTPS restricted to HTTP/1.1,
+  HTTPS whose HTTP/2 also serves WebSockets (extended CONNECT, RFC 8441;
+  `https_ws_h2`), and plain HTTP. Its certificate is issued at start-up by a throwaway CA
   whose PEM file the server reports as `ca`. Most test clients use the
   `insecure` option; tests of certificate verification trust the CA
   instead.

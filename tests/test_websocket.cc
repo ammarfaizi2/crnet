@@ -586,3 +586,80 @@ TEST_F(ClientTest, WsCloseWithoutStatusCode)
 	EXPECT_EQ(crnet_ws_close_code(ws), 1005);  // RFC 6455: no status received
 	crnet_ws_free(ws);
 }
+
+// ------------------------------------------------------------------
+// WebSockets over HTTP/2 (RFC 8441)
+// ------------------------------------------------------------------
+
+namespace {
+
+std::string WsH2Host()
+{
+	return "localhost:" + std::to_string(ServerPorts().https_ws_h2);
+}
+
+std::string HeaderValue(const json &doc, const std::string &name)
+{
+	for (const json &h : doc["headers"]) {
+		if (h[0] == name)
+			return h[1];
+	}
+	return "";
+}
+
+} // namespace
+
+// Chrome runs a WebSocket over an existing HTTP/2 connection whose server
+// announced extended CONNECT; the handshake is then a CONNECT request
+// with :protocol websocket on a new stream of that connection.
+TEST_F(ClientTest, WsOverHttp2UsesTheExistingConnection)
+{
+	Result warm = Get(client_, "https://" + WsH2Host() + "/echo");
+	ASSERT_EQ(warm.rc, CRNET_OK);
+	ASSERT_EQ(warm.protocol(), "h2");
+
+	crnet_ws *ws = Connect(client_, "wss://" + WsH2Host() + "/ws/headers", nullptr, nullptr,
+			       "chat");
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK) << crnet_ws_net_error(ws);
+	json doc = json::parse(RecvText(ws));
+	EXPECT_EQ(doc["http_version"], "h2");
+	EXPECT_EQ(HeaderValue(doc, ":method"), "CONNECT");
+	EXPECT_EQ(HeaderValue(doc, ":protocol"), "websocket");
+	EXPECT_EQ(HeaderValue(doc, ":path"), "/ws/headers");
+	EXPECT_EQ(HeaderValue(doc, "sec-websocket-version"), "13");
+	EXPECT_EQ(HeaderValue(doc, "sec-websocket-key"), "") << "no key over HTTP/2";
+	EXPECT_EQ(doc["protocol"], "chat");
+	EXPECT_STREQ(crnet_ws_protocol(ws), "chat");
+	crnet_ws_free(ws);
+}
+
+TEST_F(ClientTest, WsOverHttp2EchoAndClose)
+{
+	Get(client_, "https://" + WsH2Host() + "/echo");
+	crnet_ws *ws = Connect(client_, "wss://" + WsH2Host() + "/ws/echo", nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK) << crnet_ws_net_error(ws);
+	EXPECT_NE(std::string(crnet_ws_extensions(ws)).find("permessage-deflate"),
+		  std::string::npos);
+	std::string big(300000, 'z');	// beyond one flow-control window
+	for (const std::string &msg : {std::string("hello over h2"), big}) {
+		ASSERT_EQ(crnet_ws_send(ws, CRNET_WS_TEXT, msg.data(), msg.size()), CRNET_OK);
+		EXPECT_EQ(RecvText(ws), msg);
+	}
+	crnet_ws_send(ws, CRNET_WS_TEXT, "stats", 5);
+	json st = json::parse(RecvText(ws));
+	EXPECT_GT(st["ws_h2_connects"].get<int>(), 0);
+	ASSERT_EQ(crnet_ws_close(ws, 1000, "done"), CRNET_OK);
+	EXPECT_EQ(crnet_ws_wait_closed(ws, 5000), CRNET_OK);
+	EXPECT_EQ(crnet_ws_close_code(ws), 1000);
+	crnet_ws_free(ws);
+}
+
+// Without an HTTP/2 connection to reuse, Chrome does not open one for a
+// WebSocket: the handshake is an HTTP/1.1 upgrade.
+TEST_F(ClientTest, WsWithoutAnHttp2ConnectionUsesHttp11)
+{
+	crnet_ws *ws = Connect(client_, "wss://" + WsH2Host() + "/ws/headers", nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK) << crnet_ws_net_error(ws);
+	EXPECT_EQ(json::parse(RecvText(ws))["http_version"], "http/1.1");
+	crnet_ws_free(ws);
+}
