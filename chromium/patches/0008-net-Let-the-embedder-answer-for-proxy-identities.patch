@@ -1,0 +1,174 @@
+net: Let the embedder answer for proxy identities
+
+Rotating proxies commonly pick the exit by the username, so an
+embedder may reach one proxy as several users at once. Chromium keys
+connections and proxy credentials by proxy alone. Connection
+partitions (the previous patch) already keep each identity's
+connections apart, as the partition is part of the proxy chain; what
+is left is sending the right credentials on them.
+
+For tunnels, ProxyDelegate::OnBeforeTunnelRequest() can add headers,
+and they replace those of the proxy auth cache. Add the same for
+requests sent to an HTTP proxy without a tunnel (http:// URLs):
+ProxyDelegate::OnBeforeHttpRequestToProxy(), called by
+HttpNetworkTransaction::BuildRequestHeaders().
+
+For SOCKS5, pass the proxy chain's opaque data through
+SOCKSSocketParams to the credentials lookup of
+SOCKS5ClientSocket::LookUpCredentials() (from the SOCKS5
+username/password patch), so the embedder can tell partitions apart.
+
+diff --git a/net/base/proxy_delegate.h b/net/base/proxy_delegate.h
+index ff614802f7..907e2c910b 100644
+--- a/net/base/proxy_delegate.h
++++ b/net/base/proxy_delegate.h
+@@ -117,6 +117,13 @@ class NET_EXPORT ProxyDelegate {
+   virtual void OnStreamCreationAttempted(const ProxyChain& proxy_chain,
+                                          base::TimeDelta duration,
+                                          base::optional_ref<int> net_error) {}
++
++  // crnet: called before a request is sent to an HTTP proxy without a
++  // tunnel (an http:// URL), like OnBeforeTunnelRequest() for a tunnel:
++  // headers added to `headers` go to the proxy, replacing those of the
++  // proxy auth cache.
++  virtual void OnBeforeHttpRequestToProxy(const ProxyChain& proxy_chain,
++                                          HttpRequestHeaders* headers) {}
+ };
+ 
+ }  // namespace net
+diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
+index 1788baf807..771a1c2ca0 100644
+--- a/net/http/http_network_transaction.cc
++++ b/net/http/http_network_transaction.cc
+@@ -44,6 +44,7 @@
+ #include "net/base/load_timing_internal_info.h"
+ #include "net/base/net_errors.h"
+ #include "net/base/proxy_chain.h"
++#include "net/base/proxy_delegate.h"
+ #include "net/base/proxy_server.h"
+ #include "net/base/transport_info.h"
+ #include "net/base/upload_data_stream.h"
+@@ -1434,6 +1435,13 @@ int HttpNetworkTransaction::BuildRequestHeaders(
+   if (ShouldApplyProxyAuth() && HaveAuth(HttpAuth::AUTH_PROXY))
+     auth_controllers_[HttpAuth::AUTH_PROXY]->AddAuthorizationHeader(
+         &request_headers_);
++  // crnet: the proxy delegate's headers for the proxy.
++  if (using_http_proxy_without_tunnel && session_->context().proxy_delegate) {
++    HttpRequestHeaders proxy_headers;
++    session_->context().proxy_delegate->OnBeforeHttpRequestToProxy(
++        proxy_info_.proxy_chain(), &proxy_headers);
++    request_headers_.MergeFrom(proxy_headers);
++  }
+   if (ShouldApplyServerAuth() && HaveAuth(HttpAuth::AUTH_SERVER))
+     auth_controllers_[HttpAuth::AUTH_SERVER]->AddAuthorizationHeader(
+         &request_headers_);
+diff --git a/net/socket/connect_job_params_factory.cc b/net/socket/connect_job_params_factory.cc
+index 83ba68d5f9..e956d5e1b7 100644
+--- a/net/socket/connect_job_params_factory.cc
++++ b/net/socket/connect_job_params_factory.cc
+@@ -266,10 +266,13 @@ ConnectJobParams CreateProxyParams(
+     DCHECK_EQ(1u, proxy_chain.length());
+     // TODO(crbug.com/40181080): Pass `endpoint` directly (preserving scheme
+     // when available)?
+-    params = ConnectJobParams(base::MakeRefCounted<SOCKSSocketParams>(
++    auto socks_params = base::MakeRefCounted<SOCKSSocketParams>(
+         std::move(params), proxy_server.scheme() == ProxyServer::SCHEME_SOCKS5,
+         ToHostPortPair(endpoint), network_anonymization_key,
+-        *proxy_annotation_tag));
++        *proxy_annotation_tag);
++    // crnet: lets the SOCKS5 client find the chain's credentials.
++    socks_params->set_proxy_chain_opaque_data(proxy_chain.opaque_data());
++    params = ConnectJobParams(std::move(socks_params));
+   }
+ 
+   return params;
+diff --git a/net/socket/socks5_client_socket.cc b/net/socket/socks5_client_socket.cc
+--- a/net/socket/socks5_client_socket.cc
++++ b/net/socket/socks5_client_socket.cc
+@@ -287,10 +287,11 @@
+   credentials_.emplace(std::move(username), std::move(password));
+ }
+ 
+-void SOCKS5ClientSocket::LookUpCredentials(const HostPortPair& proxy) {
++void SOCKS5ClientSocket::LookUpCredentials(const HostPortPair& proxy,
++                                           std::optional<int> partition) {
+   CredentialsLookup lookup = g_credentials_lookup.load();
+   std::string username, password;
+-  if (lookup && lookup(proxy, &username, &password)) {
++  if (lookup && lookup(proxy, partition, &username, &password)) {
+     SetCredentials(std::move(username), std::move(password));
+   }
+ }
+diff --git a/net/socket/socks5_client_socket.h b/net/socket/socks5_client_socket.h
+--- a/net/socket/socks5_client_socket.h
++++ b/net/socket/socks5_client_socket.h
+@@ -52,7 +52,10 @@
+   // crnet: username/password authentication (RFC 1929). The embedder
+   // registers, once and before any connection, a thread-safe function
+   // that returns the credentials for a proxy, or false for none.
++  // `partition` is the opaque data of the proxy chain the connection is
++  // for (see URLRequest::set_connection_partition()), if any.
+   using CredentialsLookup = bool (*)(const HostPortPair& proxy,
++                                     std::optional<int> partition,
+                                      std::string* username,
+                                      std::string* password);
+   static void SetCredentialsLookup(CredentialsLookup lookup);
+@@ -60,7 +63,8 @@
+   // the proxy picks it. Each must be 1 to 255 bytes long.
+   void SetCredentials(std::string username, std::string password);
+   // Called by SOCKSConnectJob with the proxy this socket is connected to.
+-  void LookUpCredentials(const HostPortPair& proxy);
++  void LookUpCredentials(const HostPortPair& proxy,
++                         std::optional<int> partition);
+ 
+   // StreamSocket implementation.
+ 
+diff --git a/net/socket/socks_connect_job.cc b/net/socket/socks_connect_job.cc
+--- a/net/socket/socks_connect_job.cc
++++ b/net/socket/socks_connect_job.cc
+@@ -183,7 +183,8 @@
+     // crnet: credentials configured for this proxy, if any.
+     if (const auto* proxy = std::get_if<HostPortPair>(
+             &socks_params_->transport_params()->destination())) {
+-      socks5_socket->LookUpCredentials(*proxy);
++      socks5_socket->LookUpCredentials(
++          *proxy, socks_params_->proxy_chain_opaque_data());
+     }
+     socket_ = std::move(socks5_socket);
+   } else {
+diff --git a/net/socket/socks_connect_job.h b/net/socket/socks_connect_job.h
+index 3fc7dc02d6..e17ff6727e 100644
+--- a/net/socket/socks_connect_job.h
++++ b/net/socket/socks_connect_job.h
+@@ -6,6 +6,7 @@
+ #define NET_SOCKET_SOCKS_CONNECT_JOB_H_
+ 
+ #include <memory>
++#include <optional>
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/ref_counted.h"
+@@ -52,6 +53,15 @@ class NET_EXPORT_PRIVATE SOCKSSocketParams
+     return traffic_annotation_;
+   }
+ 
++  // crnet: the opaque data of the proxy chain the connection is for, for
++  // SOCKS5ClientSocket::LookUpCredentials().
++  void set_proxy_chain_opaque_data(std::optional<int> data) {
++    proxy_chain_opaque_data_ = data;
++  }
++  std::optional<int> proxy_chain_opaque_data() const {
++    return proxy_chain_opaque_data_;
++  }
++
+  private:
+   friend class base::RefCounted<SOCKSSocketParams>;
+   ~SOCKSSocketParams();
+@@ -64,6 +74,7 @@ class NET_EXPORT_PRIVATE SOCKSSocketParams
+   const NetworkAnonymizationKey network_anonymization_key_;
+ 
+   NetworkTrafficAnnotationTag traffic_annotation_;
++  std::optional<int> proxy_chain_opaque_data_;
+ };
+ 
+ // SOCKSConnectJob handles establishing a connection to a SOCKS4 or SOCKS5 proxy

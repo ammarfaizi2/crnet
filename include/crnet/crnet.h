@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 27
+#define CRNET_VERSION_MINOR 28
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -699,17 +699,22 @@ CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable);
  * connections through the same proxy; connections through different
  * proxies are never shared. CRNET_E_INVAL for a malformed URL or "".
  *
- * Within a client, a proxy has one set of credentials: the client's own
- * for its configured proxy, or else those of the first request that
- * names the proxy with credentials. A request naming the proxy without
- * credentials uses those. One naming different ones fails with
- * CRNET_E_INVAL and net error ERR_INVALID_ARGUMENT (-4): its connections
- * would be pooled with, and Chromium's proxy auth cache would answer it
- * as, the first identity. Use a client per identity instead. SOCKS5
- * credentials are also subject to the process-wide rule of
- * crnet_client_config_set_proxy().
+ * Credentials: a proxy's default credentials are the client's own for
+ * its configured proxy, or else those of the first request that names
+ * the proxy with credentials; a request naming the proxy without
+ * credentials uses them, answering auth challenges as configured
+ * clients do. Since 0.28.0 (CRNET_HAS_PROXY_IDENTITIES) a request
+ * naming other credentials is another identity of the proxy, as
+ * rotating proxies use ("user-session-42:pass@gateway"): requests of one
+ * identity share connections only with each other, and its credentials
+ * go with every request to the proxy up front, as HTTP Basic or SOCKS5
+ * username/password authentication; a proxy refusing them fails the
+ * request (HTTP status 407 through an HTTP proxy, net error -185 through
+ * SOCKS5) instead of being asked again. Before 0.28.0 such a request
+ * failed with CRNET_E_INVAL.
  */
 #define CRNET_HAS_REQUEST_PROXY 1
+#define CRNET_HAS_PROXY_IDENTITIES 1
 CRNET_API int crnet_request_set_proxy(crnet_request *req,
 				      const char *proxy_url);
 

@@ -3,9 +3,11 @@
 
 #include <map>
 #include <mutex>
+#include <optional>
 #include <utility>
 
 #include "base/no_destructor.h"
+#include "base/strings/string_number_conversions.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/proxy_server.h"
 #include "net/base/proxy_string_util.h"
@@ -32,12 +34,17 @@ Table &GetTable()
 }
 
 // Called on network threads, by every SOCKS5 connection attempt.
-bool Lookup(const net::HostPortPair &proxy, std::string *username,
-	    std::string *password)
+bool Lookup(const net::HostPortPair &proxy, std::optional<int> partition,
+	    std::string *username, std::string *password)
 {
 	Table &t = GetTable();
 	std::lock_guard<std::mutex> lk(t.mu);
-	auto it = t.entries.find(proxy.ToString());
+	const std::string key = proxy.ToString();
+	auto it = t.entries.end();
+	if (partition)
+		it = t.entries.find(SocksPartitionKey(key, *partition));
+	if (it == t.entries.end())
+		it = t.entries.find(key);
 	if (it == t.entries.end())
 		return false;
 	*username = it->second.username;
@@ -50,6 +57,11 @@ bool Lookup(const net::HostPortPair &proxy, std::string *username,
 void InstallSocksCredentialsLookup()
 {
 	net::SOCKS5ClientSocket::SetCredentialsLookup(&Lookup);
+}
+
+std::string SocksPartitionKey(const std::string &key, int partition)
+{
+	return key + "#" + base::NumberToString(partition);
 }
 
 std::string SocksProxyKey(const std::string &proxy)

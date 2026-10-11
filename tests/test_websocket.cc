@@ -642,14 +642,22 @@ TEST(WebSocket, ThroughARequestsProxy)
 	EXPECT_EQ(RecvText(ws), "via request proxy");
 	crnet_ws_free(ws);
 
-	// Other credentials for the now pinned proxy.
+	// Another identity of the proxy.
 	ws = Connect(c, url, nullptr, nullptr, nullptr, [](crnet_request *r) {
-		std::string p = "http://crnet:other@127.0.0.1:" +
+		std::string p = "http://crnet-ws:secret@127.0.0.1:" +
 				std::to_string(ServerPorts().http_proxy);
 		crnet_request_set_proxy(r, p.c_str());
 	});
-	EXPECT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_E_INVAL);
-	EXPECT_EQ(crnet_ws_net_error(ws), -4);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK) << crnet_ws_net_error(ws);
+	crnet_ws_send(ws, CRNET_WS_TEXT, "identity", 8);
+	EXPECT_EQ(RecvText(ws), "identity");
+	crnet_ws_free(ws);
+	ws = Connect(c, url, nullptr, nullptr, nullptr, [](crnet_request *r) {
+		std::string p = "http://crnet-ws:wrong@127.0.0.1:" +
+				std::to_string(ServerPorts().http_proxy);
+		crnet_request_set_proxy(r, p.c_str());
+	});
+	EXPECT_NE(crnet_ws_wait_open(ws, 5000), CRNET_OK);
 	crnet_ws_free(ws);
 	crnet_client_free(c);
 }

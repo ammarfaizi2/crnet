@@ -20,24 +20,6 @@ How to use it:
   macro and a minor version bump (see "Versions and feature tests" in
   [api.md](api.md)).
 
-## Connections and proxies
-
-### proxy-identities
-
-Several credentials for one proxy within a client.
-
-- Today: `crnet_request_set_proxy()` picks the proxy per request, but a
-  client uses one set of credentials per proxy and refuses a request
-  naming others, because Chromium pools connections and caches proxy
-  credentials by proxy alone.
-- Why: rotating proxies often pick the exit by the username
-  ("user-session-42"), all behind one host and port.
-- Notes: connections could be kept apart per identity the way fresh
-  connections are, with the connection partition of
-  chromium/patches/0007 (a partition per credential set). The proxy
-  auth cache must not answer for them either; for HTTP proxies that
-  needs another Chromium change.
-
 ## Browser emulation
 
 ### platform-profiles

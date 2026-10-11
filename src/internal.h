@@ -18,6 +18,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -401,6 +402,7 @@ private:
 	std::string proxy_user_;
 	std::string proxy_pass_;
 	std::optional<int> partition_;	// a fresh connection's
+	std::optional<int> identity_;	// the proxy identity's partition
 	bool download_full_ = false;
 	uint64_t body_bytes_ = 0;
 	scoped_refptr<base::TaskRunner> file_runner_;
@@ -444,20 +446,30 @@ public:
 	// Network thread only.
 	net::URLRequestContext *context() const { return context_.get(); }
 	void TransferFinished(crnet_transfer *t);
-	// The credentials a request uses for |proxy| (a Chromium proxy URI):
-	// a proxy has one set per client, from the client's configuration or
-	// from the first request that names some. Empty |*user| takes the
-	// pinned ones, if any; others pin theirs. False when they differ
-	// from the pinned ones, or another client uses other SOCKS5
-	// credentials for the proxy: pooled connections and Chromium's proxy
-	// auth cache would otherwise mix the identities.
-	bool PinProxyCredentials(const std::string &proxy, std::string *user,
-				 std::string *pass);
+	// The proxy identity of a request naming |proxy| (a Chromium proxy
+	// URI) with credentials |*user|/|*pass|. A proxy's default
+	// credentials are the client's for its own proxy, else those of the
+	// first request that names some; empty |*user| takes them. Other
+	// credentials are an identity with a connection partition of its own
+	// (returned), so that its connections are never shared with another
+	// identity's, whose credentials the proxy delegate sends up front.
+	std::optional<int> ResolveProxyIdentity(const std::string &proxy,
+						std::string *user,
+						std::string *pass);
 	// Fresh connections: a connection partition of their own for one
 	// transfer or WebSocket (patched URLRequest::set_connection_partition()),
-	// and closing it once that is gone.
-	int NewConnectionPartition();
+	// with the credentials of proxy identity |identity| if given, and
+	// closing it once that is gone.
+	int NewConnectionPartition(std::optional<int> identity);
 	void CloseConnectionPartition(int partition);
+	// The proxy identity of connection partition |partition|, if any.
+	struct ProxyIdentity {
+		std::string proxy;	// Chromium proxy URI
+		std::string user;
+		std::string pass;
+		std::string socks_key;	// its SOCKS5 table entry, or ""
+	};
+	const ProxyIdentity *PartitionIdentity(int partition) const;
 	void WebSocketFinished(crnet_ws *ws);
 
 	// Blocking helpers (not on a network thread).
@@ -499,7 +511,13 @@ private:
 	// Destroy()).
 	std::map<std::string, std::pair<std::string, std::string>> proxy_creds_;
 	std::vector<std::string> request_socks_keys_;
-	int last_partition_ = 0;	// network thread only
+	// Network thread only: (proxy URI, user, password) -> partition of
+	// the identities, and partition -> identity for those and for fresh
+	// partitions that carry one.
+	std::map<std::tuple<std::string, std::string, std::string>, int>
+		identities_;
+	std::map<int, ProxyIdentity> partition_identities_;
+	void AddPartitionIdentity(int partition, ProxyIdentity id);
 	std::unique_ptr<net::TransportSecurityPersister> hsts_persister_;
 	std::unique_ptr<net::FileNetLogObserver> netlog_;
 	scoped_refptr<net::CertNetFetcherURLRequest> cert_fetcher_;

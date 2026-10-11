@@ -462,55 +462,161 @@ TEST(RequestProxy, ConnectionsAreNotSharedAcrossProxies)
 	crnet_client_free(c);
 }
 
-TEST(RequestProxy, HttpProxyCredentialsArePinned)
+namespace {
+
+json HttpProxyAuths()
+{
+	crnet_client *c = NewTestClient();
+	Result r = Get(c, HttpsUrl("/echo"));
+	crnet_client_free(c);
+	return r.echo()["stats"]["http_proxy_auths"];
+}
+
+// The last |n| users the proxy saw, oldest first.
+std::vector<std::string> LastUsers(const json &auths, size_t n)
+{
+	std::vector<std::string> users;
+	for (size_t i = auths.size() >= n ? auths.size() - n : 0; i < auths.size(); i++)
+		users.push_back(auths[i][0].is_null() ? "" : auths[i][0].get<std::string>());
+	return users;
+}
+
+Result Request(crnet_client *c, const std::string &url, const std::string &proxy,
+	       bool fresh = false)
+{
+	crnet_request *req = crnet_request_new("GET", url.c_str());
+	EXPECT_EQ(crnet_request_set_proxy(req, proxy.c_str()), CRNET_OK) << proxy;
+	crnet_request_set_fresh_connection(req, fresh);
+	Result r;
+	r.rc = crnet_perform(c, req, &r.resp);
+	crnet_request_free(req);
+	return r;
+}
+
+} // namespace
+
+TEST(RequestProxy, HttpProxyIdentities)
 {
 	const Ports &p = ServerPorts();
+	const std::string url = RemoteOnlyUrl(p.https, "/echo");
 	crnet_client *c = NewTestClient();
 	// Without credentials the proxy's 407 is the answer.
-	const std::string bare = "http://127.0.0.1:" + std::to_string(p.http_proxy);
-	Result r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), bare);
-	EXPECT_NE(r.rc, CRNET_OK);
-	r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), HttpProxy("crnet:secret"));
-	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
-	EXPECT_TRUE(crnet_response_via_proxy(r.resp));
-	// Now pinned: a request without credentials uses them, other ones
-	// are refused.
-	r = GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"), bare);
-	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
-	r = GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"), HttpProxy("crnet:other"));
-	EXPECT_EQ(r.rc, CRNET_E_INVAL);
-	EXPECT_EQ(r.net_error(), -4);	// ERR_INVALID_ARGUMENT
-	crnet_client_free(c);
+	EXPECT_NE(GetVia(c, url, "http://127.0.0.1:" + std::to_string(p.http_proxy)).rc,
+		  CRNET_OK);
 
-	// The configured proxy's credentials are pinned from the start.
-	c = ProxyClient(HttpProxy("crnet:secret"));
-	r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), HttpProxy("crnet:other"));
-	EXPECT_EQ(r.rc, CRNET_E_INVAL);
+	// The first credentials become the proxy's default; others are
+	// identities, with connections of their own.
+	size_t before = HttpProxyAuths().size();
+	Result a = GetVia(c, url, HttpProxy("crnet-a:secret"));
+	ASSERT_EQ(a.rc, CRNET_OK) << crnet_response_error_string(a.resp);
+	Result b = GetVia(c, url, HttpProxy("crnet-b:secret"));
+	ASSERT_EQ(b.rc, CRNET_OK) << crnet_response_error_string(b.resp);
+	EXPECT_NE(crnet_response_connection_id(b.resp), crnet_response_connection_id(a.resp));
+	json auths = HttpProxyAuths();
+	ASSERT_EQ(auths.size(), before + 2);
+	EXPECT_EQ(LastUsers(auths, 2), (std::vector<std::string>{"crnet-a", "crnet-b"}));
+
+	// Each reuses its own connection.
+	Result a2 = GetVia(c, url, HttpProxy("crnet-a:secret"));
+	Result b2 = GetVia(c, url, HttpProxy("crnet-b:secret"));
+	EXPECT_EQ(crnet_response_connection_id(a2.resp), crnet_response_connection_id(a.resp));
+	EXPECT_EQ(crnet_response_connection_id(b2.resp), crnet_response_connection_id(b.resp));
+	EXPECT_EQ(HttpProxyAuths().size(), before + 2);
+
+	// New tunnels: the default answers as itself, not as the identity
+	// Chromium's proxy auth cache saw last.
+	const std::string url2 = RemoteOnlyUrl(p.https_h1, "/echo");
+	ASSERT_EQ(GetVia(c, url2, HttpProxy("crnet-b:secret")).rc, CRNET_OK);
+	ASSERT_EQ(GetVia(c, url2, "http://127.0.0.1:" + std::to_string(p.http_proxy)).rc,
+		  CRNET_OK);
+	auths = HttpProxyAuths();
+	ASSERT_EQ(auths.size(), before + 4);
+	EXPECT_EQ(LastUsers(auths, 2), (std::vector<std::string>{"crnet-b", "crnet-a"}));
+
+	// Refused credentials of an identity fail the request at once.
+	Result bad = GetVia(c, url, HttpProxy("crnet-c:wrong"));
+	EXPECT_NE(bad.rc, CRNET_OK);
+	auths = HttpProxyAuths();
+	EXPECT_EQ(auths.size(), before + 5);
+	EXPECT_EQ(auths.back(), json::array({"crnet-c", false}));
 	crnet_client_free(c);
 }
 
-TEST(RequestProxy, Socks5CredentialsArePinned)
+TEST(RequestProxy, HttpProxyIdentitiesWithoutATunnel)
 {
 	const Ports &p = ServerPorts();
+	auto user_of = [](const Result &r) {
+		EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+		return r.rc == CRNET_OK ? json::parse(r.body()).value("proxy_user", "") : "";
+	};
+	// http:// requests go to the proxy itself, which answers them.
+	const std::string url = "http://www.crnet-test/plain";
+	crnet_client *c = NewTestClient();
+	EXPECT_EQ(user_of(GetVia(c, url, HttpProxy("crnet-a:secret"))), "crnet-a");
+	EXPECT_EQ(user_of(GetVia(c, url, HttpProxy("crnet-b:secret"))), "crnet-b");
+	EXPECT_EQ(user_of(GetVia(c, url, "http://127.0.0.1:" + std::to_string(p.http_proxy))),
+		  "crnet-a");
+	EXPECT_EQ(user_of(GetVia(c, url, HttpProxy("crnet-b:secret"))), "crnet-b");
+	crnet_client_free(c);
+}
+
+TEST(RequestProxy, Socks5Identities)
+{
+	const Ports &p = ServerPorts();
+	const std::string url = RemoteOnlyUrl(p.https, "/echo");
 	size_t before = SocksAuths().size();
 	crnet_client *c = NewTestClient();
-	Result r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), AuthProxy("crnet:secret"));
-	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
-	r = GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"),
-		   "socks5h://127.0.0.1:" + std::to_string(p.socks5_auth));
-	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
-	EXPECT_EQ(SocksAuths().size(), before + 2);
-	r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), AuthProxy("other:pass"));
-	EXPECT_EQ(r.rc, CRNET_E_INVAL);
+	Result a = GetVia(c, url, AuthProxy("crnet-a:secret"));
+	ASSERT_EQ(a.rc, CRNET_OK) << crnet_response_error_string(a.resp);
+	Result b = GetVia(c, url, AuthProxy("crnet-b:secret"));
+	ASSERT_EQ(b.rc, CRNET_OK) << crnet_response_error_string(b.resp);
+	Result a2 = GetVia(c, url, AuthProxy("crnet-a:secret"));
+	Result b2 = GetVia(c, url, AuthProxy("crnet-b:secret"));
+	EXPECT_EQ(crnet_response_connection_id(a2.resp), crnet_response_connection_id(a.resp));
+	EXPECT_EQ(crnet_response_connection_id(b2.resp), crnet_response_connection_id(b.resp));
+	json auths = SocksAuths();
+	ASSERT_EQ(auths.size(), before + 2);
+	EXPECT_EQ(LastUsers(auths, 2), (std::vector<std::string>{"crnet-a", "crnet-b"}));
 
-	// Registered process-wide while the client exists.
-	crnet_client_config *cfg = crnet_client_config_new();
-	ASSERT_EQ(crnet_client_config_set_proxy(cfg, AuthProxy("other:pass").c_str()),
-		  CRNET_OK);
-	EXPECT_EQ(crnet_client_new(cfg), nullptr);
+	// Without credentials: the default.
+	Result d = GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"),
+			  "socks5h://127.0.0.1:" + std::to_string(p.socks5_auth));
+	EXPECT_EQ(d.rc, CRNET_OK) << crnet_response_error_string(d.resp);
+	EXPECT_EQ(SocksAuths().back(), json::array({"crnet-a", true}));
+
+	Result bad = GetVia(c, url, AuthProxy("crnet-c:wrong"));
+	EXPECT_EQ(bad.net_error(), -185);	// ERR_SOCKS_AUTH_FAILED
+
+	// Fresh connections of an identity authenticate as it, each anew.
+	before = SocksAuths().size();
+	for (int i = 0; i < 2; i++)
+		EXPECT_EQ(Request(c, url, AuthProxy("crnet-b:secret"), true).rc, CRNET_OK);
+	auths = SocksAuths();
+	ASSERT_EQ(auths.size(), before + 2);
+	EXPECT_EQ(LastUsers(auths, 2), (std::vector<std::string>{"crnet-b", "crnet-b"}));
 	crnet_client_free(c);
-	crnet_client *b = crnet_client_new(cfg);
-	EXPECT_NE(b, nullptr) << "released with the client";
-	crnet_client_free(b);
+}
+
+TEST(RequestProxy, Socks5IdentitiesBesideAnotherClientsDefault)
+{
+	const Ports &p = ServerPorts();
+	// Another client holds the process-wide default for the proxy.
+	crnet_client *other = ProxyClient(AuthProxy("crnet-x:secret"));
+	ASSERT_NE(other, nullptr);
+	crnet_client *c = NewTestClient();
+	Result r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), AuthProxy("crnet-y:secret"));
+	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	EXPECT_EQ(SocksAuths().back(), json::array({"crnet-y", true}));
+	crnet_client_free(c);
+
+	// The client's registrations go with it.
+	crnet_client_config *cfg = crnet_client_config_new();
+	ASSERT_EQ(crnet_client_config_set_proxy(cfg, AuthProxy("crnet-z:secret").c_str()),
+		  CRNET_OK);
+	EXPECT_EQ(crnet_client_new(cfg), nullptr) << "the other client's default";
+	crnet_client_free(other);
+	crnet_client *z = crnet_client_new(cfg);
+	EXPECT_NE(z, nullptr);
+	crnet_client_free(z);
 	crnet_client_config_free(cfg);
 }

@@ -208,11 +208,8 @@ void crnet_transfer::StartOnNetworkThread()
 	if (spec_.proxy) {
 		proxy_user_ = spec_.proxy->user;
 		proxy_pass_ = spec_.proxy->pass;
-		if (!client_->PinProxyCredentials(spec_.proxy->proxy,
-						  &proxy_user_, &proxy_pass_)) {
-			Finish(CRNET_E_INVAL, net::ERR_INVALID_ARGUMENT);
-			return;
-		}
+		identity_ = client_->ResolveProxyIdentity(
+			spec_.proxy->proxy, &proxy_user_, &proxy_pass_);
 	}
 	bh_ = crnet::BuildBrowserHeaders(cfg, spec_);
 
@@ -226,8 +223,10 @@ void crnet_transfer::StartOnNetworkThread()
 		request_->set_proxy_chain_override(
 			crnet::ProxyChainOf(spec_.proxy->proxy));
 	if (spec_.fresh_connection) {
-		partition_ = client_->NewConnectionPartition();
+		partition_ = client_->NewConnectionPartition(identity_);
 		request_->set_connection_partition(partition_);
+	} else if (identity_) {
+		request_->set_connection_partition(identity_);
 	}
 	request_->SetExtraRequestHeaders(bh_.extra);
 	if (bh_.referrer) {
@@ -553,7 +552,11 @@ void crnet_transfer::OnReceivedRedirect(net::URLRequest *request,
 void crnet_transfer::OnAuthRequired(net::URLRequest *request,
 				    const net::AuthChallengeInfo &auth_info)
 {
-	if (auth_info.is_proxy && !proxy_auth_tried_ && !proxy_user_.empty()) {
+	// An identity's credentials went up front; a challenge means they
+	// were refused, and answering it would put them in the proxy auth
+	// cache, shared by all identities.
+	if (auth_info.is_proxy && !identity_ && !proxy_auth_tried_ &&
+	    !proxy_user_.empty()) {
 		proxy_auth_tried_ = true;
 		request->SetAuth(net::AuthCredentials(
 			base::UTF8ToUTF16(proxy_user_),

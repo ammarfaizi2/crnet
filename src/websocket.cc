@@ -102,6 +102,8 @@ public:
 				crnet::ProxyChainOf(ws_->spec_.proxy->proxy));
 		if (ws_->partition_)
 			request->set_connection_partition(ws_->partition_);
+		else if (ws_->identity_)
+			request->set_connection_partition(ws_->identity_);
 		crnet::HeaderHook::Attach(
 			request, std::make_unique<WsHeaderHook>(
 					 ws_->headers_.suppressed,
@@ -181,8 +183,9 @@ public:
 		std::optional<net::AuthCredentials> *credentials) override
 	{
 		*credentials = std::nullopt;
-		if (!auth_info.is_proxy || ws_->proxy_auth_tried_ ||
-		    ws_->proxy_user_.empty())
+		// See crnet_transfer::OnAuthRequired() for identities.
+		if (!auth_info.is_proxy || ws_->identity_ ||
+		    ws_->proxy_auth_tried_ || ws_->proxy_user_.empty())
 			return net::OK;	// deliver the 401/407 as a failure
 
 		// WebSocketStream ignores synchronously returned credentials;
@@ -506,16 +509,12 @@ void crnet_ws::StartOnNetworkThread()
 	if (spec_.proxy) {
 		proxy_user_ = spec_.proxy->user;
 		proxy_pass_ = spec_.proxy->pass;
-		if (!client_->PinProxyCredentials(spec_.proxy->proxy,
-						  &proxy_user_, &proxy_pass_)) {
-			FailOnNetworkThread(CRNET_E_INVAL,
-					    net::ERR_INVALID_ARGUMENT);
-			return;
-		}
+		identity_ = client_->ResolveProxyIdentity(
+			spec_.proxy->proxy, &proxy_user_, &proxy_pass_);
 	}
 
 	if (spec_.fresh_connection)
-		partition_ = client_->NewConnectionPartition();
+		partition_ = client_->NewConnectionPartition(identity_);
 
 	channel_ = std::make_unique<net::WebSocketChannel>(
 		std::make_unique<WsEventAdapter>(this), client_->context());

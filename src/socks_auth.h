@@ -28,6 +28,11 @@ bool RegisterSocksCredentials(const std::string &key,
 			      const std::string &password);
 void UnregisterSocksCredentials(const std::string &key);
 
+// The table key for |key|'s credentials in connection partition
+// |partition|: a connection of a partition takes these, if registered,
+// before the proxy's own.
+std::string SocksPartitionKey(const std::string &key, int partition);
+
 } // namespace crnet
 
 #endif // CRNET_SRC_SOCKS_AUTH_H

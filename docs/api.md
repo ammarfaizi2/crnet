@@ -140,9 +140,11 @@ crnet_request_set_connect_timeout(req, 3000);          /* overrides the client d
   or direct with `direct://`, ignoring the bypass rules. Requests through
   different proxies never share a connection but do share the client's
   cookies and cache, so one client can spread its requests over many
-  egress proxies. Within a client a proxy has one set of credentials
-  (the client's, or the first request's that names some); a request
-  naming other ones for it fails with `CRNET_E_INVAL`.
+  egress proxies. Different credentials for one proxy are separate
+  identities, as rotating proxies use (`user-session-42:pass@gateway`):
+  each gets connections of its own and sends its credentials up front.
+  A request naming the proxy without credentials uses the client's, or
+  else those of the first request that named some.
 - `crnet_request_set_fresh_connection(req, 1)` gives the request (or
   WebSocket) connections of its own: it takes no pooled connection or
   HTTP/2/3 session, leaves none behind for others (they are closed when
@@ -564,6 +566,7 @@ feature can be used:
 | `CRNET_HAS_WAIT_FDS` | 0.25.0 | `crnet_transfer_response_fd()`, `_done_fd()`, `crnet_ws_open_fd()`, `_closed_fd()` |
 | `CRNET_HAS_REQUEST_PROXY` | 0.26.0 | `crnet_request_set_proxy()` |
 | `CRNET_HAS_FRESH_CONNECTION` | 0.27.0 | `crnet_request_set_fresh_connection()` |
+| `CRNET_HAS_PROXY_IDENTITIES` | 0.28.0 | several credentials for one proxy in `crnet_request_set_proxy()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built
