@@ -440,21 +440,13 @@ class WsConn:
                 return op, payload
 
 
-async def serve_websocket(req, reader, writer):
+def ws_negotiate(req):
+    """Handshake decisions shared by HTTP/1.1 and HTTP/2: None to refuse,
+    else (subprotocol or None, deflate, extra response headers)."""
     q = dict(req.query)
-    key = req.header("sec-websocket-key") or ""
     path = req.path
-    if WS_HANDSHAKE_HOOK:
-        WS_HANDSHAKE_HOOK(req)
-    if path == "/ws/slow-handshake":
-        await asyncio.sleep(int(q.get("ms", "3000")) / 1000.0)
     if path == "/ws/reject" or not path.startswith("/ws/"):
-        writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 6\r\n\r\n"
-                     b"denied")
-        await writer.drain()
-        writer.close()
-        return
-
+        return None
     offered = [p.strip() for p in
                (req.header("sec-websocket-protocol") or "").split(",")
                if p.strip()]
@@ -464,35 +456,41 @@ async def serve_websocket(req, reader, writer):
         chosen = next((p for p in offered if p in WS_PROTOCOLS), None)
     exts = req.header("sec-websocket-extensions") or ""
     deflate = "permessage-deflate" in exts and q.get("deflate", "1") != "0"
-
-    accept = base64.b64encode(hashlib.sha1(
-        (key + WS_GUID).encode()).digest()).decode()
-    head = ("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
-            "Connection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n" % accept)
+    extra = []
     if chosen:
-        head += "Sec-WebSocket-Protocol: %s\r\n" % chosen
+        extra.append(("Sec-WebSocket-Protocol", chosen))
     if deflate:
-        head += "Sec-WebSocket-Extensions: permessage-deflate\r\n"
+        extra.append(("Sec-WebSocket-Extensions", "permessage-deflate"))
     if path == "/ws/cookie":
-        head += "Set-Cookie: wscookie=1; Path=/\r\n"
-    writer.write((head + "\r\n").encode("latin-1"))
-    await writer.drain()
-    STATS["ws_connects"] += 1
+        extra.append(("Set-Cookie", "wscookie=1; Path=/"))
+    return chosen, deflate, extra
 
-    ws = WsConn(reader, writer, deflate)
+
+async def ws_handshake_delay(req):
+    if WS_HANDSHAKE_HOOK:
+        WS_HANDSHAKE_HOOK(req)
+    if req.path == "/ws/slow-handshake":
+        await asyncio.sleep(int(dict(req.query).get("ms", "3000")) / 1000.0)
+
+
+async def ws_session(ws, req, chosen, deflate):
+    """The open connection: the endpoint's behaviour, then echo."""
+    q = dict(req.query)
+    path = req.path
     ws.empty_close = q.get("emptyclose") == "1"
     try:
         if path == "/ws/headers":
             doc = {"path": req.target, "headers": [list(h) for h in
                                                    req.headers],
                    "protocol": chosen, "deflate": deflate,
-                   "peer_port": req.peer_port}
+                   "peer_port": req.peer_port,
+                   "http_version": req.protocol}
             await ws.send(OP_TEXT, json.dumps(doc).encode())
         elif path == "/ws/close":
             await ws.close(int(q.get("code", "1000")),
                            q.get("reason", "").encode())
         elif path == "/ws/drop":
-            writer.transport.abort()
+            ws.writer.transport.abort()
             return
         elif path == "/ws/fragmented":
             await ws.send_frame(OP_TEXT, b"frag", fin=False)
@@ -525,7 +523,30 @@ async def serve_websocket(req, reader, writer):
             zlib.error):
         pass
     finally:
+        ws.writer.close()
+
+
+async def serve_websocket(req, reader, writer):
+    await ws_handshake_delay(req)
+    neg = ws_negotiate(req)
+    if neg is None:
+        writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 6\r\n\r\n"
+                     b"denied")
+        await writer.drain()
         writer.close()
+        return
+    chosen, deflate, extra = neg
+    key = req.header("sec-websocket-key") or ""
+    accept = base64.b64encode(hashlib.sha1(
+        (key + WS_GUID).encode()).digest()).decode()
+    head = ("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+            "Connection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n" % accept)
+    for k, v in extra:
+        head += "%s: %s\r\n" % (k, v)
+    writer.write((head + "\r\n").encode("latin-1"))
+    await writer.drain()
+    STATS["ws_connects"] += 1
+    await ws_session(WsConn(reader, writer, deflate), req, chosen, deflate)
 
 
 # ----------------------------------------------------------------------
