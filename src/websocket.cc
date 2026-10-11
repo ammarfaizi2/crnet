@@ -506,6 +506,19 @@ void crnet_ws::StartOnNetworkThread()
 
 	proxy_user_ = client_->config().proxy_user;
 	proxy_pass_ = client_->config().proxy_pass;
+	if (spec_.proxy_credentials) {
+		// See crnet_transfer::StartOnNetworkThread().
+		const auto &[user, pass] = *spec_.proxy_credentials;
+		if (!spec_.proxy ||
+		    !crnet::ValidProxyCredentials(spec_.proxy->proxy, user, pass)) {
+			FailOnNetworkThread(CRNET_E_INVAL,
+					    net::ERR_INVALID_ARGUMENT);
+			return;
+		}
+		spec_.proxy->user = user;
+		spec_.proxy->pass = pass;
+		spec_.proxy->no_credentials = user.empty();
+	}
 	if (spec_.proxy) {
 		proxy_user_ = spec_.proxy->user;
 		proxy_pass_ = spec_.proxy->pass;

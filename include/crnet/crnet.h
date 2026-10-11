@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 29
+#define CRNET_VERSION_MINOR 30
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -198,6 +198,24 @@ CRNET_API void crnet_client_config_free(crnet_client_config *cfg);
 #define CRNET_HAS_SOCKS5_AUTH 1
 CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
 					    const char *proxy_url);
+
+/*
+ * Proxy credentials as bytes, with no URL encoding involved; they replace
+ * those of the proxy URL, whichever is set first. |user_len| 0 means no
+ * credentials at all, as an empty userinfo does (|pass_len| must then be
+ * 0 too). NULL |user| removes them again. Each is at most 255 bytes;
+ * CRNET_E_INVAL otherwise.
+ *
+ * What the proxy accepts is checked once it is known, by
+ * crnet_client_new() (NULL) or when a request starts (CRNET_E_INVAL, net
+ * error ERR_INVALID_ARGUMENT -4): SOCKS5 takes any 1 to 255 bytes in
+ * each (RFC 1929); an HTTP(S) proxy takes UTF-8, with no ':' in the
+ * username (Basic authentication); SOCKS4 takes none.
+ */
+#define CRNET_HAS_PROXY_CREDENTIALS 1
+CRNET_API int crnet_client_config_set_proxy_credentials(
+	crnet_client_config *cfg, const void *user, size_t user_len,
+	const void *pass, size_t pass_len);
 
 /*
  * Destinations that bypass the proxy, in Chrome's --proxy-bypass-list
@@ -735,6 +753,18 @@ CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable);
 #define CRNET_HAS_PROXY_NO_CREDENTIALS 1
 CRNET_API int crnet_request_set_proxy(crnet_request *req,
 				      const char *proxy_url);
+
+/*
+ * The credentials for the proxy of crnet_request_set_proxy() as bytes,
+ * as crnet_client_config_set_proxy_credentials() takes them: they
+ * replace the URL's, |user_len| 0 means none at all. Without a request
+ * proxy the request fails with CRNET_E_INVAL. (CRNET_HAS_PROXY_CREDENTIALS.)
+ */
+CRNET_API int crnet_request_set_proxy_credentials(crnet_request *req,
+						  const void *user,
+						  size_t user_len,
+						  const void *pass,
+						  size_t pass_len);
 
 /*
  * Use connections of the request's own (HTTP or WebSocket), as a new

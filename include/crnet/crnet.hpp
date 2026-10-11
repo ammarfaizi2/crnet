@@ -56,6 +56,7 @@ public:
 	}
 
 	ClientConfig &proxy(const std::string &url) { check(crnet_client_config_set_proxy(get(), url.c_str())); return *this; }
+	ClientConfig &proxy_credentials(const std::string &user, const std::string &pass) { check(crnet_client_config_set_proxy_credentials(get(), user.data(), user.size(), pass.data(), pass.size())); return *this; }
 	ClientConfig &proxy_bypass(const std::string &rules) { check(crnet_client_config_set_proxy_bypass(get(), rules.c_str())); return *this; }
 	ClientConfig &user_agent(const std::string &ua) { check(crnet_client_config_set_user_agent(get(), ua.c_str())); return *this; }
 	ClientConfig &sec_ch_ua(const std::string &v) { check(crnet_client_config_set_sec_ch_ua(get(), v.c_str())); return *this; }
@@ -137,6 +138,7 @@ public:
 	Request &decompress(bool on) { check(crnet_request_set_decompress(get(), on)); return *this; }
 	Request &max_body_size(uint64_t n) { check(crnet_request_set_max_body_size(get(), n)); return *this; }
 	Request &proxy(const std::string &url) { check(crnet_request_set_proxy(get(), url.c_str())); return *this; }
+	Request &proxy_credentials(const std::string &user, const std::string &pass) { check(crnet_request_set_proxy_credentials(get(), user.data(), user.size(), pass.data(), pass.size())); return *this; }
 	Request &fresh_connection(bool enable = true) { check(crnet_request_set_fresh_connection(get(), enable)); return *this; }
 
 	crnet_request *get() const noexcept { return req_.get(); }

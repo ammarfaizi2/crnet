@@ -18,6 +18,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/functional/bind.h"
 #include "base/message_loop/message_pump_type.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/network_session_configurator/browser/network_session_configurator.h"
@@ -394,6 +395,30 @@ private:
 
 
 } // namespace
+
+bool crnet::ValidProxyCredentials(const std::string &proxy,
+				  const std::string &user,
+				  const std::string &pass)
+{
+	if (user.empty())
+		return pass.empty();
+	const net::ProxyServer server =
+		net::ProxyUriToProxyServer(proxy, net::ProxyServer::SCHEME_HTTP);
+	if (!server.is_valid())
+		return false;
+	switch (server.scheme()) {
+	case net::ProxyServer::SCHEME_SOCKS5:
+		return user.size() <= 255 && !pass.empty() && pass.size() <= 255;
+	case net::ProxyServer::SCHEME_HTTP:
+	case net::ProxyServer::SCHEME_HTTPS:
+		// Basic authentication splits at the first ':', and Chromium
+		// answers challenges through UTF-16.
+		return user.find(':') == std::string::npos &&
+		       base::IsStringUTF8(user) && base::IsStringUTF8(pass);
+	default:
+		return false;
+	}
+}
 
 net::ProxyChain crnet::ProxyChainOf(const std::string &proxy)
 {

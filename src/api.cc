@@ -91,22 +91,17 @@ int ParseProxy(const char *url, std::string *proxy, std::string *user,
 		return CRNET_E_INVAL;
 	if (u.path() != "/" || u.has_query())
 		return CRNET_E_INVAL;
+	*proxy = base::StrCat({scheme, "://", u.host()});
+	if (u.has_port())
+		base::StrAppend(proxy, {":", u.port()});
 	if (u.has_username()) {
-		if (scheme == "socks4")
-			return CRNET_E_INVAL;	// SOCKS4 has no passwords
 		// Every %XX is a byte: NORMAL would keep "%3A", "%2F" and
 		// the like escaped, so ':' or '/' could not be sent.
 		*user = base::UnescapeBinaryURLComponent(u.username());
 		*pass = base::UnescapeBinaryURLComponent(u.password());
-		// RFC 1929 sends each in a length byte.
-		if (scheme == "socks5" &&
-		    (user->empty() || user->size() > 255 || pass->empty() ||
-		     pass->size() > 255))
+		if (!crnet::ValidProxyCredentials(*proxy, *user, *pass))
 			return CRNET_E_INVAL;
 	}
-	*proxy = base::StrCat({scheme, "://", u.host()});
-	if (u.has_port())
-		base::StrAppend(proxy, {":", u.port()});
 	return CRNET_OK;
 }
 
@@ -555,6 +550,15 @@ CRNET_API crnet_client *crnet_client_new(const crnet_client_config *cfg)
 	if (!crnet::EnsureGlobalInit(nullptr, nullptr, nullptr))
 		return nullptr;
 	ClientConfig c = cfg ? cfg->cfg : ClientConfig();
+	if (c.proxy_credentials) {
+		// Only now is the proxy they are for known.
+		if (!crnet::ValidProxyCredentials(c.proxy,
+						  c.proxy_credentials->first,
+						  c.proxy_credentials->second))
+			return nullptr;
+		c.proxy_user = c.proxy_credentials->first;
+		c.proxy_pass = c.proxy_credentials->second;
+	}
 	return crnet_client::Create(c);
 }
 
@@ -837,6 +841,52 @@ CRNET_API int crnet_request_set_fresh_connection(crnet_request *req,
 		return CRNET_E_INVAL;
 	req->spec.fresh_connection = !!enable;
 	return CRNET_OK;
+}
+
+namespace {
+
+// Credentials as crnet_*_set_proxy_credentials() take them; the proxy's
+// own rules are checked once it is known.
+int CredentialsOf(const void *user, size_t user_len, const void *pass,
+		  size_t pass_len,
+		  std::optional<std::pair<std::string, std::string>> *out)
+{
+	if (!user) {
+		out->reset();
+		return CRNET_OK;
+	}
+	if ((!pass && pass_len) || user_len > 255 || pass_len > 255 ||
+	    (!user_len && pass_len))
+		return CRNET_E_INVAL;
+	out->emplace(std::string(static_cast<const char *>(user), user_len),
+		     pass ? std::string(static_cast<const char *>(pass),
+					pass_len)
+			  : std::string());
+	return CRNET_OK;
+}
+
+} // namespace
+
+CRNET_API int crnet_client_config_set_proxy_credentials(
+	crnet_client_config *cfg, const void *user, size_t user_len,
+	const void *pass, size_t pass_len)
+{
+	if (!cfg)
+		return CRNET_E_INVAL;
+	return CredentialsOf(user, user_len, pass, pass_len,
+			     &cfg->cfg.proxy_credentials);
+}
+
+CRNET_API int crnet_request_set_proxy_credentials(crnet_request *req,
+						  const void *user,
+						  size_t user_len,
+						  const void *pass,
+						  size_t pass_len)
+{
+	if (!req)
+		return CRNET_E_INVAL;
+	return CredentialsOf(user, user_len, pass, pass_len,
+			     &req->spec.proxy_credentials);
 }
 
 CRNET_API int crnet_request_set_proxy(crnet_request *req,

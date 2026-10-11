@@ -81,6 +81,9 @@ struct ClientConfig {
 	std::string proxy_user;
 	std::string proxy_pass;
 	std::string proxy_bypass;	// Chromium bypass rules, "" = none
+	// crnet_client_config_set_proxy_credentials(): replace proxy_user
+	// and proxy_pass when the client is created.
+	std::optional<std::pair<std::string, std::string>> proxy_credentials;
 	std::string user_agent;		// "" = build default
 	std::string sec_ch_ua;		// "" = build default
 	std::string platform;		// "" = the profile's
@@ -118,6 +121,13 @@ struct ProxySpec {
 	bool no_credentials = false;	// "socks5://@host": none, no default
 };
 
+// Whether |user|/|pass| can be sent to |proxy| (a Chromium proxy URI):
+// an empty |user| (no credentials) with an empty |pass|; for SOCKS5, 1
+// to 255 bytes each (RFC 1929); for HTTP(S), UTF-8 and no ':' in |user|
+// (Basic authentication); none for SOCKS4.
+bool ValidProxyCredentials(const std::string &proxy, const std::string &user,
+			   const std::string &pass);
+
 // The proxy chain for a Chromium proxy URI from ParseProxy(), direct for
 // "".
 net::ProxyChain ProxyChainOf(const std::string &proxy);
@@ -148,6 +158,8 @@ struct RequestSpec {
 	bool ws_compression = true;	// offer permessage-deflate
 	uint64_t max_body = 0;
 	std::optional<ProxySpec> proxy;	// unset = the client's
+	// crnet_request_set_proxy_credentials(): replace proxy's.
+	std::optional<std::pair<std::string, std::string>> proxy_credentials;
 	bool fresh_connection = false;
 
 	const std::optional<std::string> *FindHeader(std::string_view name) const;

@@ -778,3 +778,162 @@ TEST(Proxy, Socks5CredentialsArePercentDecoded)
 		EXPECT_EQ(auths[before + i], json::array({Latin1(sent[i]), true})) << i;
 	crnet_client_free(c);
 }
+
+namespace {
+
+int SetRequestCredentials(crnet_request *req, const std::string &user, const std::string &pass)
+{
+	return crnet_request_set_proxy_credentials(req, user.data(), user.size(), pass.data(),
+						   pass.size());
+}
+
+Result GetWithCredentials(crnet_client *c, const std::string &url, const std::string &proxy,
+			  const std::string &user, const std::string &pass)
+{
+	crnet_request *req = crnet_request_new("GET", url.c_str());
+	EXPECT_EQ(crnet_request_set_proxy(req, proxy.c_str()), CRNET_OK);
+	EXPECT_EQ(SetRequestCredentials(req, user, pass), CRNET_OK);
+	Result r;
+	r.rc = crnet_perform(c, req, &r.resp);
+	crnet_request_free(req);
+	return r;
+}
+
+} // namespace
+
+TEST(ProxyCredentials, RawBytesReachASocks5Proxy)
+{
+	const Ports &p = ServerPorts();
+	const std::string url = RemoteOnlyUrl(p.https, "/echo");
+	const std::string bare = "socks5h://127.0.0.1:" + std::to_string(p.socks5_auth);
+	std::string low("crnet-"), high("crnet-:@/?#%3A ");
+	for (int b = 0; b < 128; b++)
+		low += static_cast<char>(b);
+	for (int b = 128; b < 256; b++)
+		high += static_cast<char>(b);
+
+	crnet_client *c = NewTestClient();
+	size_t before = SocksAuths().size();
+	for (const std::string &user : {low, high}) {
+		Result r = GetWithCredentials(c, url, bare, user, std::string("secret"));
+		ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	}
+	json auths = SocksAuths();
+	ASSERT_EQ(auths.size(), before + 2);
+	EXPECT_EQ(auths[before], json::array({Latin1(low), true}));
+	EXPECT_EQ(auths[before + 1], json::array({Latin1(high), true}));
+
+	// Zero length: none at all.
+	EXPECT_EQ(GetWithCredentials(c, url, bare, "", "").net_error(), -199);
+	EXPECT_EQ(SocksGreetings().back(), json::array({0}));
+	crnet_client_free(c);
+}
+
+TEST(ProxyCredentials, ClientCredentialsReplaceTheUrls)
+{
+	const Ports &p = ServerPorts();
+	const std::string url = RemoteOnlyUrl(p.https, "/echo");
+	const std::string user = std::string("crnet-\0raw:", 11);
+	for (bool credentials_first : {false, true}) {
+		crnet_client_config *cfg = crnet_client_config_new();
+		auto set_proxy = [&] {
+			EXPECT_EQ(crnet_client_config_set_proxy(cfg, AuthProxy("crnet-url:secret").c_str()),
+				  CRNET_OK);
+		};
+		if (!credentials_first)
+			set_proxy();
+		EXPECT_EQ(crnet_client_config_set_proxy_credentials(cfg, user.data(), user.size(),
+								     "secret", 6),
+			  CRNET_OK);
+		if (credentials_first)
+			set_proxy();
+		crnet_client *c = NewTestClient(cfg);
+		crnet_client_config_free(cfg);
+		ASSERT_NE(c, nullptr);
+		Result r = Get(c, url);
+		EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+		EXPECT_EQ(SocksAuths().back(), json::array({Latin1(user), true}));
+		crnet_client_free(c);
+	}
+
+	// Zero length: the client sends none.
+	crnet_client_config *cfg = crnet_client_config_new();
+	ASSERT_EQ(crnet_client_config_set_proxy(cfg, AuthProxy("crnet-url:secret").c_str()), CRNET_OK);
+	ASSERT_EQ(crnet_client_config_set_proxy_credentials(cfg, "", 0, nullptr, 0), CRNET_OK);
+	crnet_client *c = NewTestClient(cfg);
+	EXPECT_EQ(Get(c, url).net_error(), -199);
+	EXPECT_EQ(SocksGreetings().back(), json::array({0}));
+	crnet_client_free(c);
+	// NULL: the URL's again.
+	ASSERT_EQ(crnet_client_config_set_proxy_credentials(cfg, nullptr, 0, nullptr, 0), CRNET_OK);
+	c = NewTestClient(cfg);
+	EXPECT_EQ(Get(c, url).rc, CRNET_OK);
+	EXPECT_EQ(SocksAuths().back(), json::array({"crnet-url", true}));
+	crnet_client_free(c);
+	crnet_client_config_free(cfg);
+}
+
+TEST(ProxyCredentials, HttpProxy)
+{
+	const Ports &p = ServerPorts();
+	const std::string proxy = "http://127.0.0.1:" + std::to_string(p.http_proxy);
+	crnet_client *c = NewTestClient();
+	const std::string user = "crnet-\xc3\xa9";	// UTF-8
+	Result r = GetWithCredentials(c, RemoteOnlyUrl(p.https, "/echo"), proxy, user, "secret");
+	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	EXPECT_EQ(HttpProxyAuths().back(), json::array({Latin1(user), true}));
+	// Basic cannot carry ':' in the username, nor Chromium non-UTF-8.
+	for (const std::string &bad : {std::string("crnet:x"), std::string("crnet-\xff")}) {
+		Result b = GetWithCredentials(c, RemoteOnlyUrl(p.https, "/echo"), proxy, bad,
+					      "secret");
+		EXPECT_EQ(b.rc, CRNET_E_INVAL);
+		EXPECT_EQ(b.net_error(), -4);
+	}
+	crnet_client_free(c);
+}
+
+TEST(ProxyCredentials, Validation)
+{
+	const std::string long_name(256, 'u');
+	crnet_client_config *cfg = crnet_client_config_new();
+	EXPECT_EQ(crnet_client_config_set_proxy_credentials(cfg, long_name.data(), 256, "p", 1),
+		  CRNET_E_INVAL);
+	EXPECT_EQ(crnet_client_config_set_proxy_credentials(cfg, "u", 1, long_name.data(), 256),
+		  CRNET_E_INVAL);
+	EXPECT_EQ(crnet_client_config_set_proxy_credentials(cfg, "", 0, "p", 1), CRNET_E_INVAL);
+	EXPECT_EQ(crnet_client_config_set_proxy_credentials(cfg, "u", 1, nullptr, 1), CRNET_E_INVAL);
+	EXPECT_EQ(crnet_client_config_set_proxy_credentials(nullptr, "u", 1, "p", 1), CRNET_E_INVAL);
+
+	// Checked against the proxy when the client is made.
+	struct {
+		const char *proxy, *user, *pass;
+	} refused[] = {
+		{"socks5://127.0.0.1:1080", "u", ""},	// RFC 1929: 1 to 255 bytes
+		{"socks4://127.0.0.1:1080", "u", "p"},
+		{"http://127.0.0.1:3128", "u:x", "p"},
+		{"http://127.0.0.1:3128", "\xff", "p"},
+		{nullptr, "u", "p"},			// no proxy
+	};
+	for (const auto &t : refused) {
+		crnet_client_config *c = crnet_client_config_new();
+		ASSERT_EQ(crnet_client_config_set_proxy(c, t.proxy), CRNET_OK);
+		ASSERT_EQ(crnet_client_config_set_proxy_credentials(c, t.user, strlen(t.user),
+								     t.pass, strlen(t.pass)),
+			  CRNET_OK);
+		EXPECT_EQ(crnet_client_new(c), nullptr) << (t.proxy ? t.proxy : "direct") << " "
+							<< t.user;
+		crnet_client_config_free(c);
+	}
+	crnet_client_config_free(cfg);
+
+	// A request's credentials are for its own proxy, so it needs one.
+	crnet_client *client = NewTestClient();
+	crnet_request *req = crnet_request_new("GET", HttpsUrl("/echo").c_str());
+	ASSERT_EQ(SetRequestCredentials(req, "u", "p"), CRNET_OK);
+	Result r;
+	r.rc = crnet_perform(client, req, &r.resp);
+	EXPECT_EQ(r.rc, CRNET_E_INVAL);
+	EXPECT_EQ(crnet_request_set_proxy_credentials(nullptr, "u", 1, "p", 1), CRNET_E_INVAL);
+	crnet_request_free(req);
+	crnet_client_free(client);
+}
