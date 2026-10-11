@@ -297,6 +297,47 @@ void crnet_transfer::StartOnNetworkThread()
 	}
 }
 
+void crnet_transfer::SetProgressCallback(crnet_progress_cb cb,
+					 uint64_t interval_ms)
+{
+	runner_->PostTask(
+		FROM_HERE,
+		base::BindOnce(
+			[](scoped_refptr<crnet_transfer> t, crnet_progress_cb cb,
+			   uint64_t interval_ms) {
+				if (t->finished_)
+					return;
+				t->progress_cb_ = cb;
+				if (!cb) {
+					t->progress_timer_.Stop();
+					return;
+				}
+				t->progress_timer_.Start(
+					FROM_HERE,
+					base::Milliseconds(std::min<uint64_t>(
+						interval_ms,
+						std::numeric_limits<int64_t>::max())),
+					base::BindRepeating(
+						&crnet_transfer::ReportProgress,
+						base::Unretained(t.get())));
+			},
+			base::WrapRefCounted(this), cb, interval_ms));
+}
+
+void crnet_transfer::ReportProgress()
+{
+	if (upload_timer_.IsRunning())
+		UpdateUploadProgress();
+	std::array<int64_t, CRNET_PROGRESS_COUNT> now;
+	for (int i = 0; i < CRNET_PROGRESS_COUNT; i++)
+		now[i] = progress(static_cast<crnet_progress>(i));
+	if (!progress_cb_ || (reported_once_ && now == reported_))
+		return;
+	reported_ = now;
+	reported_once_ = true;
+	progress_cb_(this, user_data_);
+}
+
 void crnet_transfer::UpdateUploadProgress()
 {
 	if (!request_)
@@ -669,6 +710,10 @@ void crnet_transfer::Finish(int err, int net_error)
 
 	// Keep ourselves alive through the callback and the hand-offs below.
 	scoped_refptr<crnet_transfer> self(this);
+	if (progress_timer_.IsRunning()) {
+		progress_timer_.Stop();
+		ReportProgress();
+	}
 	result_ = err;
 	if (download_)
 		download_->Finish(err);

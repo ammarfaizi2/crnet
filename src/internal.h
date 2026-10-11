@@ -285,6 +285,8 @@ public:
 	// Any thread: continue a download stopped by a full buffer.
 	void ResumeDownload();
 	// Any thread.
+	void SetProgressCallback(crnet_progress_cb cb, uint64_t interval_ms);
+	// Any thread.
 	int64_t progress(crnet_progress which) const
 	{
 		return progress_[which].load(std::memory_order_relaxed);
@@ -334,6 +336,8 @@ private:
 		progress_[which].store(v, std::memory_order_relaxed);
 	}
 	void UpdateUploadProgress();
+	// Calls the progress callback if a value changed since its last call.
+	void ReportProgress();
 	void ReadMore();
 	// Returns true if reading should continue.
 	bool HandleRead(int bytes);
@@ -359,6 +363,10 @@ private:
 	base::OneShotTimer timer_;
 	base::RepeatingTimer upload_timer_;
 	base::OneShotTimer connect_timer_;
+	base::RepeatingTimer progress_timer_;
+	crnet_progress_cb progress_cb_ = nullptr;
+	std::array<int64_t, CRNET_PROGRESS_COUNT> reported_{};
+	bool reported_once_ = false;
 	bool started_reading_ = false;
 	bool read_pending_ = false;
 	bool paused_ = false;

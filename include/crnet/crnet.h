@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 18
+#define CRNET_VERSION_MINOR 19
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.18.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.19.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -744,6 +744,24 @@ typedef enum crnet_progress {
 /* -1 for an invalid |which|. */
 CRNET_API int64_t crnet_transfer_progress(const crnet_transfer *t,
 					  crnet_progress which);
+
+/*
+ * Progress notifications instead of polling: |cb| is called on the
+ * client's network thread, at most every |interval_ms| (at least 1)
+ * while the transfer runs and only when a crnet_transfer_progress()
+ * value changed, and once more before on_complete if anything changed
+ * since. Read the values with crnet_transfer_progress(); |user_data| is
+ * the one given to crnet_start(). The upload position is sampled every
+ * 100 ms (as in Chrome), or at each call if more often. Thread-safe;
+ * call it right after crnet_start() (progress made before it is simply
+ * reported by the first call). NULL removes it. CRNET_E_STATE once the
+ * transfer finished.
+ */
+#define CRNET_HAS_PROGRESS_CALLBACK 1
+typedef void (*crnet_progress_cb)(crnet_transfer *t, void *user_data);
+CRNET_API int crnet_transfer_set_progress_callback(crnet_transfer *t,
+						   crnet_progress_cb cb,
+						   uint64_t interval_ms);
 
 /*
  * Wait until the response headers have arrived (CRNET_OK; status and

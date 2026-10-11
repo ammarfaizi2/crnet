@@ -99,6 +99,25 @@ TEST(Cpp, AsyncHandlers)
 	EXPECT_EQ(err, CRNET_OK);
 }
 
+TEST(Cpp, ProgressHandler)
+{
+	crnet::Client c = TestClient();
+	std::atomic<int> calls{0};
+	std::atomic<int64_t> last{-1};
+	crnet::Handlers h;
+	h.on_progress = [&](crnet_transfer *t) {
+		calls++;
+		last = crnet_transfer_progress(t, CRNET_PROGRESS_DOWNLOAD_DECODED);
+	};
+	h.progress_interval_ms = 10;
+	crnet::Transfer t = c.start(
+		crnet::Request(HttpsUrl("/stream/100000?chunk=10000&delay_ms=20")), std::move(h));
+	EXPECT_EQ(t.wait(), CRNET_OK);
+	EXPECT_GE(calls, 2);
+	EXPECT_EQ(last, 100000);
+	EXPECT_EQ(t.progress(CRNET_PROGRESS_DOWNLOAD_DECODED), 100000);
+}
+
 TEST(Cpp, TransferDestructorCancels)
 {
 	crnet::Client c = TestClient();

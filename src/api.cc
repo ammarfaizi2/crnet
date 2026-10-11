@@ -708,6 +708,18 @@ CRNET_API int crnet_request_set_max_redirects(crnet_request *req,
 	return CRNET_OK;
 }
 
+CRNET_API int crnet_transfer_set_progress_callback(crnet_transfer *t,
+						   crnet_progress_cb cb,
+						   uint64_t interval_ms)
+{
+	if (!t || (cb && !interval_ms))
+		return CRNET_E_INVAL;
+	if (t->result() != CRNET_E_PENDING)
+		return CRNET_E_STATE;
+	t->SetProgressCallback(cb, interval_ms);
+	return CRNET_OK;
+}
+
 CRNET_API int crnet_request_set_ws_compression(crnet_request *req, int enable)
 {
 	if (!req)

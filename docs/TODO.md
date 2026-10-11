@@ -20,20 +20,6 @@ How to use it:
   macro and a minor version bump (see "Versions and feature tests" in
   [api.md](api.md)).
 
-## Errors and diagnostics
-
-### progress-callback
-
-An `on_progress` callback, as an alternative to polling
-`crnet_transfer_progress()`.
-
-- Problem: `crnet_callbacks` is a plain struct with no size or version
-  field, so adding a member breaks programs built against older
-  headers (crnet would read past the end of their smaller struct).
-- Needs a versioned way to pass callbacks first (a size field, or a
-  setter per callback), which would also serve any later callback.
-  Rate-limit it (Chrome reports upload progress every 100 ms).
-
 ## Connections and proxies
 
 ### per-request-proxy

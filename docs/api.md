@@ -314,6 +314,24 @@ counts from any thread, without locking:
 
 The values stay readable after the transfer finished.
 
+To be told instead of polling, register a callback right after
+`crnet_start()`:
+
+```c
+static void on_progress(crnet_transfer *t, void *ud)
+{
+	printf("%lld/%lld\n",
+	       (long long)crnet_transfer_progress(t, CRNET_PROGRESS_DOWNLOAD_RECEIVED),
+	       (long long)crnet_transfer_progress(t, CRNET_PROGRESS_DOWNLOAD_TOTAL));
+}
+
+crnet_transfer_set_progress_callback(t, on_progress, 100);   /* ms */
+```
+
+It runs on the network thread at most once per interval, only when a
+value changed, and once more right before `on_complete`. In C++, set
+`Handlers::on_progress` (and `progress_interval_ms`).
+
 ## Completion queue
 
 A queue lets one application thread run many transfers and collect the
@@ -500,6 +518,7 @@ feature can be used:
 | `CRNET_HAS_WS_IDLE_TIMEOUT` | 0.16.0 | `crnet_ws_set_idle_timeout()` |
 | `CRNET_HAS_SOCKS_ERRORS` | 0.17.0 | distinct SOCKS5 net errors, `crnet_response_socks_reply()` |
 | `CRNET_HAS_WS_COMPRESSION_SWITCH` | 0.18.0 | `crnet_request_set_ws_compression()` |
+| `CRNET_HAS_PROGRESS_CALLBACK` | 0.19.0 | `crnet_transfer_set_progress_callback()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

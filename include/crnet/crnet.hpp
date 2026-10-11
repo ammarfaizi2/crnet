@@ -228,6 +228,10 @@ struct Handlers {
 	// Return false to abort. When set, the body is not accumulated.
 	std::function<bool(std::string_view)> on_data;
 	std::function<void(int error, const ResponseView &)> on_complete;
+	// Called with the transfer when its progress changed, at most every
+	// progress_interval_ms (see crnet_transfer_set_progress_callback()).
+	std::function<void(crnet_transfer *)> on_progress;
+	uint64_t progress_interval_ms = 100;
 };
 
 class Transfer {
@@ -480,6 +484,13 @@ public:
 		crnet_transfer *t = crnet_start(get(), req.get(), &cb, h.get());
 		if (!t)
 			throw Error(CRNET_E_INVAL, "crnet_start failed");
+		if (h->on_progress)
+			crnet_transfer_set_progress_callback(
+				t,
+				[](crnet_transfer *t, void *ud) {
+					static_cast<Handlers *>(ud)->on_progress(t);
+				},
+				h->progress_interval_ms);
 		return Transfer(t, std::move(h));
 	}
 

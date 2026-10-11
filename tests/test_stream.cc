@@ -7,8 +7,10 @@
 #include <poll.h>
 #include <unistd.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <random>
 #include <thread>
 
@@ -761,6 +763,107 @@ TEST_F(ClientTest, WriteFdOnlyForStreamedUploads)
 	crnet_transfer *t = StartDownload(client_, HttpsUrl("/echo"));
 	EXPECT_EQ(crnet_transfer_write_fd(t), -1);
 	EXPECT_EQ(crnet_transfer_write_fd(nullptr), -1);
+	crnet_transfer_wait(t, 10000);
+	crnet_transfer_free(t);
+}
+
+// ------------------------------------------------------------------
+// Progress callback
+// ------------------------------------------------------------------
+
+namespace {
+
+struct ProgressLog {
+	std::mutex mu;
+	std::vector<std::array<int64_t, CRNET_PROGRESS_COUNT>> calls;
+	std::atomic<bool> completed{false};
+	bool called_after_complete = false;
+};
+
+void LogProgress(crnet_transfer *t, void *ud)
+{
+	auto *log = static_cast<ProgressLog *>(ud);
+	std::array<int64_t, CRNET_PROGRESS_COUNT> v;
+	for (int i = 0; i < CRNET_PROGRESS_COUNT; i++)
+		v[i] = crnet_transfer_progress(t, static_cast<crnet_progress>(i));
+	std::lock_guard<std::mutex> lk(log->mu);
+	if (log->completed)
+		log->called_after_complete = true;
+	log->calls.push_back(v);
+}
+
+const crnet_callbacks kLogComplete = {
+	nullptr, nullptr,
+	[](crnet_transfer *, int, const crnet_response *, void *ud) {
+		static_cast<ProgressLog *>(ud)->completed = true;
+	}};
+
+} // namespace
+
+TEST_F(ClientTest, ProgressCallbackDuringADownload)
+{
+	ProgressLog log;
+	crnet_request *req = crnet_request_new(
+		"GET", HttpsUrl("/stream/200000?chunk=20000&delay_ms=30").c_str());
+	crnet_transfer *t = crnet_start(client_, req, &kLogComplete, &log);
+	crnet_request_free(req);
+	ASSERT_EQ(crnet_transfer_set_progress_callback(t, LogProgress, 20), CRNET_OK);
+	ASSERT_EQ(crnet_transfer_wait(t, 10000), CRNET_OK);
+	std::lock_guard<std::mutex> lk(log.mu);
+	ASSERT_GE(log.calls.size(), 3u) << "~300 ms of body at 20 ms intervals";
+	for (size_t i = 1; i < log.calls.size(); i++) {
+		EXPECT_NE(log.calls[i], log.calls[i - 1]) << "called without a change";
+		EXPECT_GE(log.calls[i][CRNET_PROGRESS_DOWNLOAD_DECODED],
+			  log.calls[i - 1][CRNET_PROGRESS_DOWNLOAD_DECODED]);
+	}
+	// The last call, before on_complete, has the final numbers.
+	EXPECT_EQ(log.calls.back()[CRNET_PROGRESS_DOWNLOAD_DECODED], 200000);
+	EXPECT_FALSE(log.called_after_complete);
+	EXPECT_EQ(crnet_transfer_set_progress_callback(t, LogProgress, 20), CRNET_E_STATE);
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, ProgressCallbackDuringAnUpload)
+{
+	const std::string data = RandomData(8 * 1024 * 1024, 41);
+	ProgressLog log;
+	crnet_request *req = crnet_request_new("POST", HttpsUrl("/upload-digest").c_str());
+	crnet_request_set_body_stream(req, data.size());
+	crnet_transfer *t = crnet_start(client_, req, nullptr, &log);
+	crnet_request_free(req);
+	ASSERT_EQ(crnet_transfer_set_progress_callback(t, LogProgress, 10), CRNET_OK);
+	WriteAll(t, data);
+	Digest(t);
+	std::lock_guard<std::mutex> lk(log.mu);
+	ASSERT_FALSE(log.calls.empty());
+	EXPECT_EQ(log.calls.back()[CRNET_PROGRESS_UPLOAD_SENT],
+		  static_cast<int64_t>(data.size()));
+	EXPECT_EQ(log.calls.back()[CRNET_PROGRESS_UPLOAD_TOTAL],
+		  static_cast<int64_t>(data.size()));
+	crnet_transfer_free(t);
+}
+
+// Nothing changes while the server thinks: no calls beyond the first.
+TEST_F(ClientTest, ProgressCallbackOnlyOnChange)
+{
+	ProgressLog log;
+	crnet_request *req = crnet_request_new("GET", HttpsUrl("/delay/500").c_str());
+	crnet_transfer *t = crnet_start(client_, req, nullptr, &log);
+	crnet_request_free(req);
+	ASSERT_EQ(crnet_transfer_set_progress_callback(t, LogProgress, 5), CRNET_OK);
+	ASSERT_EQ(crnet_transfer_wait(t, 10000), CRNET_OK);
+	std::lock_guard<std::mutex> lk(log.mu);
+	EXPECT_LE(log.calls.size(), 4u) << "100 ticks, only the changes count";
+	EXPECT_GE(log.calls.size(), 1u);
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, ProgressCallbackArguments)
+{
+	crnet_transfer *t = StartDownload(client_, HttpsUrl("/delay/300"));
+	EXPECT_EQ(crnet_transfer_set_progress_callback(t, LogProgress, 0), CRNET_E_INVAL);
+	EXPECT_EQ(crnet_transfer_set_progress_callback(nullptr, LogProgress, 10), CRNET_E_INVAL);
+	EXPECT_EQ(crnet_transfer_set_progress_callback(t, nullptr, 0), CRNET_OK);
 	crnet_transfer_wait(t, 10000);
 	crnet_transfer_free(t);
 }
