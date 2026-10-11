@@ -626,6 +626,34 @@ TEST(WebSocket, ThroughHttpProxyWithAuth)
 	crnet_client_free(c);
 }
 
+TEST(WebSocket, ThroughARequestsProxy)
+{
+	crnet_client *c = NewTestClient();
+	std::string url = "wss://www.crnet-test:" +
+			  std::to_string(ServerPorts().https_h1) + "/ws/echo";
+	crnet_ws *ws = Connect(c, url, nullptr, nullptr, nullptr,
+			       [](crnet_request *r) {
+				       std::string p = "http://crnet:secret@127.0.0.1:" +
+						       std::to_string(ServerPorts().http_proxy);
+				       EXPECT_EQ(crnet_request_set_proxy(r, p.c_str()), CRNET_OK);
+			       });
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	crnet_ws_send(ws, CRNET_WS_TEXT, "via request proxy", 17);
+	EXPECT_EQ(RecvText(ws), "via request proxy");
+	crnet_ws_free(ws);
+
+	// Other credentials for the now pinned proxy.
+	ws = Connect(c, url, nullptr, nullptr, nullptr, [](crnet_request *r) {
+		std::string p = "http://crnet:other@127.0.0.1:" +
+				std::to_string(ServerPorts().http_proxy);
+		crnet_request_set_proxy(r, p.c_str());
+	});
+	EXPECT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_E_INVAL);
+	EXPECT_EQ(crnet_ws_net_error(ws), -4);
+	crnet_ws_free(ws);
+	crnet_client_free(c);
+}
+
 TEST_F(ClientTest, WsCloseWithoutStatusCode)
 {
 	crnet_ws *ws = Connect(client_, WsUrl("/ws/echo?emptyclose=1"), nullptr, nullptr);

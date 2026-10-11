@@ -12,6 +12,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -31,6 +32,7 @@
 #include "crnet/local_address.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/base/proxy_chain.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/http/http_request_headers.h"
@@ -107,6 +109,17 @@ struct ClientConfig {
 	std::string state_dir;		// "" = keep nothing across runs
 };
 
+// A proxy chosen for one request (crnet_request_set_proxy()).
+struct ProxySpec {
+	std::string proxy;	// Chromium proxy URI ("socks5://h:p"), "" = direct
+	std::string user;
+	std::string pass;
+};
+
+// The proxy chain for a Chromium proxy URI from ParseProxy(), direct for
+// "".
+net::ProxyChain ProxyChainOf(const std::string &proxy);
+
 struct RequestSpec {
 	std::string method = "GET";
 	GURL url;
@@ -132,6 +145,7 @@ struct RequestSpec {
 	bool decompress = true;
 	bool ws_compression = true;	// offer permessage-deflate
 	uint64_t max_body = 0;
+	std::optional<ProxySpec> proxy;	// unset = the client's
 
 	const std::optional<std::string> *FindHeader(std::string_view name) const;
 };
@@ -382,6 +396,9 @@ private:
 	bool paused_ = false;
 	bool finished_ = false;
 	bool proxy_auth_tried_ = false;
+	// Credentials for the request's proxy's auth challenges.
+	std::string proxy_user_;
+	std::string proxy_pass_;
 	bool download_full_ = false;
 	uint64_t body_bytes_ = 0;
 	scoped_refptr<base::TaskRunner> file_runner_;
@@ -425,6 +442,15 @@ public:
 	// Network thread only.
 	net::URLRequestContext *context() const { return context_.get(); }
 	void TransferFinished(crnet_transfer *t);
+	// The credentials a request uses for |proxy| (a Chromium proxy URI):
+	// a proxy has one set per client, from the client's configuration or
+	// from the first request that names some. Empty |*user| takes the
+	// pinned ones, if any; others pin theirs. False when they differ
+	// from the pinned ones, or another client uses other SOCKS5
+	// credentials for the proxy: pooled connections and Chromium's proxy
+	// auth cache would otherwise mix the identities.
+	bool PinProxyCredentials(const std::string &proxy, std::string *user,
+				 std::string *pass);
 	void WebSocketFinished(crnet_ws *ws);
 
 	// Blocking helpers (not on a network thread).
@@ -461,6 +487,11 @@ private:
 	// "host:port" of the SOCKS5 proxy whose credentials this client
 	// registered (crnet/socks_auth.h), or "".
 	std::string socks_key_;
+	// Network thread only: proxy URI -> (user, password), and the SOCKS5
+	// keys registered for requests' credentials (unregistered in
+	// Destroy()).
+	std::map<std::string, std::pair<std::string, std::string>> proxy_creds_;
+	std::vector<std::string> request_socks_keys_;
 	std::unique_ptr<net::TransportSecurityPersister> hsts_persister_;
 	std::unique_ptr<net::FileNetLogObserver> netlog_;
 	scoped_refptr<net::CertNetFetcherURLRequest> cert_fetcher_;

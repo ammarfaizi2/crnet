@@ -50,6 +50,12 @@ struct Result {
 
 	Result() = default;
 	Result(Result &&o) noexcept : rc(o.rc), resp(std::exchange(o.resp, nullptr)) {}
+	Result &operator=(Result &&o) noexcept
+	{
+		std::swap(rc, o.rc);
+		std::swap(resp, o.resp);	// o frees the old response
+		return *this;
+	}
 	~Result() { crnet_response_free(resp); }
 
 	int status() const { return crnet_response_status(resp); }

@@ -203,6 +203,17 @@ void crnet_transfer::StartOnNetworkThread()
 		return;
 
 	const crnet::ClientConfig &cfg = client_->config();
+	proxy_user_ = cfg.proxy_user;
+	proxy_pass_ = cfg.proxy_pass;
+	if (spec_.proxy) {
+		proxy_user_ = spec_.proxy->user;
+		proxy_pass_ = spec_.proxy->pass;
+		if (!client_->PinProxyCredentials(spec_.proxy->proxy,
+						  &proxy_user_, &proxy_pass_)) {
+			Finish(CRNET_E_INVAL, net::ERR_INVALID_ARGUMENT);
+			return;
+		}
+	}
 	bh_ = crnet::BuildBrowserHeaders(cfg, spec_);
 
 	request_ = client_->context()->CreateRequest(
@@ -211,6 +222,9 @@ void crnet_transfer::StartOnNetworkThread()
 	crnet::HeaderHook::Attach(request_.get(),
 				  std::make_unique<TransferHeaderHook>(this));
 	request_->set_method(spec_.method);
+	if (spec_.proxy)
+		request_->set_proxy_chain_override(
+			crnet::ProxyChainOf(spec_.proxy->proxy));
 	request_->SetExtraRequestHeaders(bh_.extra);
 	if (bh_.referrer) {
 		request_->set_referrer_policy(net::ReferrerPolicy::NEVER_CLEAR);
@@ -535,13 +549,11 @@ void crnet_transfer::OnReceivedRedirect(net::URLRequest *request,
 void crnet_transfer::OnAuthRequired(net::URLRequest *request,
 				    const net::AuthChallengeInfo &auth_info)
 {
-	const crnet::ClientConfig &cfg = client_->config();
-	if (auth_info.is_proxy && !proxy_auth_tried_ &&
-	    !cfg.proxy_user.empty()) {
+	if (auth_info.is_proxy && !proxy_auth_tried_ && !proxy_user_.empty()) {
 		proxy_auth_tried_ = true;
 		request->SetAuth(net::AuthCredentials(
-			base::UTF8ToUTF16(cfg.proxy_user),
-			base::UTF8ToUTF16(cfg.proxy_pass)));
+			base::UTF8ToUTF16(proxy_user_),
+			base::UTF8ToUTF16(proxy_pass_)));
 		return;
 	}
 	// Deliver the 401/407 response as is.

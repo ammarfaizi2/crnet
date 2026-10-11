@@ -51,11 +51,14 @@ bool ValidToken(const char *s)
 
 // Proxy URL -> Chromium proxy rules. Credentials are split off for the
 // proxy auth handler (Chromium never takes them from the rules).
-int ParseProxy(const char *url, ClientConfig *cfg)
+// A proxy URL as crnet_client_config_set_proxy() takes it, into a
+// Chromium proxy URI ("" for direct) and credentials.
+int ParseProxy(const char *url, std::string *proxy, std::string *user,
+	       std::string *pass)
 {
-	cfg->proxy.clear();
-	cfg->proxy_user.clear();
-	cfg->proxy_pass.clear();
+	proxy->clear();
+	user->clear();
+	pass->clear();
 	if (!url || !*url)
 		return CRNET_OK;
 
@@ -85,19 +88,19 @@ int ParseProxy(const char *url, ClientConfig *cfg)
 	if (u.has_username()) {
 		if (scheme == "socks4")
 			return CRNET_E_INVAL;	// SOCKS4 has no passwords
-		cfg->proxy_user = base::UnescapeURLComponent(
-			u.username(), base::UnescapeRule::NORMAL);
-		cfg->proxy_pass = base::UnescapeURLComponent(
-			u.password(), base::UnescapeRule::NORMAL);
+		*user = base::UnescapeURLComponent(u.username(),
+						   base::UnescapeRule::NORMAL);
+		*pass = base::UnescapeURLComponent(u.password(),
+						   base::UnescapeRule::NORMAL);
 		// RFC 1929 sends each in a length byte.
 		if (scheme == "socks5" &&
-		    (cfg->proxy_user.empty() || cfg->proxy_user.size() > 255 ||
-		     cfg->proxy_pass.empty() || cfg->proxy_pass.size() > 255))
+		    (user->empty() || user->size() > 255 || pass->empty() ||
+		     pass->size() > 255))
 			return CRNET_E_INVAL;
 	}
-	cfg->proxy = base::StrCat({scheme, "://", u.host()});
+	*proxy = base::StrCat({scheme, "://", u.host()});
 	if (u.has_port())
-		base::StrAppend(&cfg->proxy, {":", u.port()});
+		base::StrAppend(proxy, {":", u.port()});
 	return CRNET_OK;
 }
 
@@ -206,10 +209,13 @@ CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
-	ClientConfig tmp = cfg->cfg;
-	int rc = ParseProxy(proxy_url, &tmp);
-	if (rc == CRNET_OK)
-		cfg->cfg = std::move(tmp);
+	std::string proxy, user, pass;
+	int rc = ParseProxy(proxy_url, &proxy, &user, &pass);
+	if (rc == CRNET_OK) {
+		cfg->cfg.proxy = std::move(proxy);
+		cfg->cfg.proxy_user = std::move(user);
+		cfg->cfg.proxy_pass = std::move(pass);
+	}
 	return rc;
 }
 
@@ -815,6 +821,24 @@ CRNET_API int crnet_request_set_max_body_size(crnet_request *req,
 	if (!req)
 		return CRNET_E_INVAL;
 	req->spec.max_body = max_bytes;
+	return CRNET_OK;
+}
+
+CRNET_API int crnet_request_set_proxy(crnet_request *req,
+				      const char *proxy_url)
+{
+	if (!req)
+		return CRNET_E_INVAL;
+	if (!proxy_url) {
+		req->spec.proxy.reset();
+		return CRNET_OK;
+	}
+	crnet::ProxySpec p;
+	if (!*proxy_url ||
+	    ParseProxy(proxy_url, &p.proxy, &p.user, &p.pass) != CRNET_OK ||
+	    !crnet::ProxyChainOf(p.proxy).IsValid())
+		return CRNET_E_INVAL;
+	req->spec.proxy = std::move(p);
 	return CRNET_OK;
 }
 

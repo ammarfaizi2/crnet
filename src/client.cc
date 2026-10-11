@@ -25,6 +25,7 @@
 #include "crnet/websocket.h"
 #include "net/base/features.h"
 #include "net/base/network_delegate_impl.h"
+#include "net/base/proxy_string_util.h"
 #include "net/cert/caching_cert_verifier.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_proc.h"
@@ -278,11 +279,57 @@ void SignalEvent(base::WaitableEvent *ev)
 	ev->Signal();
 }
 
+// "socks5://h" and "socks5://h:1080" name one proxy.
+std::string ProxyKey(const std::string &proxy)
+{
+	return net::ProxyServerToProxyUri(net::ProxyUriToProxyServer(
+		proxy, net::ProxyServer::SCHEME_HTTP));
+}
+
 } // namespace
+
+net::ProxyChain crnet::ProxyChainOf(const std::string &proxy)
+{
+	if (proxy.empty())
+		return net::ProxyChain::Direct();
+	return net::ProxyUriToProxyChain(proxy, net::ProxyServer::SCHEME_HTTP);
+}
 
 crnet_client::crnet_client(const ClientConfig &cfg)
 	: cfg_(cfg), thread_("crnet-io")
 {
+	// The configured proxy's credentials come first (its SOCKS5 key is
+	// registered in Create()).
+	if (!cfg.proxy.empty() && !cfg.proxy_user.empty())
+		proxy_creds_[ProxyKey(cfg.proxy)] = {cfg.proxy_user,
+						     cfg.proxy_pass};
+}
+
+bool crnet_client::PinProxyCredentials(const std::string &proxy,
+				       std::string *user, std::string *pass)
+{
+	DCHECK(IsNetworkThread());
+	if (proxy.empty())
+		return true;
+	const std::string key = ProxyKey(proxy);
+	auto it = proxy_creds_.find(key);
+	if (user->empty()) {
+		if (it != proxy_creds_.end()) {
+			*user = it->second.first;
+			*pass = it->second.second;
+		}
+		return true;
+	}
+	if (it != proxy_creds_.end())
+		return it->second == std::make_pair(*user, *pass);
+	std::string socks_key = crnet::SocksProxyKey(proxy);
+	if (!socks_key.empty()) {
+		if (!crnet::RegisterSocksCredentials(socks_key, *user, *pass))
+			return false;
+		request_socks_keys_.push_back(std::move(socks_key));
+	}
+	proxy_creds_[key] = {*user, *pass};
+	return true;
 }
 
 crnet_client::~crnet_client() = default;
@@ -461,6 +508,8 @@ void crnet_client::Destroy()
 		crnet::FlushStateRunner(state_runner_.get());
 	if (!socks_key_.empty())
 		crnet::UnregisterSocksCredentials(socks_key_);
+	for (const std::string &key : request_socks_keys_)
+		crnet::UnregisterSocksCredentials(key);
 	delete this;
 }
 

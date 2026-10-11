@@ -130,6 +130,8 @@ private:
 	bool paused_ = false;
 	bool reading_stopped_ = false;
 	bool proxy_auth_tried_ = false;
+	std::string proxy_user_;
+	std::string proxy_pass_;
 	crnet_ws_msg_type assembling_type_ = CRNET_WS_TEXT;
 	std::string assembling_;
 	// Messages that arrived while paused (callback mode).

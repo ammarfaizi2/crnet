@@ -97,6 +97,9 @@ public:
 
 	void OnCreateURLRequest(net::URLRequest *request) override
 	{
+		if (ws_->spec_.proxy)
+			request->set_proxy_chain_override(
+				crnet::ProxyChainOf(ws_->spec_.proxy->proxy));
 		crnet::HeaderHook::Attach(
 			request, std::make_unique<WsHeaderHook>(
 					 ws_->headers_.suppressed,
@@ -175,10 +178,9 @@ public:
 		base::OnceCallback<void(const net::AuthCredentials *)> callback,
 		std::optional<net::AuthCredentials> *credentials) override
 	{
-		const crnet::ClientConfig &cfg = ws_->client_->config();
 		*credentials = std::nullopt;
 		if (!auth_info.is_proxy || ws_->proxy_auth_tried_ ||
-		    cfg.proxy_user.empty())
+		    ws_->proxy_user_.empty())
 			return net::OK;	// deliver the 401/407 as a failure
 
 		// WebSocketStream ignores synchronously returned credentials;
@@ -186,8 +188,8 @@ public:
 		// handshake's delegate. That delegate lives as long as the
 		// channel, so only run it while the socket is unfinished.
 		ws_->proxy_auth_tried_ = true;
-		net::AuthCredentials creds(base::UTF8ToUTF16(cfg.proxy_user),
-					   base::UTF8ToUTF16(cfg.proxy_pass));
+		net::AuthCredentials creds(base::UTF8ToUTF16(ws_->proxy_user_),
+					   base::UTF8ToUTF16(ws_->proxy_pass_));
 		ws_->runner_->PostTask(
 			FROM_HERE,
 			base::BindOnce(
@@ -496,6 +498,19 @@ void crnet_ws::StartOnNetworkThread()
 	DCHECK(runner_->BelongsToCurrentThread());
 	if (finished_)
 		return;
+
+	proxy_user_ = client_->config().proxy_user;
+	proxy_pass_ = client_->config().proxy_pass;
+	if (spec_.proxy) {
+		proxy_user_ = spec_.proxy->user;
+		proxy_pass_ = spec_.proxy->pass;
+		if (!client_->PinProxyCredentials(spec_.proxy->proxy,
+						  &proxy_user_, &proxy_pass_)) {
+			FailOnNetworkThread(CRNET_E_INVAL,
+					    net::ERR_INVALID_ARGUMENT);
+			return;
+		}
+	}
 
 	channel_ = std::make_unique<net::WebSocketChannel>(
 		std::make_unique<WsEventAdapter>(this), client_->context());

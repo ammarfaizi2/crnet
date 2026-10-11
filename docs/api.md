@@ -135,6 +135,14 @@ crnet_request_set_connect_timeout(req, 3000);          /* overrides the client d
   [Responses](#responses).
 - `crnet_request_set_max_body_size()` aborts with `CRNET_E_TOO_LARGE`.
 - `crnet_request_set_priority()` overrides the HTTP/2/3 priority.
+- `crnet_request_set_proxy(req, "socks5h://10.0.0.7:1080")` sends this
+  request (and its redirects) through another proxy than the client's,
+  or direct with `direct://`, ignoring the bypass rules. Requests through
+  different proxies never share a connection but do share the client's
+  cookies and cache, so one client can spread its requests over many
+  egress proxies. Within a client a proxy has one set of credentials
+  (the client's, or the first request's that names some); a request
+  naming other ones for it fails with `CRNET_E_INVAL`.
 
 A request object is plain data and can be reused and modified after it
 was started; each start copies it. Requests with `ws://`/`wss://` URLs
@@ -548,6 +556,7 @@ feature can be used:
 | `CRNET_HAS_LOCAL_ADDRESS` | 0.23.0 | `crnet_client_config_set_local_address()` |
 | `CRNET_HAS_BIND_INTERFACE` | 0.24.0 | `crnet_client_config_set_bind_interface()` |
 | `CRNET_HAS_WAIT_FDS` | 0.25.0 | `crnet_transfer_response_fd()`, `_done_fd()`, `crnet_ws_open_fd()`, `_closed_fd()` |
+| `CRNET_HAS_REQUEST_PROXY` | 0.26.0 | `crnet_request_set_proxy()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

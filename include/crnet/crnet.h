@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 25
+#define CRNET_VERSION_MINOR 26
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -689,6 +689,29 @@ CRNET_API int crnet_request_set_connect_timeout(crnet_request *req,
  * crnet_response_content_decoded() tells.
  */
 CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable);
+
+/*
+ * A proxy for this request only (HTTP or WebSocket), in the syntax of
+ * crnet_client_config_set_proxy(); "direct://" for none. NULL (default)
+ * uses the client's proxy. It replaces the client's proxy and bypass
+ * rules for every destination of the request, redirects included, with
+ * no fallback. The request still shares the client's cookies, cache and
+ * connections through the same proxy; connections through different
+ * proxies are never shared. CRNET_E_INVAL for a malformed URL or "".
+ *
+ * Within a client, a proxy has one set of credentials: the client's own
+ * for its configured proxy, or else those of the first request that
+ * names the proxy with credentials. A request naming the proxy without
+ * credentials uses those. One naming different ones fails with
+ * CRNET_E_INVAL and net error ERR_INVALID_ARGUMENT (-4): its connections
+ * would be pooled with, and Chromium's proxy auth cache would answer it
+ * as, the first identity. Use a client per identity instead. SOCKS5
+ * credentials are also subject to the process-wide rule of
+ * crnet_client_config_set_proxy().
+ */
+#define CRNET_HAS_REQUEST_PROXY 1
+CRNET_API int crnet_request_set_proxy(crnet_request *req,
+				      const char *proxy_url);
 
 /* Fail with CRNET_E_TOO_LARGE past this many body bytes. 0 = no limit. */
 CRNET_API int crnet_request_set_max_body_size(crnet_request *req,

@@ -22,19 +22,19 @@ How to use it:
 
 ## Connections and proxies
 
-### per-request-proxy
+### proxy-identities
 
-Choose the proxy per request instead of per client.
+Several credentials for one proxy within a client.
 
-- Today: the proxy is fixed in the client config, so rotating egress
-  needs one client per proxy, each with its own network thread,
-  context, DNS cache and connection pools.
-- Wanted: `crnet_request_set_proxy(req, uri)`, falling back to the
-  client's proxy.
-- Notes: connection pools are already keyed by proxy chain, so sharing
-  a context is safe. The choice has to reach proxy resolution, for
-  example through a `ProxyDelegate`; check what the pinned Chromium
-  passes to it.
+- Today: `crnet_request_set_proxy()` picks the proxy per request, but a
+  client uses one set of credentials per proxy and refuses a request
+  naming others, because Chromium pools connections and caches proxy
+  credentials by proxy alone.
+- Why: rotating proxies often pick the exit by the username
+  ("user-session-42"), all behind one host and port.
+- Notes: the credentials would have to become part of the pool keys
+  (the proxy chain), and the proxy auth cache must not answer for them;
+  probably another Chromium patch.
 
 ### fresh-connection
 

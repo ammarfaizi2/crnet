@@ -1,0 +1,128 @@
+net: Let a request choose its proxy
+
+A URLRequestContext resolves every request's proxy from one proxy
+configuration. ProxyDelegate::OnResolveProxy() can change the result,
+but it only sees the URL, the method and the network anonymization
+key, so it cannot tell two requests to the same URL apart. An embedder
+that spreads requests over several proxies needs a context per proxy,
+each with its own connection pools, host cache and cookie store.
+
+Let the request carry the proxy chain instead:
+URLRequest::set_proxy_chain_override() is copied into HttpRequestInfo
+and on into HttpStreamFactory::StreamRequestInfo, and the JobController
+uses it in place of resolving one, next to the existing
+LOAD_BYPASS_PROXY shortcut. It has no fallbacks.
+Connection pools, HTTP/2 and QUIC sessions are keyed by proxy chain
+already, so requests through different proxies never share a
+connection.
+
+diff --git a/net/http/http_request_info.h b/net/http/http_request_info.h
+index f611ce56c4..7f0d1de746 100644
+--- a/net/http/http_request_info.h
++++ b/net/http/http_request_info.h
+@@ -16,6 +16,7 @@
+ #include "net/base/network_handle.h"
+ #include "net/base/network_isolation_key.h"
+ #include "net/base/privacy_mode.h"
++#include "net/base/proxy_chain.h"
+ #include "net/base/reconnect_notifier.h"
+ #include "net/base/request_priority.h"
+ #include "net/dns/public/secure_dns_policy.h"
+@@ -72,6 +73,10 @@ struct NET_EXPORT HttpRequestInfo {
+   // Any load flags (see load_flags.h).
+   int load_flags = 0;
+ 
++  // crnet: the proxy chain to use instead of resolving one, if set (see
++  // URLRequest::set_proxy_chain_override()).
++  std::optional<ProxyChain> proxy_chain_override;
++
+   // Flag that indicates if the request should be loaded concurrently with
+   // other requests of the same priority when using a protocol that supports
+   // HTTP extensible priorities (RFC 9218). Currently only HTTP/3.
+diff --git a/net/http/http_stream_factory.cc b/net/http/http_stream_factory.cc
+index 9d407183aa..d257ee601f 100644
+--- a/net/http/http_stream_factory.cc
++++ b/net/http/http_stream_factory.cc
+@@ -104,6 +104,7 @@ HttpStreamFactory::StreamRequestInfo::StreamRequestInfo(
+       is_http1_allowed(!http_request_info.upload_data_stream ||
+                        http_request_info.upload_data_stream->AllowHTTP1()),
+       load_flags(http_request_info.load_flags),
++      proxy_chain_override(http_request_info.proxy_chain_override),
+       privacy_mode(http_request_info.privacy_mode),
+       secure_dns_policy(http_request_info.secure_dns_policy),
+       socket_tag(http_request_info.socket_tag),
+diff --git a/net/http/http_stream_factory.h b/net/http/http_stream_factory.h
+index 3f70b02423..f124e4b6b0 100644
+--- a/net/http/http_stream_factory.h
++++ b/net/http/http_stream_factory.h
+@@ -103,6 +103,8 @@ class NET_EXPORT HttpStreamFactory {
+     bool is_http1_allowed = true;
+ 
+     int load_flags = 0;
++    // crnet: see HttpRequestInfo::proxy_chain_override.
++    std::optional<ProxyChain> proxy_chain_override;
+     PrivacyMode privacy_mode = PRIVACY_MODE_DISABLED;
+     SecureDnsPolicy secure_dns_policy = SecureDnsPolicy::kAllow;
+     SocketTag socket_tag;
+diff --git a/net/http/http_stream_factory_job_controller.cc b/net/http/http_stream_factory_job_controller.cc
+index 11361641d5..0d5ca2ceae 100644
+--- a/net/http/http_stream_factory_job_controller.cc
++++ b/net/http/http_stream_factory_job_controller.cc
+@@ -842,6 +842,13 @@ int HttpStreamFactory::JobController::DoResolveProxy() {
+     return OK;
+   }
+ 
++  // crnet: a proxy chosen for this request replaces the configured ones,
++  // without fallbacks.
++  if (request_info_.proxy_chain_override) {
++    proxy_info_.UseProxyChain(*request_info_.proxy_chain_override);
++    return OK;
++  }
++
+   CompletionOnceCallback io_callback =
+       base::BindOnce(&JobController::OnIOComplete, base::Unretained(this));
+   return session_->proxy_resolution_service()->ResolveProxy(
+diff --git a/net/url_request/url_request.h b/net/url_request/url_request.h
+index 4967f032f2..f387caaaf8 100644
+--- a/net/url_request/url_request.h
++++ b/net/url_request/url_request.h
+@@ -812,6 +812,17 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
+   // general response_info() is available.
+   const ProxyChain& proxy_chain() const { return proxy_chain_; }
+ 
++  // crnet: the proxy chain to use instead of resolving one with the
++  // context's proxy configuration (ProxyChain::Direct() for none), or
++  // nullopt to resolve it as usual. Set it before Start(); it applies to
++  // every redirect of the request.
++  void set_proxy_chain_override(std::optional<ProxyChain> proxy_chain) {
++    proxy_chain_override_ = std::move(proxy_chain);
++  }
++  const std::optional<ProxyChain>& proxy_chain_override() const {
++    return proxy_chain_override_;
++  }
++
+   // Gets the connection attempts made in the process of servicing this
+   // URLRequest. Only guaranteed to be valid if called after the request fails
+   // or after the response headers are received.
+@@ -1262,6 +1273,9 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
+   // The proxy chain used for this request, if any.
+   ProxyChain proxy_chain_;
+ 
++  // crnet: see set_proxy_chain_override().
++  std::optional<ProxyChain> proxy_chain_override_;
++
+   // If not null, the network service will not advertise any stream types
+   // (via Accept-Encoding) that are not listed. Also, it will not attempt
+   // decoding any non-listed stream types.
+diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
+index f93d02b802..8fee6314d1 100644
+--- a/net/url_request/url_request_http_job.cc
++++ b/net/url_request/url_request_http_job.cc
+@@ -465,6 +465,7 @@ void URLRequestHttpJob::Start() {
+       request_->isolation_info().IsMainFrameRequest();
+   request_info_.initiator = request_->initiator();
+   request_info_.load_flags = request_->load_flags();
++  request_info_.proxy_chain_override = request_->proxy_chain_override();
+   request_info_.priority_incremental = request_->priority_incremental();
+   request_info_.secure_dns_policy = request_->secure_dns_policy();
+   request_info_.traffic_annotation =

@@ -368,3 +368,149 @@ TEST(Proxy, Socks5CredentialSyntax)
 		  CRNET_E_INVAL);
 	crnet_client_config_free(cfg);
 }
+
+namespace {
+
+Result GetVia(crnet_client *c, const std::string &url, const std::string &proxy)
+{
+	crnet_request *req = crnet_request_new("GET", url.c_str());
+	EXPECT_EQ(crnet_request_set_proxy(req, proxy.c_str()), CRNET_OK) << proxy;
+	Result r;
+	r.rc = crnet_perform(c, req, &r.resp);
+	crnet_request_free(req);
+	return r;
+}
+
+std::string Socks5()
+{
+	return "socks5h://127.0.0.1:" + std::to_string(ServerPorts().socks5);
+}
+
+std::string HttpProxy(const std::string &userinfo)
+{
+	return "http://" + userinfo + "@127.0.0.1:" +
+	       std::to_string(ServerPorts().http_proxy);
+}
+
+} // namespace
+
+TEST(RequestProxy, Validation)
+{
+	crnet_request *req = crnet_request_new("GET", "https://example.com/");
+	for (const char *ok : {"socks5://127.0.0.1:1080", "http://u:p@proxy:3128",
+			       "https://proxy", "socks4://proxy:1080", "direct://"})
+		EXPECT_EQ(crnet_request_set_proxy(req, ok), CRNET_OK) << ok;
+	EXPECT_EQ(crnet_request_set_proxy(req, nullptr), CRNET_OK);
+	for (const char *bad : {"", "proxy:1080", "ftp://proxy", "socks4://u:p@proxy",
+				"socks5://proxy/path", "http://"})
+		EXPECT_EQ(crnet_request_set_proxy(req, bad), CRNET_E_INVAL) << bad;
+	EXPECT_EQ(crnet_request_set_proxy(nullptr, "direct://"), CRNET_E_INVAL);
+	crnet_request_free(req);
+}
+
+TEST(RequestProxy, OverridesTheClientsProxy)
+{
+	const Ports &p = ServerPorts();
+	int before = SocksConnects();
+	// A direct client reaches a name only the proxy can resolve through a
+	// request's proxy, and follows redirects through it.
+	crnet_client *c = NewTestClient();
+	EXPECT_NE(Get(c, RemoteOnlyUrl(p.https, "/echo")).rc, CRNET_OK);
+	Result r = GetVia(c, RemoteOnlyUrl(p.https, "/redirect/2"), Socks5());
+	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	EXPECT_EQ(crnet_response_redirect_count(r.resp), 2);
+	EXPECT_TRUE(crnet_response_via_proxy(r.resp));
+	EXPECT_GT(SocksConnects(), before);
+	crnet_client_free(c);
+
+	// A proxied client sends a request direct.
+	c = ProxyClient(Socks5(), "<-loopback>");
+	r = GetVia(c, HttpsUrl("/echo"), "direct://");
+	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	EXPECT_FALSE(crnet_response_via_proxy(r.resp));
+	EXPECT_TRUE(crnet_response_via_proxy(Get(c, HttpsUrl("/echo")).resp));
+	crnet_client_free(c);
+}
+
+TEST(RequestProxy, IgnoresBypassRules)
+{
+	// localhost bypasses every configured proxy, but not a request's.
+	crnet_client *c = NewTestClient();
+	Result r = GetVia(c, HttpsUrl("/echo"), Socks5());
+	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	EXPECT_TRUE(crnet_response_via_proxy(r.resp));
+	crnet_client_free(c);
+}
+
+TEST(RequestProxy, ConnectionsAreNotSharedAcrossProxies)
+{
+	crnet_client *c = NewTestClient();
+	const std::string url = HttpsUrl("/echo");
+	Result direct = Get(c, url);
+	ASSERT_EQ(direct.rc, CRNET_OK);
+	Result proxied = GetVia(c, url, Socks5());
+	ASSERT_EQ(proxied.rc, CRNET_OK);
+	EXPECT_FALSE(crnet_response_socket_reused(proxied.resp));
+	EXPECT_NE(crnet_response_connection_id(proxied.resp),
+		  crnet_response_connection_id(direct.resp));
+	Result again = GetVia(c, url, Socks5());
+	EXPECT_EQ(crnet_response_connection_id(again.resp),
+		  crnet_response_connection_id(proxied.resp));
+	Result direct2 = Get(c, url);
+	EXPECT_EQ(crnet_response_connection_id(direct2.resp),
+		  crnet_response_connection_id(direct.resp));
+	crnet_client_free(c);
+}
+
+TEST(RequestProxy, HttpProxyCredentialsArePinned)
+{
+	const Ports &p = ServerPorts();
+	crnet_client *c = NewTestClient();
+	// Without credentials the proxy's 407 is the answer.
+	const std::string bare = "http://127.0.0.1:" + std::to_string(p.http_proxy);
+	Result r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), bare);
+	EXPECT_NE(r.rc, CRNET_OK);
+	r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), HttpProxy("crnet:secret"));
+	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	EXPECT_TRUE(crnet_response_via_proxy(r.resp));
+	// Now pinned: a request without credentials uses them, other ones
+	// are refused.
+	r = GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"), bare);
+	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	r = GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"), HttpProxy("crnet:other"));
+	EXPECT_EQ(r.rc, CRNET_E_INVAL);
+	EXPECT_EQ(r.net_error(), -4);	// ERR_INVALID_ARGUMENT
+	crnet_client_free(c);
+
+	// The configured proxy's credentials are pinned from the start.
+	c = ProxyClient(HttpProxy("crnet:secret"));
+	r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), HttpProxy("crnet:other"));
+	EXPECT_EQ(r.rc, CRNET_E_INVAL);
+	crnet_client_free(c);
+}
+
+TEST(RequestProxy, Socks5CredentialsArePinned)
+{
+	const Ports &p = ServerPorts();
+	size_t before = SocksAuths().size();
+	crnet_client *c = NewTestClient();
+	Result r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), AuthProxy("crnet:secret"));
+	ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	r = GetVia(c, RemoteOnlyUrl(p.https_h1, "/echo"),
+		   "socks5h://127.0.0.1:" + std::to_string(p.socks5_auth));
+	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+	EXPECT_EQ(SocksAuths().size(), before + 2);
+	r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), AuthProxy("other:pass"));
+	EXPECT_EQ(r.rc, CRNET_E_INVAL);
+
+	// Registered process-wide while the client exists.
+	crnet_client_config *cfg = crnet_client_config_new();
+	ASSERT_EQ(crnet_client_config_set_proxy(cfg, AuthProxy("other:pass").c_str()),
+		  CRNET_OK);
+	EXPECT_EQ(crnet_client_new(cfg), nullptr);
+	crnet_client_free(c);
+	crnet_client *b = crnet_client_new(cfg);
+	EXPECT_NE(b, nullptr) << "released with the client";
+	crnet_client_free(b);
+	crnet_client_config_free(cfg);
+}
