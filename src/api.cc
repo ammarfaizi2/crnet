@@ -1338,19 +1338,24 @@ CRNET_API const crnet_response *crnet_ws_handshake_response(
 	return ws->handshake();
 }
 
+// The close results are written before the state turns CLOSED, which
+// on_close already sees, and never again: they are readable from then on,
+// on_close included.
 CRNET_API int crnet_ws_close_code(const crnet_ws *ws)
 {
-	return ws && ws->done() ? ws->close_code() : 0;
+	return ws && ws->state() == CRNET_WS_CLOSED ? ws->close_code() : 0;
 }
 
 CRNET_API const char *crnet_ws_close_reason(const crnet_ws *ws)
 {
-	return ws && ws->done() ? ws->close_reason().c_str() : "";
+	return ws && ws->state() == CRNET_WS_CLOSED
+		       ? ws->close_reason().c_str()
+		       : "";
 }
 
 CRNET_API int crnet_ws_net_error(const crnet_ws *ws)
 {
-	return ws && ws->done() ? ws->net_error() : 0;
+	return ws && ws->state() == CRNET_WS_CLOSED ? ws->net_error() : 0;
 }
 
 CRNET_API void crnet_ws_free(crnet_ws *ws)

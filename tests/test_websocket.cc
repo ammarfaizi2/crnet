@@ -3,7 +3,11 @@
 // WebSocket client: handshake fidelity, messaging in both delivery
 // modes, closing semantics, failures, flow control, proxies.
 //
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
@@ -558,6 +562,73 @@ TEST_F(ClientTest, WsServerClosesWith1014)
 	EXPECT_EQ(crnet_ws_close_code(ws), 1014);
 	EXPECT_STREQ(crnet_ws_close_reason(ws), "upstream");
 	EXPECT_EQ(crnet_ws_net_error(ws), 0);
+	crnet_ws_free(ws);
+}
+
+namespace {
+
+// What crnet_ws_* report from inside on_close.
+struct CloseResults {
+	std::mutex mu;
+	std::condition_variable cv;
+	bool done = false;
+	int error = 0, net_error = 1, code = 0, reported_code = 0;
+	std::string reason;
+};
+
+void RecordCloseResults(crnet_ws *ws, int error, int code, const char *, void *ud)
+{
+	auto *r = static_cast<CloseResults *>(ud);
+	std::lock_guard<std::mutex> lk(r->mu);
+	r->error = error;
+	r->code = code;
+	r->net_error = crnet_ws_net_error(ws);
+	r->reported_code = crnet_ws_close_code(ws);
+	r->reason = crnet_ws_close_reason(ws);
+	r->done = true;
+	r->cv.notify_all();
+}
+
+const crnet_ws_callbacks kRecordClose = {nullptr, nullptr, RecordCloseResults};
+
+CloseResults *CloseOf(CloseResults *r)
+{
+	std::unique_lock<std::mutex> lk(r->mu);
+	r->cv.wait_for(lk, std::chrono::seconds(5), [&] { return r->done; });
+	return r;
+}
+
+} // namespace
+
+TEST_F(ClientTest, WsResultsAreReadableInOnClose)
+{
+	// Refused: the net error tells why, inside the callback.
+	int s = socket(AF_INET, SOCK_STREAM, 0);
+	sockaddr_in sa = {};
+	sa.sin_family = AF_INET;
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ASSERT_EQ(bind(s, reinterpret_cast<sockaddr *>(&sa), sizeof(sa)), 0);
+	socklen_t sl = sizeof(sa);
+	ASSERT_EQ(getsockname(s, reinterpret_cast<sockaddr *>(&sa), &sl), 0);
+	close(s);
+	CloseResults refused;
+	crnet_ws *ws = Connect(client_, "ws://127.0.0.1:" + std::to_string(ntohs(sa.sin_port)) + "/",
+			       &kRecordClose, &refused);
+	CloseOf(&refused);
+	EXPECT_EQ(refused.error, CRNET_E_NET);
+	EXPECT_EQ(refused.net_error, -102);	// ERR_CONNECTION_REFUSED
+	EXPECT_EQ(refused.reported_code, refused.code);
+	EXPECT_EQ(refused.code, 1006);
+	crnet_ws_free(ws);
+
+	// A clean close: no net error, the server's code and reason.
+	CloseResults clean;
+	ws = Connect(client_, WsUrl("/ws/close?code=4001&reason=done"), &kRecordClose, &clean);
+	CloseOf(&clean);
+	EXPECT_EQ(clean.error, CRNET_OK);
+	EXPECT_EQ(clean.net_error, 0);
+	EXPECT_EQ(clean.reported_code, 4001);
+	EXPECT_EQ(clean.reason, "done");
 	crnet_ws_free(ws);
 }
 

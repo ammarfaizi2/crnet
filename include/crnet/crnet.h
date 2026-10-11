@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 32
+#define CRNET_VERSION_MINOR 33
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -1137,7 +1137,8 @@ typedef struct crnet_ws_callbacks {
 	 * side may have started it), otherwise the failure (CRNET_E_NET,
 	 * CRNET_E_TIMEOUT, CRNET_E_CANCELED, CRNET_E_SHUTDOWN,
 	 * CRNET_E_TOO_LARGE). |code| and |reason| are the close code and
-	 * reason (1006 and a description for failures).
+	 * reason (1006 and a description for failures);
+	 * crnet_ws_net_error() tells the failure's net error already.
 	 */
 	void (*on_close)(crnet_ws *ws, int error, int code, const char *reason,
 			 void *user_data);
@@ -1321,8 +1322,11 @@ CRNET_API const crnet_response *crnet_ws_handshake_response(
 
 /*
  * Once closed: close code and reason, and the Chromium net error of a
- * failure (0 otherwise).
+ * failure (0 otherwise). Valid from on_close on, inside it included
+ * (since 0.33.0, CRNET_HAS_WS_RESULTS_IN_ON_CLOSE; before, only after
+ * on_close had returned).
  */
+#define CRNET_HAS_WS_RESULTS_IN_ON_CLOSE 1
 CRNET_API int crnet_ws_close_code(const crnet_ws *ws);
 CRNET_API const char *crnet_ws_close_reason(const crnet_ws *ws);
 CRNET_API int crnet_ws_net_error(const crnet_ws *ws);

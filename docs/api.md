@@ -575,6 +575,7 @@ feature can be used:
 | `CRNET_HAS_PROXY_CREDENTIALS` | 0.30.0 | `crnet_client_config_set_proxy_credentials()`, `crnet_request_set_proxy_credentials()` |
 | `CRNET_HAS_WS_PING_CALLBACK` | 0.31.0 | `crnet_ws_set_ping_callback()`; server pings restart the idle timeout |
 | `CRNET_HAS_WS_CLOSE_CODES` | 0.32.0 | `crnet_ws_close()` takes every code an endpoint may send |
+| `CRNET_HAS_WS_RESULTS_IN_ON_CLOSE` | 0.33.0 | `crnet_ws_net_error()`, `_close_code()`, `_close_reason()` valid inside `on_close` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built
