@@ -81,7 +81,7 @@ crnet_client_config_free(cfg);
 
 | Setting | Default | Notes |
 |---|---|---|
-| `proxy` | direct | `socks5://`, `socks5h://` (same thing: SOCKS5 always resolves names on the proxy), `socks4://`, `http://[user:pass@]host:port`, `https://...`, `direct://`. `socks5://user:pass@host:port` enables SOCKS5 username/password authentication (RFC 1929); two clients that exist at the same time cannot use one SOCKS5 proxy with different credentials. |
+| `proxy` | direct | `socks5://`, `socks5h://` (same thing: SOCKS5 always resolves names on the proxy), `socks4://`, `http://[user:pass@]host:port`, `https://...`, `direct://`. `socks5://user:pass@host:port` enables SOCKS5 username/password authentication (RFC 1929). Credentials belong to the client: a client given none offers none, whatever other clients use the same proxy with. |
 | `proxy_bypass` | none | destinations sent direct, in Chrome's `--proxy-bypass-list` syntax: `*.example.com, 10.0.0.0/8, <local>`. Like Chrome, localhost, loopback and link-local destinations always go direct unless the list contains `<-loopback>`. |
 | `platform_profile` | Linux | the operating system to claim: `CRNET_PLATFORM_LINUX`, `CRNET_PLATFORM_WINDOWS` or `CRNET_PLATFORM_MACOS`; sets the User-Agent and `sec-ch-ua-platform` together |
 | `user_agent`, `sec_ch_ua`, `platform`, `accept_language` | the platform profile's, `en-US,en;q=0.9` | the browser identity, see [browser-emulation.md](browser-emulation.md); explicit values take precedence over the platform profile |

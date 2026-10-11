@@ -289,6 +289,14 @@ json SocksAuths()
 	return r.echo()["stats"]["socks5_auths"];
 }
 
+json SocksGreetings()
+{
+	crnet_client *c = NewTestClient();
+	Result r = Get(c, HttpsUrl("/echo"));
+	crnet_client_free(c);
+	return r.echo()["stats"]["socks5_greetings"];
+}
+
 } // namespace
 
 TEST(Proxy, Socks5UsernamePassword)
@@ -334,23 +342,33 @@ TEST(Proxy, Socks5CredentialsForAnOpenProxy)
 	crnet_client_free(c);
 }
 
-TEST(Proxy, Socks5CredentialsArePerProxy)
+// Each client authenticates with its own credentials, and a client given
+// none offers none, whatever other clients use the proxy with.
+TEST(Proxy, Socks5CredentialsArePerClient)
 {
-	crnet_client *a = ProxyClient(AuthProxy("crnet:secret"));
+	const std::string url = RemoteOnlyUrl(ServerPorts().https, "/echo");
+	crnet_client *a = ProxyClient(AuthProxy("crnet-a:secret"));
+	crnet_client *b = ProxyClient(AuthProxy("crnet-b:secret"));
+	crnet_client *none = ProxyClient("socks5h://127.0.0.1:" +
+					 std::to_string(ServerPorts().socks5_auth));
 	ASSERT_NE(a, nullptr);
-	// Same proxy, same credentials: fine. Different ones: refused while
-	// the first client exists.
-	crnet_client *same = ProxyClient(AuthProxy("crnet:secret"));
-	EXPECT_NE(same, nullptr);
-	crnet_client_config *cfg = crnet_client_config_new();
-	ASSERT_EQ(crnet_client_config_set_proxy(cfg, AuthProxy("other:pass").c_str()), CRNET_OK);
-	EXPECT_EQ(crnet_client_new(cfg), nullptr);
-	crnet_client_free(a);
-	crnet_client_free(same);
-	crnet_client *b = crnet_client_new(cfg);
-	EXPECT_NE(b, nullptr) << "allowed once the others are gone";
+	ASSERT_NE(b, nullptr);
+	ASSERT_NE(none, nullptr);
+	ASSERT_EQ(Get(a, url).rc, CRNET_OK);
+	ASSERT_EQ(Get(b, url).rc, CRNET_OK);
+	EXPECT_EQ(SocksAuths().back(), json::array({"crnet-b", true}));
+
+	size_t greetings = SocksGreetings().size();
+	size_t auths = SocksAuths().size();
+	Result r = Get(none, url);
+	EXPECT_EQ(r.net_error(), -199);	// no acceptable methods
+	json g = SocksGreetings();
+	ASSERT_EQ(g.size(), greetings + 1);
+	EXPECT_EQ(g.back(), json::array({0}));	// 05 01 00
+	EXPECT_EQ(SocksAuths().size(), auths);
+	crnet_client_free(none);
 	crnet_client_free(b);
-	crnet_client_config_free(cfg);
+	crnet_client_free(a);
 }
 
 TEST(Proxy, Socks5CredentialSyntax)
@@ -597,26 +615,41 @@ TEST(RequestProxy, Socks5Identities)
 	crnet_client_free(c);
 }
 
-TEST(RequestProxy, Socks5IdentitiesBesideAnotherClientsDefault)
+TEST(RequestProxy, Socks5CredentialsAreTheClients)
 {
 	const Ports &p = ServerPorts();
-	// Another client holds the process-wide default for the proxy.
+	const std::string url = RemoteOnlyUrl(p.https, "/echo");
+	const std::string bare = "socks5h://127.0.0.1:" + std::to_string(p.socks5_auth);
+	// Credentials another client was given, at client or request level,
+	// are never this client's.
 	crnet_client *other = ProxyClient(AuthProxy("crnet-x:secret"));
-	ASSERT_NE(other, nullptr);
+	crnet_client *other2 = NewTestClient();
+	ASSERT_EQ(GetVia(other2, url, AuthProxy("crnet-w:secret")).rc, CRNET_OK);
 	crnet_client *c = NewTestClient();
-	Result r = GetVia(c, RemoteOnlyUrl(p.https, "/echo"), AuthProxy("crnet-y:secret"));
+	size_t greetings = SocksGreetings().size();
+	EXPECT_EQ(GetVia(c, url, bare).net_error(), -199);
+	EXPECT_EQ(SocksGreetings().back(), json::array({0}));
+	EXPECT_EQ(SocksGreetings().size(), greetings + 1);
+
+	// Fresh connections of a client without credentials offer none
+	// either; those of a client with some use them.
+	crnet_request *req = crnet_request_new("GET", url.c_str());
+	crnet_request_set_proxy(req, bare.c_str());
+	crnet_request_set_fresh_connection(req, 1);
+	Result f;
+	f.rc = crnet_perform(c, req, &f.resp);
+	EXPECT_EQ(f.net_error(), -199);
+	Result fo;
+	fo.rc = crnet_perform(other, req, &fo.resp);
+	EXPECT_EQ(fo.rc, CRNET_OK) << crnet_response_error_string(fo.resp);
+	EXPECT_EQ(SocksAuths().back(), json::array({"crnet-x", true}));
+	crnet_request_free(req);
+
+	// Its own request credentials work beside the others'.
+	Result r = GetVia(c, url, AuthProxy("crnet-y:secret"));
 	EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
 	EXPECT_EQ(SocksAuths().back(), json::array({"crnet-y", true}));
 	crnet_client_free(c);
-
-	// The client's registrations go with it.
-	crnet_client_config *cfg = crnet_client_config_new();
-	ASSERT_EQ(crnet_client_config_set_proxy(cfg, AuthProxy("crnet-z:secret").c_str()),
-		  CRNET_OK);
-	EXPECT_EQ(crnet_client_new(cfg), nullptr) << "the other client's default";
+	crnet_client_free(other2);
 	crnet_client_free(other);
-	crnet_client *z = crnet_client_new(cfg);
-	EXPECT_NE(z, nullptr);
-	crnet_client_free(z);
-	crnet_client_config_free(cfg);
 }

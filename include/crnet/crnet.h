@@ -76,7 +76,7 @@ extern "C" {
  */
 #define CRNET_VERSION_MAJOR 0
 #define CRNET_VERSION_MINOR 28
-#define CRNET_VERSION_PATCH 0
+#define CRNET_VERSION_PATCH 1
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
 	(CRNET_VERSION_MAJOR * 10000 + CRNET_VERSION_MINOR * 100 + \
@@ -181,10 +181,13 @@ CRNET_API void crnet_client_config_free(crnet_client_config *cfg);
  * proxy rejecting them fails requests with net error -185. SOCKS4 has
  * no credentials. NULL means direct.
  *
- * Chromium's SOCKS5 client finds the credentials by proxy host and
- * port, so clients that exist at the same time cannot use the same
- * SOCKS5 proxy with different credentials: crnet_client_new() returns
- * NULL for the second one.
+ * Credentials belong to the client (and its requests, see
+ * crnet_request_set_proxy()): a client given none offers none, whatever
+ * credentials other clients use the same proxy with. Before 0.28.1 the
+ * SOCKS5 client found them by proxy host and port across clients,
+ * crnet_client_new() refused a second client with other credentials for
+ * a SOCKS5 proxy, and one without any could authenticate with another
+ * client's.
  */
 #define CRNET_HAS_SOCKS5_AUTH 1
 CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,

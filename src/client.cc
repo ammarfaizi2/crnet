@@ -139,9 +139,36 @@ private:
 
 // Applies crnet's header policy right before each transaction (also
 // after redirects) and implements the cookies on/off switch.
+// Process-wide, as the SOCKS5 credentials table is. A fresh partition is
+// closed when its one user is gone, so numbers could only clash after
+// 2^31 partitions with an older one still in use.
+int NextConnectionPartition()
+{
+	static std::atomic<uint32_t> last{0};
+	return static_cast<int>(last.fetch_add(1, std::memory_order_relaxed) %
+					std::numeric_limits<int>::max() +
+				1);
+}
+
 class CrNetworkDelegate : public net::NetworkDelegateImpl {
 public:
-	explicit CrNetworkDelegate(bool cookies) : cookies_(cookies) {}
+	CrNetworkDelegate(bool cookies, int partition)
+		: cookies_(cookies), partition_(partition)
+	{
+	}
+
+	// Every request of the client, Chromium's own (DoH, certificate
+	// fetches) included, connects in a partition of the client's: the
+	// client's, unless a fresh connection or a proxy identity chose
+	// another. The SOCKS5 credentials lookup tells clients apart by it.
+	int OnBeforeURLRequest(net::URLRequest *request,
+			       net::CompletionOnceCallback callback,
+			       GURL *new_url) override
+	{
+		if (!request->connection_partition())
+			request->set_connection_partition(partition_);
+		return net::OK;
+	}
 
 	int OnBeforeStartTransaction(
 		net::URLRequest *request, const net::HttpRequestHeaders &headers,
@@ -190,6 +217,7 @@ public:
 
 private:
 	const bool cookies_;
+	const int partition_;
 };
 
 std::unique_ptr<net::ProxyConfigService> MakeProxyConfigService(
@@ -371,7 +399,7 @@ net::ProxyChain crnet::ProxyChainOf(const std::string &proxy)
 }
 
 crnet_client::crnet_client(const ClientConfig &cfg)
-	: cfg_(cfg), thread_("crnet-io")
+	: cfg_(cfg), thread_("crnet-io"), partition_(NextConnectionPartition())
 {
 	// The configured proxy's credentials come first (its SOCKS5 key is
 	// registered in Create()).
@@ -383,17 +411,12 @@ crnet_client::crnet_client(const ClientConfig &cfg)
 int crnet_client::NewConnectionPartition(std::optional<int> identity)
 {
 	DCHECK(IsNetworkThread());
-	// Process-wide, as the SOCKS5 credentials table is. A fresh partition
-	// is closed when its one user is gone, so numbers could only clash
-	// after 2^31 partitions with an identity still in use.
-	static std::atomic<uint32_t> last{0};
-	int partition = static_cast<int>(
-		last.fetch_add(1, std::memory_order_relaxed) %
-			std::numeric_limits<int>::max() +
-		1);
+	int partition = NextConnectionPartition();
 	if (identity) {
 		ProxyIdentity id = partition_identities_.at(*identity);
 		AddPartitionIdentity(partition, std::move(id));
+	} else {
+		crnet::SetSocksPartitionParent(partition, partition_);
 	}
 	return partition;
 }
@@ -402,11 +425,9 @@ void crnet_client::AddPartitionIdentity(int partition, ProxyIdentity id)
 {
 	const std::string socks_key = crnet::SocksProxyKey(id.proxy);
 	id.socks_key.clear();
-	if (!socks_key.empty()) {
-		// Unique to the partition, so it cannot clash.
-		id.socks_key = crnet::SocksPartitionKey(socks_key, partition);
-		crnet::RegisterSocksCredentials(id.socks_key, id.user, id.pass);
-	}
+	if (!socks_key.empty())
+		id.socks_key = crnet::RegisterSocksCredentials(
+			socks_key, partition, id.user, id.pass);
 	partition_identities_[partition] = std::move(id);
 }
 
@@ -417,6 +438,7 @@ void crnet_client::CloseConnectionPartition(int partition)
 		context_->http_transaction_factory()
 			->GetSession()
 			->CloseConnectionPartition(partition);
+	crnet::ClearSocksPartitionParent(partition);
 	auto it = partition_identities_.find(partition);
 	if (it != partition_identities_.end()) {
 		if (!it->second.socks_key.empty())
@@ -452,16 +474,13 @@ std::optional<int> crnet_client::ResolveProxyIdentity(const std::string &proxy,
 	    it->second == std::make_pair(*user, *pass))
 		return std::nullopt;
 	if (it == proxy_creds_.end()) {
-		// The first credentials named become the proxy's default, unless
-		// another client uses other default ones for this SOCKS5 proxy.
-		std::string socks_key = crnet::SocksProxyKey(proxy);
-		if (socks_key.empty() ||
-		    crnet::RegisterSocksCredentials(socks_key, *user, *pass)) {
-			if (!socks_key.empty())
-				request_socks_keys_.push_back(std::move(socks_key));
-			proxy_creds_[key] = {*user, *pass};
-			return std::nullopt;
-		}
+		// The first credentials named become the proxy's default.
+		const std::string socks_key = crnet::SocksProxyKey(proxy);
+		if (!socks_key.empty())
+			socks_keys_.push_back(crnet::RegisterSocksCredentials(
+				socks_key, partition_, *user, *pass));
+		proxy_creds_[key] = {*user, *pass};
+		return std::nullopt;
 	}
 	auto id = identities_.find({key, *user, *pass});
 	if (id != identities_.end())
@@ -476,22 +495,18 @@ crnet_client::~crnet_client() = default;
 
 crnet_client *crnet_client::Create(const ClientConfig &cfg)
 {
-	// SOCKS5 credentials go into the process-wide table the patched
-	// SOCKS5 client reads (crnet/socks_auth.h).
-	std::string socks_key;
-	if (!cfg.proxy_user.empty()) {
-		socks_key = crnet::SocksProxyKey(cfg.proxy);
-		if (!socks_key.empty() &&
-		    !crnet::RegisterSocksCredentials(socks_key, cfg.proxy_user,
-						     cfg.proxy_pass))
-			return nullptr;
-	}
 	auto *c = new crnet_client(cfg);
-	c->socks_key_ = std::move(socks_key);
+	// SOCKS5 credentials go into the process-wide table the patched
+	// SOCKS5 client reads (crnet/socks_auth.h), for the client's
+	// partition only.
+	const std::string socks_key = crnet::SocksProxyKey(cfg.proxy);
+	if (!cfg.proxy_user.empty() && !socks_key.empty())
+		c->socks_keys_.push_back(crnet::RegisterSocksCredentials(
+			socks_key, c->partition_, cfg.proxy_user, cfg.proxy_pass));
 	base::Thread::Options opts(base::MessagePumpType::IO, 0);
 	if (!c->thread_.StartWithOptions(std::move(opts))) {
-		if (!c->socks_key_.empty())
-			crnet::UnregisterSocksCredentials(c->socks_key_);
+		for (const std::string &key : c->socks_keys_)
+			crnet::UnregisterSocksCredentials(key);
 		delete c;
 		return nullptr;
 	}
@@ -539,7 +554,8 @@ bool crnet_client::InitOnNetworkThread()
 	b.set_proxy_config_service(MakeProxyConfigService(cfg_));
 	b.set_proxy_delegate(std::make_unique<IdentityProxyDelegate>(this));
 	b.set_ssl_config_service(std::make_unique<ChromeSSLConfigService>());
-	b.set_network_delegate(std::make_unique<CrNetworkDelegate>(cfg_.cookies));
+	b.set_network_delegate(
+		std::make_unique<CrNetworkDelegate>(cfg_.cookies, partition_));
 
 	// Chrome on Linux resolves with its built-in DNS client, which also
 	// fetches HTTPS records (ECH configs, ALPN hints).
@@ -647,9 +663,7 @@ void crnet_client::Destroy()
 	// The state files are written once the saves posted at shutdown ran.
 	if (state_runner_)
 		crnet::FlushStateRunner(state_runner_.get());
-	if (!socks_key_.empty())
-		crnet::UnregisterSocksCredentials(socks_key_);
-	for (const std::string &key : request_socks_keys_)
+	for (const std::string &key : socks_keys_)
 		crnet::UnregisterSocksCredentials(key);
 	for (const auto &[partition, id] : partition_identities_) {
 		if (!id.socks_key.empty())

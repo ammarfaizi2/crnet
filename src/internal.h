@@ -503,14 +503,15 @@ private:
 	// Destroy()), and the HSTS persister, destroyed before context_ so
 	// that it saves first.
 	scoped_refptr<base::SequencedTaskRunner> state_runner_;
-	// "host:port" of the SOCKS5 proxy whose credentials this client
-	// registered (crnet/socks_auth.h), or "".
-	std::string socks_key_;
+	// The connection partition of the client's connections: SOCKS5
+	// credentials are looked up per partition (crnet/socks_auth.h).
+	const int partition_;
+	// Its SOCKS5 credentials table entries, unregistered in Destroy().
+	std::vector<std::string> socks_keys_;
 	// Network thread only: proxy URI -> (user, password), and the SOCKS5
 	// keys registered for requests' credentials (unregistered in
 	// Destroy()).
 	std::map<std::string, std::pair<std::string, std::string>> proxy_creds_;
-	std::vector<std::string> request_socks_keys_;
 	// Network thread only: (proxy URI, user, password) -> partition of
 	// the identities, and partition -> identity for those and for fresh
 	// partitions that carry one.

@@ -16,15 +16,17 @@
 namespace crnet {
 namespace {
 
-struct Entry {
+struct Credentials {
 	std::string username;
 	std::string password;
-	int refs = 0;
 };
 
 struct Table {
 	std::mutex mu;
-	std::map<std::string, Entry> entries;
+	// "host:port#partition" -> credentials.
+	std::map<std::string, Credentials> entries;
+	// Partition -> the partition whose credentials it falls back to.
+	std::map<int, int> parents;
 };
 
 Table &GetTable()
@@ -33,18 +35,28 @@ Table &GetTable()
 	return *table;
 }
 
-// Called on network threads, by every SOCKS5 connection attempt.
+std::string Key(const std::string &proxy_key, int partition)
+{
+	return proxy_key + "#" + base::NumberToString(partition);
+}
+
+// Called on network threads, by every SOCKS5 connection attempt. Without
+// a partition the connection is not a crnet client's (none are), and gets
+// no credentials.
 bool Lookup(const net::HostPortPair &proxy, std::optional<int> partition,
 	    std::string *username, std::string *password)
 {
+	if (!partition)
+		return false;
 	Table &t = GetTable();
 	std::lock_guard<std::mutex> lk(t.mu);
-	const std::string key = proxy.ToString();
-	auto it = t.entries.end();
-	if (partition)
-		it = t.entries.find(SocksPartitionKey(key, *partition));
-	if (it == t.entries.end())
-		it = t.entries.find(key);
+	const std::string proxy_key = proxy.ToString();
+	auto it = t.entries.find(Key(proxy_key, *partition));
+	if (it == t.entries.end()) {
+		auto parent = t.parents.find(*partition);
+		if (parent != t.parents.end())
+			it = t.entries.find(Key(proxy_key, parent->second));
+	}
 	if (it == t.entries.end())
 		return false;
 	*username = it->second.username;
@@ -59,11 +71,6 @@ void InstallSocksCredentialsLookup()
 	net::SOCKS5ClientSocket::SetCredentialsLookup(&Lookup);
 }
 
-std::string SocksPartitionKey(const std::string &key, int partition)
-{
-	return key + "#" + base::NumberToString(partition);
-}
-
 std::string SocksProxyKey(const std::string &proxy)
 {
 	net::ProxyServer server = net::ProxyUriToProxyServer(
@@ -74,28 +81,36 @@ std::string SocksProxyKey(const std::string &proxy)
 	return server.host_port_pair().ToString();
 }
 
-bool RegisterSocksCredentials(const std::string &key,
-			      const std::string &username,
-			      const std::string &password)
+std::string RegisterSocksCredentials(const std::string &proxy_key,
+				     int partition, const std::string &username,
+				     const std::string &password)
 {
 	Table &t = GetTable();
 	std::lock_guard<std::mutex> lk(t.mu);
-	Entry &e = t.entries[key];
-	if (e.refs && (e.username != username || e.password != password))
-		return false;
-	e.username = username;
-	e.password = password;
-	e.refs++;
-	return true;
+	std::string key = Key(proxy_key, partition);
+	t.entries[key] = {username, password};
+	return key;
 }
 
 void UnregisterSocksCredentials(const std::string &key)
 {
 	Table &t = GetTable();
 	std::lock_guard<std::mutex> lk(t.mu);
-	auto it = t.entries.find(key);
-	if (it != t.entries.end() && --it->second.refs <= 0)
-		t.entries.erase(it);
+	t.entries.erase(key);
+}
+
+void SetSocksPartitionParent(int partition, int parent)
+{
+	Table &t = GetTable();
+	std::lock_guard<std::mutex> lk(t.mu);
+	t.parents[partition] = parent;
+}
+
+void ClearSocksPartitionParent(int partition)
+{
+	Table &t = GetTable();
+	std::lock_guard<std::mutex> lk(t.mu);
+	t.parents.erase(partition);
 }
 
 } // namespace crnet
