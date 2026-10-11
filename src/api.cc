@@ -603,6 +603,14 @@ CRNET_API int crnet_transfer_done(const crnet_transfer *t)
 	return t && t->done();
 }
 
+CRNET_API int64_t crnet_transfer_progress(const crnet_transfer *t,
+					  crnet_progress which)
+{
+	if (!t || which < 0 || which >= CRNET_PROGRESS_COUNT)
+		return -1;
+	return t->progress(which);
+}
+
 CRNET_API int crnet_transfer_result(const crnet_transfer *t)
 {
 	return t ? t->result() : CRNET_E_INVAL;

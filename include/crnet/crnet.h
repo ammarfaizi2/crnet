@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 6
+#define CRNET_VERSION_MINOR 7
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,7 +131,7 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.6.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.7.0 (Chromium 155.0.8059.39)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
 /* Chromium version crnet was built from, e.g. "155.0.8059.39". */
@@ -521,6 +521,36 @@ CRNET_API const crnet_response *crnet_transfer_response(
  * frees it with crnet_response_free(). Only after completion.
  */
 CRNET_API crnet_response *crnet_transfer_take_response(crnet_transfer *t);
+
+/*
+ * Progress of a running transfer, readable from any thread at any time
+ * (also after it finished, then final). Values are byte counts; a total
+ * is -1 while unknown.
+ */
+#define CRNET_HAS_PROGRESS 1
+typedef enum crnet_progress {
+	/* Request body bytes handed to the network so far. Sampled every
+	 * 100 ms while the body is being sent (as Chrome does), exact once
+	 * the response headers have arrived. */
+	CRNET_PROGRESS_UPLOAD_SENT = 0,
+	/* Size of the request body: 0 without one, -1 for a streamed body
+	 * of unknown length. */
+	CRNET_PROGRESS_UPLOAD_TOTAL,
+	/* Response body bytes received, as sent by the server (before
+	 * content decoding). */
+	CRNET_PROGRESS_DOWNLOAD_RECEIVED,
+	/* Response body bytes after decoding, as delivered to the
+	 * application. */
+	CRNET_PROGRESS_DOWNLOAD_DECODED,
+	/* Content-Length of the response (compare with
+	 * DOWNLOAD_RECEIVED); -1 when the server sent none. */
+	CRNET_PROGRESS_DOWNLOAD_TOTAL,
+	CRNET_PROGRESS_COUNT
+} crnet_progress;
+
+/* -1 for an invalid |which|. */
+CRNET_API int64_t crnet_transfer_progress(const crnet_transfer *t,
+					  crnet_progress which);
 
 /*
  * Wait until the response headers have arrived (CRNET_OK; status and

@@ -60,20 +60,17 @@ Tell SOCKS5 failures apart.
   `tests/server/test_server.py` (each REP value, a refused method, a
   truncated reply, a close at each stage); today it only ever accepts.
 
-### transfer-progress
+### progress-callback
 
-Upload and download progress.
+An `on_progress` callback, as an alternative to polling
+`crnet_transfer_progress()`.
 
-- Wanted: bytes sent and total for the request body, bytes received
-  (on the wire and decoded) and the expected total, readable at any
-  time from another thread, and optionally an `on_progress` callback
-  with a rate limit.
-- Why: large streamed transfers give no feedback until they finish;
-  callers of `crnet_request_set_body_file()` cannot report upload
-  progress at all.
-- Notes: `URLRequest::GetUploadProgress()` and
-  `GetTotalReceivedBytes()` provide the numbers on the network thread;
-  publish them through relaxed atomics so reading stays lock-free.
+- Problem: `crnet_callbacks` is a plain struct with no size or version
+  field, so adding a member breaks programs built against older
+  headers (crnet would read past the end of their smaller struct).
+- Needs a versioned way to pass callbacks first (a size field, or a
+  setter per callback), which would also serve any later callback.
+  Rate-limit it (Chrome reports upload progress every 100 ms).
 
 ## Connections and proxies
 

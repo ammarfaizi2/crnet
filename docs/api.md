@@ -282,6 +282,21 @@ Streamed requests need a transfer handle to write or read with, so
 `CRNET_E_INVAL`. `build/examples/crget` streams both ways (`-T file`,
 `-T -` for stdin, `-o file`).
 
+## Progress
+
+`crnet_transfer_progress(t, which)` reads a running transfer's byte
+counts from any thread, without locking:
+
+| `which` | Value |
+|---|---|
+| `CRNET_PROGRESS_UPLOAD_SENT` | request body bytes handed to the network (sampled every 100 ms while sending, like Chrome; exact once the response arrives) |
+| `CRNET_PROGRESS_UPLOAD_TOTAL` | request body size; 0 without a body, -1 for a streamed body of unknown length |
+| `CRNET_PROGRESS_DOWNLOAD_RECEIVED` | response body bytes as sent by the server (before decoding) |
+| `CRNET_PROGRESS_DOWNLOAD_DECODED` | response body bytes delivered to you (after decoding) |
+| `CRNET_PROGRESS_DOWNLOAD_TOTAL` | the response's `Content-Length`, -1 without one; compare it with `DOWNLOAD_RECEIVED` |
+
+The values stay readable after the transfer finished.
+
 ## Completion queue
 
 A queue lets one application thread run many transfers and collect the
@@ -429,6 +444,7 @@ feature can be used:
 | `CRNET_HAS_PROXY_BYPASS` | 0.4.0 | `crnet_client_config_set_proxy_bypass()` |
 | `CRNET_HAS_CONTENT_DECODED` | 0.5.0 | `crnet_response_content_decoded()`, `crnet_response_decoded_codings()` |
 | `CRNET_HAS_TIMING` | 0.6.0 | `crnet_response_socket_reused()`, `_connection_id()`, `_timing()` |
+| `CRNET_HAS_PROGRESS` | 0.7.0 | `crnet_transfer_progress()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

@@ -263,6 +263,11 @@ public:
 	bool ok() const;
 	// Any thread: continue a download stopped by a full buffer.
 	void ResumeDownload();
+	// Any thread.
+	int64_t progress(crnet_progress which) const
+	{
+		return progress_[which].load(std::memory_order_relaxed);
+	}
 	// CRNET_E_PENDING until on_complete has been entered.
 	int result() const
 	{
@@ -300,6 +305,11 @@ private:
 	void FillResponseMeta(net::URLRequest *request);
 	static std::string DecodedCodings(net::URLRequest *request);
 	void FillTiming(net::URLRequest *request);
+	void SetProgress(crnet_progress which, int64_t v)
+	{
+		progress_[which].store(v, std::memory_order_relaxed);
+	}
+	void UpdateUploadProgress();
 	void ReadMore();
 	// Returns true if reading should continue.
 	bool HandleRead(int bytes);
@@ -322,6 +332,7 @@ private:
 	std::unique_ptr<net::URLRequest> request_;
 	scoped_refptr<net::IOBufferWithSize> buf_;
 	base::OneShotTimer timer_;
+	base::RepeatingTimer upload_timer_;
 	bool started_reading_ = false;
 	bool read_pending_ = false;
 	bool paused_ = false;
@@ -344,6 +355,10 @@ private:
 	crnet::OneShotEvent completing_;
 	crnet::OneShotEvent done_;
 	int result_ = CRNET_E_STATE;
+
+	// Written on the network thread, read anywhere; each value stands on
+	// its own, so relaxed ordering is enough.
+	std::array<std::atomic<int64_t>, CRNET_PROGRESS_COUNT> progress_{};
 };
 
 // A network context bound to its own IO thread.

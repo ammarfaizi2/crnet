@@ -22,6 +22,7 @@
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
+#include "net/base/upload_progress.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_file_element_reader.h"
 #include "net/cert/x509_certificate.h"
@@ -115,6 +116,18 @@ crnet_transfer::crnet_transfer(crnet_client *client,
 								  runner_);
 	if (spec_.stream_response && !cb_.on_data)
 		download_ = std::make_unique<crnet::DownloadBuffer>();
+
+	int64_t upload_total = 0;
+	if (spec_.body)
+		upload_total = static_cast<int64_t>(spec_.body->size());
+	else if (spec_.body_file)
+		upload_total = spec_.body_file->length == UINT64_MAX
+				       ? -1	// known once the file is opened
+				       : static_cast<int64_t>(spec_.body_file->length);
+	else if (spec_.body_stream)
+		upload_total = *spec_.body_stream;
+	SetProgress(CRNET_PROGRESS_UPLOAD_TOTAL, upload_total);
+	SetProgress(CRNET_PROGRESS_DOWNLOAD_TOTAL, -1);
 }
 
 crnet_transfer::~crnet_transfer() = default;
@@ -251,6 +264,28 @@ void crnet_transfer::StartOnNetworkThread()
 	resp_ = std::make_unique<crnet_response>();
 	resp_->url = spec_.url.spec();
 	request_->Start();
+	if (!finished_ && request_->has_upload()) {
+		// Chromium reports no upload progress events; sample it at
+		// Chrome's own interval (network::UploadProgressTracker).
+		upload_timer_.Start(FROM_HERE, base::Milliseconds(100),
+				    base::BindRepeating(
+					    &crnet_transfer::UpdateUploadProgress,
+					    base::Unretained(this)));
+	}
+}
+
+void crnet_transfer::UpdateUploadProgress()
+{
+	if (!request_)
+		return;
+	net::UploadProgress p = request_->GetUploadProgress();
+	SetProgress(CRNET_PROGRESS_UPLOAD_SENT,
+		    static_cast<int64_t>(p.position()));
+	// A chunked body reports size 0; a file body learns its size when
+	// it is opened.
+	if (p.size() && !(spec_.body_stream && *spec_.body_stream < 0))
+		SetProgress(CRNET_PROGRESS_UPLOAD_TOTAL,
+			    static_cast<int64_t>(p.size()));
 }
 
 void crnet_transfer::FailOnNetworkThread(int err, int net_error)
@@ -450,6 +485,15 @@ void crnet_transfer::OnResponseStarted(net::URLRequest *request,
 	}
 	FillResponseMeta(request);
 	resp_->decoded_codings = DecodedCodings(request);
+	UpdateUploadProgress();
+	upload_timer_.Stop();
+	// The header, not GetExpectedContentSize(), which gives up on
+	// encoded bodies.
+	const net::HttpResponseHeaders *h = request->response_headers();
+	if (std::optional<base::ByteSize> len =
+		    h ? h->GetContentLength() : std::nullopt)
+		SetProgress(CRNET_PROGRESS_DOWNLOAD_TOTAL,
+			    static_cast<int64_t>(len->InBytes()));
 	headers_.Signal();
 
 	if (cb_.on_response) {
@@ -503,6 +547,10 @@ bool crnet_transfer::HandleRead(int n)
 	}
 
 	body_bytes_ += n;
+	SetProgress(CRNET_PROGRESS_DOWNLOAD_DECODED,
+		    static_cast<int64_t>(body_bytes_));
+	SetProgress(CRNET_PROGRESS_DOWNLOAD_RECEIVED,
+		    request_->GetRawBodyBytes().InBytes());
 	if (spec_.max_body && body_bytes_ > spec_.max_body) {
 		Finish(CRNET_E_TOO_LARGE, net::ERR_FILE_TOO_BIG);
 		return false;
@@ -531,6 +579,10 @@ void crnet_transfer::Finish(int err, int net_error)
 	DCHECK(!finished_);
 	finished_ = true;
 	timer_.Stop();
+	if (upload_timer_.IsRunning()) {
+		UpdateUploadProgress();
+		upload_timer_.Stop();
+	}
 
 	if (request_) {
 		// We may be inside a URLRequest callback, so the request is

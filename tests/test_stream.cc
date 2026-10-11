@@ -540,3 +540,118 @@ TEST_F(ClientTest, ManyConcurrentStreamedTransfers)
 		x.join();
 	EXPECT_EQ(ok, kN);
 }
+
+// ------------------------------------------------------------------
+// Progress
+// ------------------------------------------------------------------
+
+namespace {
+
+int64_t P(crnet_transfer *t, crnet_progress which)
+{
+	return crnet_transfer_progress(t, which);
+}
+
+} // namespace
+
+TEST_F(ClientTest, ProgressOfAStreamedUpload)
+{
+	const std::string data = RandomData(8 * 1024 * 1024, 21);
+	const std::string half = data.substr(0, data.size() / 2);
+	crnet_transfer *t = StartUpload(client_, HttpsUrl("/upload-digest"), data.size());
+	ASSERT_NE(t, nullptr);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_TOTAL), static_cast<int64_t>(data.size()));
+	WriteAll(t, half, /*end=*/false);
+	// The pipe holds at most 1 MiB, so most of the first half is with
+	// Chromium by now; the sampled position must show it within a few
+	// sampling intervals while the body is still incomplete.
+	int64_t sent = 0;
+	for (int i = 0; i < 100 && sent == 0; i++) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		sent = P(t, CRNET_PROGRESS_UPLOAD_SENT);
+	}
+	EXPECT_GT(sent, 0);
+	EXPECT_LE(sent, static_cast<int64_t>(half.size()));
+	WriteAll(t, data.substr(half.size()));
+	json d = Digest(t);
+	EXPECT_EQ(d["len"], data.size());
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_SENT), static_cast<int64_t>(data.size()));
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_TOTAL), static_cast<int64_t>(data.size()));
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, ProgressOfAnUploadOfUnknownLength)
+{
+	const std::string data = RandomData(3 * 1024 * 1024, 22);
+	crnet_transfer *t = StartUpload(client_, HttpsH1Url("/upload-digest"),
+					CRNET_LENGTH_UNKNOWN);
+	ASSERT_NE(t, nullptr);
+	WriteAll(t, data);
+	Digest(t);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_TOTAL), -1);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_SENT), static_cast<int64_t>(data.size()));
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, ProgressOfAFileUpload)
+{
+	const std::string data = RandomData(3 * 1024 * 1024 + 5, 23);
+	std::string path = TempFile(data);
+	crnet_request *req = crnet_request_new("PUT", HttpsUrl("/upload-digest").c_str());
+	// Whole file: the size is only known once Chromium opens it.
+	ASSERT_EQ(crnet_request_set_body_file(req, path.c_str(), 0, UINT64_MAX), CRNET_OK);
+	crnet_transfer *t = crnet_start(client_, req, nullptr, nullptr);
+	crnet_request_free(req);
+	ASSERT_NE(t, nullptr);
+	Digest(t);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_TOTAL), static_cast<int64_t>(data.size()));
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_SENT), static_cast<int64_t>(data.size()));
+	crnet_transfer_free(t);
+	unlink(path.c_str());
+}
+
+TEST_F(ClientTest, ProgressOfADownload)
+{
+	crnet_transfer *t = StartDownload(client_, HttpsUrl("/bytes/3000000"));
+	ASSERT_NE(t, nullptr);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_TOTAL), 0);
+	ASSERT_EQ(crnet_transfer_wait_response(t, 10000), CRNET_OK);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_DOWNLOAD_TOTAL), 3000000);
+	char buf[100000];
+	size_t got = 0, n = 0;
+	while (got < 500000) {
+		ASSERT_EQ(crnet_transfer_read(t, buf, sizeof(buf), &n, 10000), CRNET_OK);
+		ASSERT_GT(n, 0u);
+		got += n;
+	}
+	// Received counts what was pulled off the network, ahead of what
+	// the application has read.
+	EXPECT_GE(P(t, CRNET_PROGRESS_DOWNLOAD_DECODED), static_cast<int64_t>(got));
+	EXPECT_LE(P(t, CRNET_PROGRESS_DOWNLOAD_DECODED), 3000000);
+	std::string rest;
+	EXPECT_EQ(ReadAll(t, &rest), CRNET_OK);
+	EXPECT_EQ(crnet_transfer_wait(t, 5000), CRNET_OK);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_DOWNLOAD_DECODED), 3000000);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_DOWNLOAD_RECEIVED), 3000000);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_UPLOAD_SENT), 0);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_COUNT), -1);
+	EXPECT_EQ(crnet_transfer_progress(nullptr, CRNET_PROGRESS_UPLOAD_SENT), -1);
+	crnet_transfer_free(t);
+}
+
+TEST_F(ClientTest, ProgressCountsEncodedAndDecodedBytes)
+{
+	crnet_request *req = crnet_request_new("GET", HttpsUrl("/encoded/gzip").c_str());
+	crnet_transfer *t = crnet_start(client_, req, nullptr, nullptr);
+	crnet_request_free(req);
+	ASSERT_EQ(crnet_transfer_wait(t, 10000), CRNET_OK);
+	const crnet_response *r = crnet_transfer_response(t);
+	size_t len = 0;
+	crnet_response_body(r, &len);
+	int64_t wire = std::stoll(crnet_response_header(r, "content-length"));
+	EXPECT_EQ(P(t, CRNET_PROGRESS_DOWNLOAD_DECODED), static_cast<int64_t>(len));
+	EXPECT_EQ(P(t, CRNET_PROGRESS_DOWNLOAD_RECEIVED), wire);
+	EXPECT_EQ(P(t, CRNET_PROGRESS_DOWNLOAD_TOTAL), wire);
+	EXPECT_LT(wire, static_cast<int64_t>(len));
+	crnet_transfer_free(t);
+}
