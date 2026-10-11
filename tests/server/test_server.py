@@ -59,6 +59,8 @@ WebSocket endpoints (HTTP/1.1 upgrade, any server):
   /ws/burst?n=&size=    sends n binary messages back to back
   /ws/big?size=         sends one large binary message
   /ws/ping              sends a ping; the pong is counted in stats
+                        (pings from the client are counted too)
+  /ws/pong              sends an unsolicited pong
   /ws/badutf8           sends invalid UTF-8 in a text frame
   /ws/badproto          answers with a subprotocol that was not offered
   /ws/cookie            sets a cookie in the handshake response
@@ -99,7 +101,8 @@ PLAINTEXT = (b"crnet content-encoding test payload. " * 200)
 PROXY_USER = "crnet"
 PROXY_PASS = "secret"
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
-         "ws_h2_connects": 0, "ws_pongs": 0, "ws_last_close": None,
+         "ws_h2_connects": 0, "ws_pings": 0, "ws_pongs": 0,
+         "ws_last_close": None,
          "doh_queries": []}
 CACHE_STATS = {}    # /cache/<key> -> {"requests": n, "conditional": n}
 SOCKS_FAULT = {"greeting": None}  # one-shot, set by /socks5-fault
@@ -479,6 +482,7 @@ class WsConn:
             if not masked:
                 raise WsClosed()  # clients must mask
             if fop == OP_PING:
+                STATS["ws_pings"] += 1
                 await self.send_frame(OP_PONG, data)
                 continue
             if fop == OP_PONG:
@@ -571,6 +575,8 @@ async def ws_session(ws, req, chosen, deflate):
                 await ws.send(OP_BINARY, struct.pack("!I", i) + body[4:])
         elif path == "/ws/ping":
             await ws.send_frame(OP_PING, b"are you there")
+        elif path == "/ws/pong":
+            await ws.send_frame(OP_PONG, b"unsolicited")
         elif path == "/ws/badutf8":
             await ws.send_frame(OP_TEXT, b"\xff\xfe bad")
         elif path == "/ws/big":
