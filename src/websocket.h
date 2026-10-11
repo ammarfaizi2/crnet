@@ -132,6 +132,7 @@ private:
 	bool proxy_auth_tried_ = false;
 	std::string proxy_user_;
 	std::string proxy_pass_;
+	std::optional<int> partition_;	// a fresh connection's
 	crnet_ws_msg_type assembling_type_ = CRNET_WS_TEXT;
 	std::string assembling_;
 	// Messages that arrived while paused (callback mode).

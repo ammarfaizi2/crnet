@@ -137,6 +137,7 @@ public:
 	Request &decompress(bool on) { check(crnet_request_set_decompress(get(), on)); return *this; }
 	Request &max_body_size(uint64_t n) { check(crnet_request_set_max_body_size(get(), n)); return *this; }
 	Request &proxy(const std::string &url) { check(crnet_request_set_proxy(get(), url.c_str())); return *this; }
+	Request &fresh_connection(bool enable = true) { check(crnet_request_set_fresh_connection(get(), enable)); return *this; }
 
 	crnet_request *get() const noexcept { return req_.get(); }
 

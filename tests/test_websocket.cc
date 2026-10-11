@@ -710,6 +710,24 @@ TEST_F(ClientTest, WsOverHttp2UsesTheExistingConnection)
 	crnet_ws_free(ws);
 }
 
+TEST_F(ClientTest, WsFreshConnectionSkipsTheExistingConnection)
+{
+	Result warm = Get(client_, "https://" + WsH2Host() + "/echo");
+	ASSERT_EQ(warm.protocol(), "h2");
+	crnet_ws *ws = Connect(client_, "wss://" + WsH2Host() + "/ws/headers", nullptr, nullptr,
+			       nullptr, [](crnet_request *r) {
+				       crnet_request_set_fresh_connection(r, 1);
+			       });
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK) << crnet_ws_net_error(ws);
+	json doc = json::parse(RecvText(ws));
+	EXPECT_EQ(doc["http_version"], "http/1.1");
+	crnet_ws_free(ws);
+	// The HTTP/2 connection is still the client's.
+	Result again = Get(client_, "https://" + WsH2Host() + "/echo");
+	EXPECT_EQ(crnet_response_connection_id(again.resp),
+		  crnet_response_connection_id(warm.resp));
+}
+
 TEST_F(ClientTest, WsOverHttp2EchoAndClose)
 {
 	Get(client_, "https://" + WsH2Host() + "/echo");

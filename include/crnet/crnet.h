@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 26
+#define CRNET_VERSION_MINOR 27
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -712,6 +712,20 @@ CRNET_API int crnet_request_set_decompress(crnet_request *req, int enable);
 #define CRNET_HAS_REQUEST_PROXY 1
 CRNET_API int crnet_request_set_proxy(crnet_request *req,
 				      const char *proxy_url);
+
+/*
+ * Use connections of the request's own (HTTP or WebSocket), as a new
+ * browser profile would: no pooled TCP connection, HTTP/2 or HTTP/3
+ * session is taken, nothing it opens is used by another request, and
+ * its TLS handshakes resume no earlier session. Redirects of the
+ * request may reuse its own connections. Once the transfer (or the
+ * WebSocket) is over and its request released, its idle connections
+ * are closed. For retrying on a new connection, or a "no keep-alive"
+ * setting. Default off.
+ */
+#define CRNET_HAS_FRESH_CONNECTION 1
+CRNET_API int crnet_request_set_fresh_connection(crnet_request *req,
+						 int enable);
 
 /* Fail with CRNET_E_TOO_LARGE past this many body bytes. 0 = no limit. */
 CRNET_API int crnet_request_set_max_body_size(crnet_request *req,

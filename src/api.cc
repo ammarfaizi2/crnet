@@ -824,6 +824,15 @@ CRNET_API int crnet_request_set_max_body_size(crnet_request *req,
 	return CRNET_OK;
 }
 
+CRNET_API int crnet_request_set_fresh_connection(crnet_request *req,
+						 int enable)
+{
+	if (!req)
+		return CRNET_E_INVAL;
+	req->spec.fresh_connection = !!enable;
+	return CRNET_OK;
+}
+
 CRNET_API int crnet_request_set_proxy(crnet_request *req,
 				      const char *proxy_url)
 {

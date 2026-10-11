@@ -143,6 +143,12 @@ crnet_request_set_connect_timeout(req, 3000);          /* overrides the client d
   egress proxies. Within a client a proxy has one set of credentials
   (the client's, or the first request's that names some); a request
   naming other ones for it fails with `CRNET_E_INVAL`.
+- `crnet_request_set_fresh_connection(req, 1)` gives the request (or
+  WebSocket) connections of its own: it takes no pooled connection or
+  HTTP/2/3 session, leaves none behind for others (they are closed when
+  it is over) and resumes no earlier TLS session. Use it to retry on a
+  new connection, or for a "no keep-alive" setting;
+  `crnet_client_close_idle()` affects the whole client instead.
 
 A request object is plain data and can be reused and modified after it
 was started; each start copies it. Requests with `ws://`/`wss://` URLs
@@ -557,6 +563,7 @@ feature can be used:
 | `CRNET_HAS_BIND_INTERFACE` | 0.24.0 | `crnet_client_config_set_bind_interface()` |
 | `CRNET_HAS_WAIT_FDS` | 0.25.0 | `crnet_transfer_response_fd()`, `_done_fd()`, `crnet_ws_open_fd()`, `_closed_fd()` |
 | `CRNET_HAS_REQUEST_PROXY` | 0.26.0 | `crnet_request_set_proxy()` |
+| `CRNET_HAS_FRESH_CONNECTION` | 0.27.0 | `crnet_request_set_fresh_connection()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

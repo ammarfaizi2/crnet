@@ -4,6 +4,7 @@
 // on a dedicated IO thread. All transfers of a client share that
 // thread, its connection pools, HTTP/2 sessions and cookie jar.
 //
+#include <limits>
 #include <memory>
 #include <string_view>
 
@@ -303,6 +304,26 @@ crnet_client::crnet_client(const ClientConfig &cfg)
 	if (!cfg.proxy.empty() && !cfg.proxy_user.empty())
 		proxy_creds_[ProxyKey(cfg.proxy)] = {cfg.proxy_user,
 						     cfg.proxy_pass};
+}
+
+int crnet_client::NewConnectionPartition()
+{
+	DCHECK(IsNetworkThread());
+	// A partition is closed when its one user is gone, so numbers can be
+	// used again after wrapping around.
+	last_partition_ = last_partition_ == std::numeric_limits<int>::max()
+				  ? 1
+				  : last_partition_ + 1;
+	return last_partition_;
+}
+
+void crnet_client::CloseConnectionPartition(int partition)
+{
+	DCHECK(IsNetworkThread());
+	if (context_)
+		context_->http_transaction_factory()
+			->GetSession()
+			->CloseConnectionPartition(partition);
 }
 
 bool crnet_client::PinProxyCredentials(const std::string &proxy,

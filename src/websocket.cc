@@ -100,6 +100,8 @@ public:
 		if (ws_->spec_.proxy)
 			request->set_proxy_chain_override(
 				crnet::ProxyChainOf(ws_->spec_.proxy->proxy));
+		if (ws_->partition_)
+			request->set_connection_partition(ws_->partition_);
 		crnet::HeaderHook::Attach(
 			request, std::make_unique<WsHeaderHook>(
 					 ws_->headers_.suppressed,
@@ -512,6 +514,9 @@ void crnet_ws::StartOnNetworkThread()
 		}
 	}
 
+	if (spec_.fresh_connection)
+		partition_ = client_->NewConnectionPartition();
+
 	channel_ = std::make_unique<net::WebSocketChannel>(
 		std::make_unique<WsEventAdapter>(this), client_->context());
 
@@ -793,7 +798,12 @@ void crnet_ws::Finish(int err, int code, const std::string &reason,
 			FROM_HERE,
 			base::BindOnce(
 				[](std::unique_ptr<net::WebSocketChannel> ch,
-				   scoped_refptr<crnet_ws> self) { ch.reset(); },
+				   scoped_refptr<crnet_ws> self) {
+					ch.reset();
+					if (self->partition_)
+						self->client_->CloseConnectionPartition(
+							*self->partition_);
+				},
 				std::move(channel_), base::WrapRefCounted(this)));
 	}
 	in_flight_.clear();

@@ -146,6 +146,7 @@ struct RequestSpec {
 	bool ws_compression = true;	// offer permessage-deflate
 	uint64_t max_body = 0;
 	std::optional<ProxySpec> proxy;	// unset = the client's
+	bool fresh_connection = false;
 
 	const std::optional<std::string> *FindHeader(std::string_view name) const;
 };
@@ -399,6 +400,7 @@ private:
 	// Credentials for the request's proxy's auth challenges.
 	std::string proxy_user_;
 	std::string proxy_pass_;
+	std::optional<int> partition_;	// a fresh connection's
 	bool download_full_ = false;
 	uint64_t body_bytes_ = 0;
 	scoped_refptr<base::TaskRunner> file_runner_;
@@ -451,6 +453,11 @@ public:
 	// auth cache would otherwise mix the identities.
 	bool PinProxyCredentials(const std::string &proxy, std::string *user,
 				 std::string *pass);
+	// Fresh connections: a connection partition of their own for one
+	// transfer or WebSocket (patched URLRequest::set_connection_partition()),
+	// and closing it once that is gone.
+	int NewConnectionPartition();
+	void CloseConnectionPartition(int partition);
 	void WebSocketFinished(crnet_ws *ws);
 
 	// Blocking helpers (not on a network thread).
@@ -492,6 +499,7 @@ private:
 	// Destroy()).
 	std::map<std::string, std::pair<std::string, std::string>> proxy_creds_;
 	std::vector<std::string> request_socks_keys_;
+	int last_partition_ = 0;	// network thread only
 	std::unique_ptr<net::TransportSecurityPersister> hsts_persister_;
 	std::unique_ptr<net::FileNetLogObserver> netlog_;
 	scoped_refptr<net::CertNetFetcherURLRequest> cert_fetcher_;

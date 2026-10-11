@@ -562,3 +562,105 @@ TEST_F(ClientTest, ConnectTimeoutAppliesToEachRedirectHop)
 	EXPECT_EQ(crnet_response_redirect_count(r.resp), 1);
 	EXPECT_LT(ElapsedMs(t0), 5000);
 }
+
+namespace {
+
+Result GetFresh(crnet_client *c, const std::string &url, const char *proxy = nullptr)
+{
+	crnet_request *req = crnet_request_new("GET", url.c_str());
+	EXPECT_EQ(crnet_request_set_fresh_connection(req, 1), CRNET_OK);
+	if (proxy)
+		EXPECT_EQ(crnet_request_set_proxy(req, proxy), CRNET_OK);
+	Result r;
+	r.rc = crnet_perform(c, req, &r.resp);
+	crnet_request_free(req);
+	return r;
+}
+
+// Sockets this process has open.
+int OpenSockets()
+{
+	int n = 0;
+	for (int fd = 0; fd < 65536; fd++) {
+		char path[64], target[64];
+		snprintf(path, sizeof(path), "/proc/self/fd/%d", fd);
+		ssize_t len = readlink(path, target, sizeof(target) - 1);
+		if (len > 0 && strncmp(target, "socket:", 7) == 0)
+			n++;
+	}
+	return n;
+}
+
+} // namespace
+
+TEST(FreshConnection, NeitherTakesNorLeavesAConnection)
+{
+	for (bool h2 : {false, true}) {
+		SCOPED_TRACE(h2 ? "h2" : "http/1.1");
+		crnet_client *c = NewTestClient();
+		auto url = h2 ? HttpsUrl("/echo") : HttpsH1Url("/echo");
+		Result a = Get(c, url);
+		ASSERT_EQ(a.rc, CRNET_OK);
+		const uint64_t pooled = crnet_response_connection_id(a.resp);
+
+		Result f1 = GetFresh(c, url);
+		ASSERT_EQ(f1.rc, CRNET_OK) << crnet_response_error_string(f1.resp);
+		EXPECT_EQ(f1.protocol(), h2 ? "h2" : "http/1.1");
+		EXPECT_FALSE(crnet_response_socket_reused(f1.resp));
+		EXPECT_NE(crnet_response_connection_id(f1.resp), pooled);
+
+		// The pooled connection is still there for others, and the
+		// fresh one was not left to them.
+		Result b = Get(c, url);
+		EXPECT_TRUE(crnet_response_socket_reused(b.resp));
+		EXPECT_EQ(crnet_response_connection_id(b.resp), pooled);
+		Result f2 = GetFresh(c, url);
+		EXPECT_FALSE(crnet_response_socket_reused(f2.resp));
+		EXPECT_NE(crnet_response_connection_id(f2.resp), pooled);
+		EXPECT_NE(crnet_response_connection_id(f2.resp),
+			  crnet_response_connection_id(f1.resp));
+		crnet_client_free(c);
+	}
+}
+
+TEST(FreshConnection, ConnectionsAreClosedAfterwards)
+{
+	crnet_client *c = NewTestClient();
+	ASSERT_EQ(Get(c, HttpsUrl("/echo")).rc, CRNET_OK);
+	ASSERT_EQ(Get(c, HttpUrl("/echo")).rc, CRNET_OK);
+	const int before = OpenSockets();
+	for (int i = 0; i < 20; i++) {
+		ASSERT_EQ(GetFresh(c, HttpsUrl("/echo")).rc, CRNET_OK);
+		ASSERT_EQ(GetFresh(c, HttpsH1Url("/echo")).rc, CRNET_OK);
+		ASSERT_EQ(GetFresh(c, HttpUrl("/echo")).rc, CRNET_OK);
+	}
+	// Let the last closes run.
+	ASSERT_EQ(Get(c, HttpUrl("/echo")).rc, CRNET_OK);
+	EXPECT_LE(OpenSockets(), before + 3);
+	crnet_client_free(c);
+}
+
+TEST(FreshConnection, ThroughAProxy)
+{
+	auto socks_connects = [] {
+		crnet_client *c = NewTestClient();
+		Result r = Get(c, HttpsUrl("/echo"));
+		crnet_client_free(c);
+		return r.echo()["stats"]["socks5_connects"].get<int>();
+	};
+	const std::string proxy = "socks5h://127.0.0.1:" + std::to_string(ServerPorts().socks5);
+	crnet_client *c = NewTestClient();
+	int before = socks_connects();
+	for (int i = 0; i < 3; i++) {
+		Result r = GetFresh(c, HttpsUrl("/echo"), proxy.c_str());
+		ASSERT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+		EXPECT_TRUE(crnet_response_via_proxy(r.resp));
+	}
+	EXPECT_EQ(socks_connects(), before + 3);
+	crnet_client_free(c);
+}
+
+TEST(FreshConnection, Validation)
+{
+	EXPECT_EQ(crnet_request_set_fresh_connection(nullptr, 1), CRNET_E_INVAL);
+}

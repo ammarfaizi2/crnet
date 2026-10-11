@@ -1,0 +1,390 @@
+net: Let requests keep their connections to themselves
+
+An embedder sometimes needs a request that neither takes a pooled
+connection nor leaves one behind for others: retrying a request on a
+new connection, or a "no keep-alive" setting. //net has no such
+option; closing idle connections is session-wide and races with other
+requests.
+
+Every socket pool, HTTP/2 and QUIC session key and TLS session cache
+key contains the request's ProxyChain, and ProxyChain carries opaque
+data reserved for embedders that takes part in its comparison. So give
+a URLRequest a connection partition: it travels in HttpRequestInfo and
+StreamRequestInfo, and the JobController puts it as opaque data into
+every proxy chain it resolves for the request. Requests of a partition
+then get connections, sessions and TLS sessions of their own.
+
+HttpNetworkSession::CloseConnectionPartition() closes a partition's
+idle sockets, HTTP/2 and QUIC sessions once its requests are gone. It
+also deletes socket pools of partitions that are no longer used:
+ClientSocketPoolManagerImpl creates a pool per proxy chain and keeps it
+for the life of the session, so a partition per request would leak one
+pool each.
+
+diff --git a/net/http/http_network_session.cc b/net/http/http_network_session.cc
+index 05fc047000..8e0e3c1f31 100644
+--- a/net/http/http_network_session.cc
++++ b/net/http/http_network_session.cc
+@@ -374,6 +374,13 @@ void HttpNetworkSession::CloseIdleConnections(const char* net_log_reason_utf8) {
+   spdy_session_pool_.CloseCurrentIdleSessions(net_log_reason_utf8);
+ }
+ 
++void HttpNetworkSession::CloseConnectionPartition(int partition) {
++  spdy_session_pool_.CloseIdleSessionsInPartition(partition);
++  quic_session_pool_.CloseIdleSessionsInPartition(partition);
++  normal_socket_pool_manager_->CloseConnectionPartition(partition);
++  websocket_socket_pool_manager_->CloseConnectionPartition(partition);
++}
++
+ void HttpNetworkSession::SetTLS13EarlyDataEnabled(bool enabled) {
+   params_.enable_early_data = enabled;
+ }
+diff --git a/net/http/http_network_session.h b/net/http/http_network_session.h
+index 0097a398b6..ed2ade7daf 100644
+--- a/net/http/http_network_session.h
++++ b/net/http/http_network_session.h
+@@ -269,6 +269,12 @@ class NET_EXPORT HttpNetworkSession : public base::PowerSuspendObserver {
+   void CloseAllConnections(int net_error, const char* net_log_reason_utf8);
+   void CloseIdleConnections(const char* net_log_reason_utf8);
+ 
++  // crnet: closes the idle connections of connection partition
++  // `partition` (see URLRequest::set_connection_partition()) and frees
++  // the socket pools of partitions that are no longer used. Call it once
++  // the partition's requests are gone.
++  void CloseConnectionPartition(int partition);
++
+   // Returns the original Params used to construct this session.
+   const HttpNetworkSessionParams& params() const { return params_; }
+   // Returns the original Context used to construct this session.
+diff --git a/net/http/http_request_info.h b/net/http/http_request_info.h
+--- a/net/http/http_request_info.h
++++ b/net/http/http_request_info.h
+@@ -77,6 +77,9 @@
+   // URLRequest::set_proxy_chain_override()).
+   std::optional<ProxyChain> proxy_chain_override;
+ 
++  // crnet: see URLRequest::set_connection_partition().
++  std::optional<int> connection_partition;
++
+   // Flag that indicates if the request should be loaded concurrently with
+   // other requests of the same priority when using a protocol that supports
+   // HTTP extensible priorities (RFC 9218). Currently only HTTP/3.
+diff --git a/net/http/http_stream_factory.cc b/net/http/http_stream_factory.cc
+--- a/net/http/http_stream_factory.cc
++++ b/net/http/http_stream_factory.cc
+@@ -105,6 +105,7 @@
+                        http_request_info.upload_data_stream->AllowHTTP1()),
+       load_flags(http_request_info.load_flags),
+       proxy_chain_override(http_request_info.proxy_chain_override),
++      connection_partition(http_request_info.connection_partition),
+       privacy_mode(http_request_info.privacy_mode),
+       secure_dns_policy(http_request_info.secure_dns_policy),
+       socket_tag(http_request_info.socket_tag),
+diff --git a/net/http/http_stream_factory.h b/net/http/http_stream_factory.h
+--- a/net/http/http_stream_factory.h
++++ b/net/http/http_stream_factory.h
+@@ -105,6 +105,8 @@
+     int load_flags = 0;
+     // crnet: see HttpRequestInfo::proxy_chain_override.
+     std::optional<ProxyChain> proxy_chain_override;
++    // crnet: see HttpRequestInfo::connection_partition.
++    std::optional<int> connection_partition;
+     PrivacyMode privacy_mode = PRIVACY_MODE_DISABLED;
+     SecureDnsPolicy secure_dns_policy = SecureDnsPolicy::kAllow;
+     SocketTag socket_tag;
+diff --git a/net/http/http_stream_factory_job_controller.cc b/net/http/http_stream_factory_job_controller.cc
+--- a/net/http/http_stream_factory_job_controller.cc
++++ b/net/http/http_stream_factory_job_controller.cc
+@@ -38,6 +38,7 @@
+ #include "net/log/net_log_event_type.h"
+ #include "net/log/net_log_with_source.h"
+ #include "net/proxy_resolution/proxy_info.h"
++#include "net/proxy_resolution/proxy_list.h"
+ #include "net/proxy_resolution/proxy_resolution_request.h"
+ #include "net/proxy_resolution/proxy_resolution_service.h"
+ #include "net/quic/quic_session_key.h"
+@@ -871,6 +872,16 @@
+   if (rv != OK) {
+     return rv;
+   }
++  // crnet: a request in a connection partition marks its proxy chains,
++  // which key the pools and sessions, with the partition.
++  if (request_info_.connection_partition) {
++    ProxyList partitioned;
++    for (const ProxyChain& chain : proxy_info_.proxy_list().AllChains()) {
++      partitioned.AddProxyChain(ProxyChain::WithOpaqueData(
++          chain.proxy_servers(), *request_info_.connection_partition));
++    }
++    proxy_info_.OverrideProxyList(partitioned);
++  }
+   // Remove unsupported proxies from the list.
+   int supported_proxies = ProxyServer::SCHEME_HTTP | ProxyServer::SCHEME_HTTPS |
+                           ProxyServer::SCHEME_SOCKS4 |
+diff --git a/net/quic/quic_session_pool.cc b/net/quic/quic_session_pool.cc
+index 4034cbd935..910eca6938 100644
+--- a/net/quic/quic_session_pool.cc
++++ b/net/quic/quic_session_pool.cc
+@@ -1132,6 +1132,23 @@ void QuicSessionPool::SetRequestPriority(QuicSessionRequest* request,
+   job_iter->second->SetPriority(priority);
+ }
+ 
++void QuicSessionPool::CloseIdleSessionsInPartition(int partition) {
++  // Closing a session removes it from all_sessions_.
++  std::vector<QuicChromiumClientSession*> idle;
++  for (const auto& session : all_sessions_) {
++    if (session->quic_session_key().proxy_chain().opaque_data() ==
++            partition &&
++        session->GetNumActiveStreams() == 0) {
++      idle.push_back(session.get());
++    }
++  }
++  for (QuicChromiumClientSession* session : idle) {
++    session->CloseSessionOnError(
++        ERR_ABORTED, quic::QUIC_CONNECTION_CANCELLED,
++        quic::ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
++  }
++}
++
+ void QuicSessionPool::CloseAllSessions(int error,
+                                        quic::QuicErrorCode quic_error) {
+   base::UmaHistogramSparse("Net.QuicSession.CloseAllSessionsError", -error);
+diff --git a/net/quic/quic_session_pool.h b/net/quic/quic_session_pool.h
+index 7456d01059..f4425d9d7c 100644
+--- a/net/quic/quic_session_pool.h
++++ b/net/quic/quic_session_pool.h
+@@ -431,6 +431,10 @@ class NET_EXPORT_PRIVATE QuicSessionPool
+   // It sends connection close packet when closing connections.
+   void CloseAllSessions(int error, quic::QuicErrorCode quic_error);
+ 
++  // crnet: closes the sessions of connection partition `partition` (see
++  // URLRequest::set_connection_partition()) that have no open streams.
++  void CloseIdleSessionsInPartition(int partition);
++
+   base::Value QuicSessionPoolInfoToValue() const;
+ 
+   // Delete cached state objects in |crypto_config_|. If |origin_filter| is not
+diff --git a/net/socket/client_socket_pool.cc b/net/socket/client_socket_pool.cc
+index 43431cba1d..1f7ab46839 100644
+--- a/net/socket/client_socket_pool.cc
++++ b/net/socket/client_socket_pool.cc
+@@ -176,6 +176,10 @@ base::TimeDelta ClientSocketPool::used_idle_socket_timeout() {
+   return base::Seconds(g_used_idle_socket_timeout_s);
+ }
+ 
++bool ClientSocketPool::IsUnused() const {
++  return false;
++}
++
+ // static
+ void ClientSocketPool::set_used_idle_socket_timeout(base::TimeDelta timeout) {
+   DCHECK_GT(timeout.InSeconds(), 0);
+diff --git a/net/socket/client_socket_pool.h b/net/socket/client_socket_pool.h
+index 5db1b533d3..2cc00d5c58 100644
+--- a/net/socket/client_socket_pool.h
++++ b/net/socket/client_socket_pool.h
+@@ -345,6 +345,10 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+   // The total number of idle sockets in the pool.
+   virtual size_t IdleSocketCount() const = 0;
+ 
++  // crnet: whether the pool has no sockets, connect jobs or requests, so
++  // that deleting it affects nobody.
++  virtual bool IsUnused() const;
++
+   // The total number of idle sockets in a connection group.
+   virtual size_t IdleSocketCountInGroup(const GroupId& group_id) const = 0;
+ 
+diff --git a/net/socket/client_socket_pool_manager.h b/net/socket/client_socket_pool_manager.h
+index 9ce5cf8881..dfef45e5d5 100644
+--- a/net/socket/client_socket_pool_manager.h
++++ b/net/socket/client_socket_pool_manager.h
+@@ -74,6 +74,11 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
+   // ProxyChain::Direct()).
+   virtual ClientSocketPool* GetSocketPool(const ProxyChain& proxy_chain) = 0;
+ 
++  // crnet: closes the idle sockets of the pools of connection partition
++  // `partition` (see URLRequest::set_connection_partition()), and deletes
++  // the pools of any partition once they are unused.
++  virtual void CloseConnectionPartition(int partition) {}
++
+   // Creates a Value summary of the state of the socket pools.
+   virtual base::Value SocketPoolInfoToValue() const = 0;
+ };
+diff --git a/net/socket/client_socket_pool_manager_impl.cc b/net/socket/client_socket_pool_manager_impl.cc
+index 8b402f81ce..e9a12a3879 100644
+--- a/net/socket/client_socket_pool_manager_impl.cc
++++ b/net/socket/client_socket_pool_manager_impl.cc
+@@ -98,6 +98,22 @@ ClientSocketPool* ClientSocketPoolManagerImpl::GetSocketPool(
+   return ret.first->second.get();
+ }
+ 
++void ClientSocketPoolManagerImpl::CloseConnectionPartition(int partition) {
++  for (auto it = socket_pools_.begin(); it != socket_pools_.end();) {
++    std::optional<int> pool_partition = it->first.opaque_data();
++    if (pool_partition == partition) {
++      it->second->CloseIdleSockets("Connection partition closed");
++    }
++    // Each partition gets pools of its own; without this they would pile
++    // up for as long as the session lives.
++    if (pool_partition && it->second->IsUnused()) {
++      it = socket_pools_.erase(it);
++    } else {
++      ++it;
++    }
++  }
++}
++
+ base::Value ClientSocketPoolManagerImpl::SocketPoolInfoToValue() const {
+   base::ListValue list;
+   for (const auto& socket_pool : socket_pools_) {
+diff --git a/net/socket/client_socket_pool_manager_impl.h b/net/socket/client_socket_pool_manager_impl.h
+index 93235445ec..be9bb82acd 100644
+--- a/net/socket/client_socket_pool_manager_impl.h
++++ b/net/socket/client_socket_pool_manager_impl.h
+@@ -46,6 +46,7 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
+   void CloseIdleSockets(const char* net_log_reason_utf8) override;
+ 
+   ClientSocketPool* GetSocketPool(const ProxyChain& proxy_chain) override;
++  void CloseConnectionPartition(int partition) override;
+ 
+   // Creates a Value summary of the state of the socket pools.
+   base::Value SocketPoolInfoToValue() const override;
+diff --git a/net/socket/transport_client_socket_pool.cc b/net/socket/transport_client_socket_pool.cc
+index ef2c11648a..85f2e47f05 100644
+--- a/net/socket/transport_client_socket_pool.cc
++++ b/net/socket/transport_client_socket_pool.cc
+@@ -698,6 +698,11 @@ size_t TransportClientSocketPool::IdleSocketCount() const {
+   return idle_socket_count_;
+ }
+ 
++bool TransportClientSocketPool::IsUnused() const {
++  return group_map_.empty() && idle_socket_count_ == 0 &&
++         connecting_socket_count_ == 0 && handed_out_socket_count_ == 0;
++}
++
+ size_t TransportClientSocketPool::IdleSocketCountInGroup(
+     const GroupId& group_id) const {
+   auto i = group_map_.find(group_id);
+diff --git a/net/socket/transport_client_socket_pool.h b/net/socket/transport_client_socket_pool.h
+index 3ca97feff5..c606e1d4bb 100644
+--- a/net/socket/transport_client_socket_pool.h
++++ b/net/socket/transport_client_socket_pool.h
+@@ -225,6 +225,7 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
+   void CloseIdleSocketsInGroup(const GroupId& group_id,
+                                const char* net_log_reason_utf8) override;
+   size_t IdleSocketCount() const override;
++  bool IsUnused() const override;
+   size_t IdleSocketCountInGroup(const GroupId& group_id) const override;
+   LoadState GetLoadState(const GroupId& group_id,
+                          const ClientSocketHandle* handle) const override;
+diff --git a/net/socket/websocket_transport_client_socket_pool.cc b/net/socket/websocket_transport_client_socket_pool.cc
+index eadc1444a0..2ff6f5b30c 100644
+--- a/net/socket/websocket_transport_client_socket_pool.cc
++++ b/net/socket/websocket_transport_client_socket_pool.cc
+@@ -234,6 +234,11 @@ size_t WebSocketTransportClientSocketPool::IdleSocketCount() const {
+   return 0;
+ }
+ 
++bool WebSocketTransportClientSocketPool::IsUnused() const {
++  return pending_connects_.empty() && stalled_request_queue_.empty() &&
++         handed_out_socket_count_ == 0;
++}
++
+ size_t WebSocketTransportClientSocketPool::IdleSocketCountInGroup(
+     const GroupId& group_id) const {
+   return 0;
+diff --git a/net/socket/websocket_transport_client_socket_pool.h b/net/socket/websocket_transport_client_socket_pool.h
+index e1c7c7a4fa..14410ed377 100644
+--- a/net/socket/websocket_transport_client_socket_pool.h
++++ b/net/socket/websocket_transport_client_socket_pool.h
+@@ -94,6 +94,7 @@ class NET_EXPORT_PRIVATE WebSocketTransportClientSocketPool
+   void CloseIdleSocketsInGroup(const GroupId& group_id,
+                                const char* net_log_reason_utf8) override;
+   size_t IdleSocketCount() const override;
++  bool IsUnused() const override;
+   size_t IdleSocketCountInGroup(const GroupId& group_id) const override;
+   LoadState GetLoadState(const GroupId& group_id,
+                          const ClientSocketHandle* handle) const override;
+diff --git a/net/spdy/spdy_session_pool.cc b/net/spdy/spdy_session_pool.cc
+index 94189c50ff..69f3496f3a 100644
+--- a/net/spdy/spdy_session_pool.cc
++++ b/net/spdy/spdy_session_pool.cc
+@@ -416,6 +416,20 @@ void SpdySessionPool::CloseCurrentIdleSessions(const std::string& description) {
+   CloseCurrentSessionsHelper(ERR_ABORTED, description, true /* idle_only */);
+ }
+ 
++void SpdySessionPool::CloseIdleSessionsInPartition(int partition) {
++  WeakSessionList current_sessions = GetCurrentSessions();
++  for (base::WeakPtr<SpdySession>& session : current_sessions) {
++    if (!session || session->is_active() || session->IsDraining() ||
++        session->spdy_session_key().proxy_chain().opaque_data() !=
++            partition) {
++      continue;
++    }
++    session->CloseSessionOnError(ERR_ABORTED, "Connection partition closed");
++    NotifyOnSessionClosed(session->spdy_session_key(),
++                          session->WasEverUsedToCreateStreams());
++  }
++}
++
+ void SpdySessionPool::CloseAllSessions() {
+   auto is_draining = [](const SpdySession* s) { return s->IsDraining(); };
+   // Repeat until every SpdySession owned by |this| is draining.
+diff --git a/net/spdy/spdy_session_pool.h b/net/spdy/spdy_session_pool.h
+index 842c8b0633..4802b60b49 100644
+--- a/net/spdy/spdy_session_pool.h
++++ b/net/spdy/spdy_session_pool.h
+@@ -325,6 +325,10 @@ class NET_EXPORT SpdySessionPool
+   // live.
+   void CloseCurrentIdleSessions(const std::string& description);
+ 
++  // crnet: closes the idle sessions of connection partition `partition`
++  // (see URLRequest::set_connection_partition()).
++  void CloseIdleSessionsInPartition(int partition);
++
+   // Repeatedly close all SpdySessions until all of them (including new ones
+   // created in the process of closing the current ones, and new ones created in
+   // the process of closing those new ones, etc.) are unavailable.
+diff --git a/net/url_request/url_request.h b/net/url_request/url_request.h
+--- a/net/url_request/url_request.h
++++ b/net/url_request/url_request.h
+@@ -823,6 +823,19 @@
+     return proxy_chain_override_;
+   }
+ 
++  // crnet: requests with a connection partition use connections of their
++  // own: the proxy chains resolved for them carry the partition as
++  // opaque data, which keys every socket pool, HTTP/2 and QUIC session
++  // and TLS session cache entry. Requests of one partition share them;
++  // HttpNetworkSession::CloseConnectionPartition() closes them. Set it
++  // before Start().
++  void set_connection_partition(std::optional<int> partition) {
++    connection_partition_ = partition;
++  }
++  std::optional<int> connection_partition() const {
++    return connection_partition_;
++  }
++
+   // Gets the connection attempts made in the process of servicing this
+   // URLRequest. Only guaranteed to be valid if called after the request fails
+   // or after the response headers are received.
+@@ -1276,6 +1289,9 @@
+   // crnet: see set_proxy_chain_override().
+   std::optional<ProxyChain> proxy_chain_override_;
+ 
++  // crnet: see set_connection_partition().
++  std::optional<int> connection_partition_;
++
+   // If not null, the network service will not advertise any stream types
+   // (via Accept-Encoding) that are not listed. Also, it will not attempt
+   // decoding any non-listed stream types.
+diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
+--- a/net/url_request/url_request_http_job.cc
++++ b/net/url_request/url_request_http_job.cc
+@@ -466,6 +466,7 @@
+   request_info_.initiator = request_->initiator();
+   request_info_.load_flags = request_->load_flags();
+   request_info_.proxy_chain_override = request_->proxy_chain_override();
++  request_info_.connection_partition = request_->connection_partition();
+   request_info_.priority_incremental = request_->priority_incremental();
+   request_info_.secure_dns_policy = request_->secure_dns_policy();
+   request_info_.traffic_annotation =

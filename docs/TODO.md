@@ -32,20 +32,11 @@ Several credentials for one proxy within a client.
   credentials by proxy alone.
 - Why: rotating proxies often pick the exit by the username
   ("user-session-42"), all behind one host and port.
-- Notes: the credentials would have to become part of the pool keys
-  (the proxy chain), and the proxy auth cache must not answer for them;
-  probably another Chromium patch.
-
-### fresh-connection
-
-A per-request fresh connection.
-
-- Wanted: a request flag that neither takes a pooled socket nor returns
-  it to the pool, or a client option of zero idle sockets.
-- Why: retrying a request that met an anti-bot challenge on a new
-  connection; honouring a "no keep-alive" setting;
-  `crnet_client_close_idle()` is client-wide and races with concurrent
-  requests.
+- Notes: connections could be kept apart per identity the way fresh
+  connections are, with the connection partition of
+  chromium/patches/0007 (a partition per credential set). The proxy
+  auth cache must not answer for them either; for HTTP proxies that
+  needs another Chromium change.
 
 ## Browser emulation
 

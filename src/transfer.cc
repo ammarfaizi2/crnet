@@ -225,6 +225,10 @@ void crnet_transfer::StartOnNetworkThread()
 	if (spec_.proxy)
 		request_->set_proxy_chain_override(
 			crnet::ProxyChainOf(spec_.proxy->proxy));
+	if (spec_.fresh_connection) {
+		partition_ = client_->NewConnectionPartition();
+		request_->set_connection_partition(partition_);
+	}
 	request_->SetExtraRequestHeaders(bh_.extra);
 	if (bh_.referrer) {
 		request_->set_referrer_policy(net::ReferrerPolicy::NEVER_CLEAR);
@@ -706,6 +710,11 @@ void crnet_transfer::Finish(int err, int net_error)
 				[](std::unique_ptr<net::URLRequest> req,
 				   scoped_refptr<crnet_transfer> self) {
 					req.reset();
+					// Its connection is back in the
+					// partition's pool, or gone.
+					if (self->partition_)
+						self->client_->CloseConnectionPartition(
+							*self->partition_);
 				},
 				std::move(request_), base::WrapRefCounted(this)));
 	}
