@@ -54,6 +54,7 @@ seconds:
 | Option | Value |
 |---|---|
 | `proxy`, `proxy_bypass`, `host_rules`, `local_address`, `bind_interface` | strings, as in the C API |
+| `proxy_credentials` | `(user, password)` as `bytes` or `str`, replacing the proxy URL's; `None` for none at all |
 | `user_agent`, `sec_ch_ua`, `platform`, `accept_language`, `platform_profile` | the browser identity; `platform_profile` is `PLATFORM_LINUX`, `PLATFORM_WINDOWS` or `PLATFORM_MACOS` |
 | `http2`, `quic`, `builtin_dns`, `cookies`, `insecure` | booleans |
 | `secure_dns`, `doh_templates` | `SECURE_DNS_*` and the DoH URI templates |
@@ -83,9 +84,11 @@ request and returns a `crnet.Response`; `get()`, `head()`, `post()`,
   `priority`, `timeout`, `connect_timeout`, `max_redirects`,
   `decompress`, `max_body_size`, `cache_mode`, `proxy`: this
   request's proxy URL (`"direct://"` for none), as
-  `crnet_request_set_proxy()`, and `fresh_connection`: connections of
-  its own, as `crnet_request_set_fresh_connection()` (`websocket()`
-  takes these two too).
+  `crnet_request_set_proxy()`, `proxy_credentials`: `(user, password)`
+  for that proxy as `bytes` or `str` (`None` for none at all), and
+  `fresh_connection`: connections of its own, as
+  `crnet_request_set_fresh_connection()` (`websocket()` takes these
+  three too).
 
 A `Response` is a plain Python object: `status`, `reason`, `url`,
 `headers` (pairs in received order), `header(name)`,

@@ -143,6 +143,15 @@ def _b(s):
     return str(s).encode()
 
 
+def _credentials(value):
+    """(user, password) as str (UTF-8) or bytes, or None for none at
+    all, as arguments of crnet_*_set_proxy_credentials()."""
+    if value is None:
+        return b"", 0, b"", 0
+    user, password = (_b(v) or b"" for v in value)
+    return user, len(user), password, len(password)
+
+
 def _s(b):
     return b.decode("utf-8", "replace") if b is not None else None
 
@@ -309,7 +318,8 @@ class _Request:
                  priority=None, timeout=None, connect_timeout=None,
                  max_redirects=None, decompress=None, max_body_size=None,
                  cache_mode=None, body_length=None, stream_response=False,
-                 ws_compression=None, proxy=None, fresh_connection=None):
+                 ws_compression=None, proxy=None, fresh_connection=None,
+                 proxy_credentials=False):
         self.ptr = _lib.crnet_request_new(_b(method), _b(url))
         if not self.ptr:
             raise ValueError("invalid request: %s %s" % (method, url))
@@ -318,7 +328,7 @@ class _Request:
                         connect_timeout, max_redirects, decompress,
                         max_body_size, cache_mode, body_length,
                         stream_response, ws_compression, proxy,
-                        fresh_connection)
+                        fresh_connection, proxy_credentials)
         except BaseException:
             self.free()
             raise
@@ -326,7 +336,7 @@ class _Request:
     def _apply(self, headers, body, mode, priority, timeout,
                connect_timeout, max_redirects, decompress, max_body_size,
                cache_mode, body_length, stream_response, ws_compression,
-               proxy, fresh_connection):
+               proxy, fresh_connection, proxy_credentials):
         p = self.ptr
         for name, value in _items(headers):
             # None removes a header crnet would add.
@@ -373,6 +383,9 @@ class _Request:
                 p, int(ws_compression)), "ws_compression")
         if proxy is not None:
             _check(_lib.crnet_request_set_proxy(p, _b(proxy)), "proxy")
+        if proxy_credentials is not False:
+            _check(_lib.crnet_request_set_proxy_credentials(
+                p, *_credentials(proxy_credentials)), "proxy_credentials")
         if fresh_connection is not None:
             _check(_lib.crnet_request_set_fresh_connection(
                 p, int(fresh_connection)), "fresh_connection")
@@ -674,6 +687,8 @@ class Client:
       accept_language, host_rules, netlog, state_dir, local_address,
       bind_interface (str)
       http2, quic, builtin_dns, cookies, insecure, trust_anchors_only
+      proxy_credentials: (user, password) as bytes or str, replacing the
+        proxy URL's; None for none at all
       platform_profile (PLATFORM_*)
       secure_dns (SECURE_DNS_*), with doh_templates (str)
       trust_anchors: PEM text or a list of PEM texts
@@ -707,6 +722,10 @@ class Client:
             if name in o:
                 getattr(_lib, "crnet_client_config_set_" + name)(
                     cfg, int(bool(o.pop(name))))
+        if "proxy_credentials" in o:
+            _check(_lib.crnet_client_config_set_proxy_credentials(
+                cfg, *_credentials(o.pop("proxy_credentials"))),
+                "proxy_credentials")
         if "platform_profile" in o:
             _check(_lib.crnet_client_config_set_platform_profile(
                 cfg, o.pop("platform_profile")), "platform_profile")
@@ -762,8 +781,9 @@ class Client:
         (streamed; pass body_length if known). Other keywords: mode
         (MODE_*), priority, timeout, connect_timeout, max_redirects,
         decompress, max_body_size, cache_mode, proxy (this request's
-        proxy URL, "direct://" for none), fresh_connection (connections
-        of its own, closed afterwards).
+        proxy URL, "direct://" for none), proxy_credentials ((user,
+        password) as bytes or str for that proxy, None for none at all),
+        fresh_connection (connections of its own, closed afterwards).
 
         Raises Error (Timeout for timeouts) when the request fails; an
         HTTP error status is a Response, not an exception.
@@ -822,11 +842,13 @@ class Client:
             req.free()
 
     def websocket(self, url, protocols=None, headers=None, timeout=None,
-                  compression=None, proxy=None, fresh_connection=None):
+                  compression=None, proxy=None, fresh_connection=None,
+                  proxy_credentials=False):
         """Open a WebSocket (ws:// or wss://) and wait until it is open.
         protocols: comma-separated subprotocols to offer."""
         req = _Request(None, url, headers, ws_compression=compression,
-                       proxy=proxy, fresh_connection=fresh_connection)
+                       proxy=proxy, fresh_connection=fresh_connection,
+                       proxy_credentials=proxy_credentials)
         try:
             return WebSocket(self, req, protocols, timeout)
         finally:

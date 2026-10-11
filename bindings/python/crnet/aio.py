@@ -425,10 +425,11 @@ class AsyncClient:
 
     async def websocket(self, url, protocols=None, headers=None,
                         timeout=None, compression=None, proxy=None,
-                        fresh_connection=None):
+                        fresh_connection=None, proxy_credentials=False):
         """Open a WebSocket (ws:// or wss://) and wait until it is open."""
         req = _Request(None, url, headers, ws_compression=compression,
-                       proxy=proxy, fresh_connection=fresh_connection)
+                       proxy=proxy, fresh_connection=fresh_connection,
+                       proxy_credentials=proxy_credentials)
         try:
             return await AsyncWebSocket._connect(self, req, protocols,
                                                  timeout)
