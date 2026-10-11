@@ -210,6 +210,21 @@ TEST_F(ClientTest, WsHandshakeMatchesChrome)
 	EXPECT_FALSE(EchoHasHeader(doc, "sec-ch-ua")) << "Chrome sends none";
 }
 
+TEST(WebSocketIdentity, HandshakeUsesPlatformProfile)
+{
+	crnet_client_config *cfg = crnet_client_config_new();
+	crnet_client_config_set_platform_profile(cfg, CRNET_PLATFORM_WINDOWS);
+	crnet_client *c = NewTestClient(cfg);
+	crnet_client_config_free(cfg);
+	crnet_ws *ws = Connect(c, WsUrl("/ws/headers"), nullptr, nullptr);
+	ASSERT_EQ(crnet_ws_wait_open(ws, 5000), CRNET_OK);
+	json doc = json::parse(RecvText(ws));
+	crnet_ws_free(ws);
+	crnet_client_free(c);
+	EXPECT_EQ(EchoHeader(doc, "User-Agent"),
+		  crnet_platform_user_agent(CRNET_PLATFORM_WINDOWS));
+}
+
 TEST_F(ClientTest, WsHeaderOverrides)
 {
 	crnet_ws *ws = Connect(client_, WsUrl("/ws/headers"), nullptr, nullptr,

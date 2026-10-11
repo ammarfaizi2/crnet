@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 21
+#define CRNET_VERSION_MINOR 22
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -209,14 +209,54 @@ CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
 CRNET_API int crnet_client_config_set_proxy_bypass(crnet_client_config *cfg,
 						   const char *rules);
 
-/* Override the browser identity. NULL restores the build default. */
+/*
+ * Override the browser identity. NULL restores the default: the
+ * platform profile's User-Agent, and the build's sec-ch-ua.
+ */
 CRNET_API int crnet_client_config_set_user_agent(crnet_client_config *cfg,
 						 const char *ua);
 CRNET_API int crnet_client_config_set_sec_ch_ua(crnet_client_config *cfg,
 						const char *sec_ch_ua);
-/* Value of sec-ch-ua-platform without quotes, default "Linux". */
+/*
+ * Value of sec-ch-ua-platform without quotes. NULL restores the
+ * platform profile's value ("Linux" by default).
+ */
 CRNET_API int crnet_client_config_set_platform(crnet_client_config *cfg,
 					       const char *platform);
+
+/*
+ * The operating system the client claims, as one switch. A profile
+ * sets every platform-dependent part of the browser identity together,
+ * as Chrome sends them on that platform: the User-Agent and
+ * sec-ch-ua-platform. Chrome's reduced User-Agent freezes the OS
+ * version, so one string covers every release of an OS:
+ *
+ *	LINUX	"X11; Linux x86_64"			"Linux"
+ *	WINDOWS	"Windows NT 10.0; Win64; x64"		"Windows"
+ *	MACOS	"Macintosh; Intel Mac OS X 10_15_7"	"macOS"
+ *
+ * All three are desktop platforms: sec-ch-ua-mobile stays "?0", and
+ * the TLS and HTTP/2 handshakes do not depend on the platform.
+ *
+ * A User-Agent or platform set explicitly takes precedence over the
+ * profile, whatever the order of the calls. Default LINUX.
+ * CRNET_E_INVAL for an unknown profile.
+ */
+#define CRNET_HAS_PLATFORM_PROFILE 1
+typedef enum crnet_platform_profile {
+	CRNET_PLATFORM_LINUX = 0,
+	CRNET_PLATFORM_WINDOWS = 1,
+	CRNET_PLATFORM_MACOS = 2,
+} crnet_platform_profile;
+CRNET_API int crnet_client_config_set_platform_profile(
+		crnet_client_config *cfg, crnet_platform_profile profile);
+
+/*
+ * The User-Agent a platform profile sends, or NULL for an unknown
+ * profile. Static storage. crnet_default_user_agent() is LINUX's.
+ */
+CRNET_API const char *crnet_platform_user_agent(
+		crnet_platform_profile profile);
 /* Default "en-US,en;q=0.9". */
 CRNET_API int crnet_client_config_set_accept_language(
 		crnet_client_config *cfg, const char *accept_language);

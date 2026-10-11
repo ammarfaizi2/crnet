@@ -145,19 +145,35 @@ The defaults describe Chrome on Linux x86-64 for the build's major
 version. `sec-ch-ua` uses Chrome's own GREASE algorithm (seeded with the
 major version), so it changes correctly when the Chromium pin is bumped.
 
-To present a different platform, set all of these consistently:
+To present a different platform, pick a platform profile. It sets the
+`User-Agent` and `sec-ch-ua-platform` together, as Chrome sends them on
+that platform:
 
 ```c
-crnet_client_config_set_user_agent(cfg,
-	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-	"(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36");
-crnet_client_config_set_platform(cfg, "Windows");
+crnet_client_config_set_platform_profile(cfg, CRNET_PLATFORM_WINDOWS);
 ```
 
-Keep the major version equal to the build's: the TLS and HTTP/2
-fingerprint always says "Chrome 155", and a mismatching `User-Agent` is
-a classic bot signal. The TLS fingerprint of Chrome is the same on all
-desktop platforms.
+| Profile | `User-Agent` platform | `sec-ch-ua-platform` |
+|---|---|---|
+| `CRNET_PLATFORM_LINUX` (default) | `X11; Linux x86_64` | `"Linux"` |
+| `CRNET_PLATFORM_WINDOWS` | `Windows NT 10.0; Win64; x64` | `"Windows"` |
+| `CRNET_PLATFORM_MACOS` | `Macintosh; Intel Mac OS X 10_15_7` | `"macOS"` |
+
+The strings come from Chromium's
+`components/embedder_support/user_agent_utils.cc`
+(`GetUnifiedPlatform()`, `GetPlatformForUAMetadata()`). Chrome's
+reduced User-Agent freezes the OS version and CPU, so one string covers
+every release of an OS: Windows 11 still says `Windows NT 10.0`, and an
+Apple silicon Mac says `Intel Mac OS X 10_15_7`. All three are desktop
+platforms (`sec-ch-ua-mobile: ?0`), and nothing else in the request
+headers, the TLS handshake or HTTP/2 depends on the platform.
+
+`crnet_client_config_set_user_agent()` and
+`crnet_client_config_set_platform()` still override single values, and
+take precedence over the profile whatever the order of the calls. Keep
+the major version equal to the build's: the TLS and HTTP/2 fingerprint
+always says "Chrome 155", and a mismatching `User-Agent` is a classic
+bot signal.
 
 ## What crnet does not do
 

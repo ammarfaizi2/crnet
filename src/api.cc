@@ -355,7 +355,23 @@ CRNET_API int crnet_client_config_set_platform(crnet_client_config *cfg,
 {
 	if (!cfg)
 		return CRNET_E_INVAL;
-	return StoreString(&cfg->cfg.platform, v, "Linux");
+	return StoreString(&cfg->cfg.platform, v, "");
+}
+
+CRNET_API int crnet_client_config_set_platform_profile(
+	crnet_client_config *cfg, crnet_platform_profile profile)
+{
+	if (!cfg || !crnet::PlatformUserAgent(profile))
+		return CRNET_E_INVAL;
+	cfg->cfg.platform_profile = profile;
+	return CRNET_OK;
+}
+
+CRNET_API const char *crnet_platform_user_agent(
+	crnet_platform_profile profile)
+{
+	const std::string *ua = crnet::PlatformUserAgent(profile);
+	return ua ? ua->c_str() : nullptr;
 }
 
 CRNET_API int crnet_client_config_set_accept_language(

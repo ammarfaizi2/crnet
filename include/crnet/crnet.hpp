@@ -60,6 +60,7 @@ public:
 	ClientConfig &user_agent(const std::string &ua) { check(crnet_client_config_set_user_agent(get(), ua.c_str())); return *this; }
 	ClientConfig &sec_ch_ua(const std::string &v) { check(crnet_client_config_set_sec_ch_ua(get(), v.c_str())); return *this; }
 	ClientConfig &platform(const std::string &v) { check(crnet_client_config_set_platform(get(), v.c_str())); return *this; }
+	ClientConfig &platform_profile(crnet_platform_profile p) { check(crnet_client_config_set_platform_profile(get(), p)); return *this; }
 	ClientConfig &accept_language(const std::string &v) { check(crnet_client_config_set_accept_language(get(), v.c_str())); return *this; }
 	ClientConfig &http2(bool on) { crnet_client_config_set_http2(get(), on); return *this; }
 	ClientConfig &quic(bool on) { crnet_client_config_set_quic(get(), on); return *this; }

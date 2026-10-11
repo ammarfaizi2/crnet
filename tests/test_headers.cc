@@ -325,6 +325,97 @@ TEST(Identity, ConfiguredBrowserIdentity)
 	crnet_client_free(c);
 }
 
+TEST(Identity, PlatformProfiles)
+{
+	// The reduced platform tokens of
+	// components/embedder_support/user_agent_utils.cc.
+	const struct {
+		crnet_platform_profile p;
+		const char *ua_platform;
+		const char *ch_platform;
+	} cases[] = {
+		{CRNET_PLATFORM_LINUX, "X11; Linux x86_64", "\"Linux\""},
+		{CRNET_PLATFORM_WINDOWS, "Windows NT 10.0; Win64; x64",
+		 "\"Windows\""},
+		{CRNET_PLATFORM_MACOS, "Macintosh; Intel Mac OS X 10_15_7",
+		 "\"macOS\""},
+	};
+	// "155.0.8059.39" reduces to "155.0.0.0".
+	const std::string full = crnet_chromium_version();
+	const std::string product = "Chrome/" +
+		full.substr(0, full.find('.')) + ".0.0.0 Safari/537.36";
+	EXPECT_STREQ(crnet_platform_user_agent(CRNET_PLATFORM_LINUX),
+		     crnet_default_user_agent());
+
+	for (const auto &tc : cases) {
+		const std::string ua = std::string("Mozilla/5.0 (") +
+			tc.ua_platform +
+			") AppleWebKit/537.36 (KHTML, like Gecko) " + product;
+		ASSERT_NE(crnet_platform_user_agent(tc.p), nullptr);
+		EXPECT_EQ(crnet_platform_user_agent(tc.p), ua);
+
+		crnet_client_config *cfg = crnet_client_config_new();
+		ASSERT_EQ(crnet_client_config_set_platform_profile(cfg, tc.p),
+			  CRNET_OK);
+		crnet_client *c = NewTestClient(cfg);
+		crnet_client_config_free(cfg);
+		for (crnet_mode m : {CRNET_MODE_NAVIGATE, CRNET_MODE_FETCH,
+				     CRNET_MODE_RAW}) {
+			crnet_request *req = Req("GET", HttpsUrl("/echo"), m);
+			json e = EchoOf(c, req);
+			crnet_request_free(req);
+			EXPECT_EQ(EchoHeader(e, "user-agent"), ua) << m;
+			if (m == CRNET_MODE_RAW)
+				continue;
+			EXPECT_EQ(EchoHeader(e, "sec-ch-ua-platform"),
+				  tc.ch_platform) << m;
+			EXPECT_EQ(EchoHeader(e, "sec-ch-ua-mobile"), "?0");
+			EXPECT_EQ(EchoHeader(e, "sec-ch-ua"),
+				  crnet_default_sec_ch_ua());
+		}
+		crnet_client_free(c);
+	}
+}
+
+TEST(Identity, ExplicitValuesWinOverProfile)
+{
+	crnet_client_config *cfg = crnet_client_config_new();
+	EXPECT_EQ(crnet_client_config_set_platform_profile(
+			  cfg, static_cast<crnet_platform_profile>(3)),
+		  CRNET_E_INVAL);
+	EXPECT_EQ(crnet_client_config_set_platform_profile(
+			  cfg, static_cast<crnet_platform_profile>(-1)),
+		  CRNET_E_INVAL);
+	EXPECT_EQ(crnet_platform_user_agent(
+			  static_cast<crnet_platform_profile>(3)),
+		  nullptr);
+
+	// Explicit values set before the profile still win.
+	crnet_client_config_set_user_agent(cfg, "UA/1");
+	crnet_client_config_set_platform(cfg, "Plan 9");
+	crnet_client_config_set_platform_profile(cfg, CRNET_PLATFORM_MACOS);
+	crnet_client *c = NewTestClient(cfg);
+	crnet_request *req = Req("GET", HttpsUrl("/echo"));
+	json e = EchoOf(c, req);
+	crnet_request_free(req);
+	crnet_client_free(c);
+	EXPECT_EQ(EchoHeader(e, "user-agent"), "UA/1");
+	EXPECT_EQ(EchoHeader(e, "sec-ch-ua-platform"), "\"Plan 9\"");
+
+	// NULL brings back the profile's values.
+	crnet_client_config_set_user_agent(cfg, nullptr);
+	crnet_client_config_set_platform(cfg, nullptr);
+	c = NewTestClient(cfg);
+	crnet_client_config_free(cfg);
+	req = Req("GET", HttpsUrl("/echo"));
+	e = EchoOf(c, req);
+	crnet_request_free(req);
+	crnet_client_free(c);
+	EXPECT_EQ(EchoHeader(e, "user-agent"),
+		  crnet_platform_user_agent(CRNET_PLATFORM_MACOS));
+	EXPECT_EQ(EchoHeader(e, "sec-ch-ua-platform"), "\"macOS\"");
+}
+
 TEST_F(ClientTest, RawModeHonoursRemovalAndCookieMerge)
 {
 	crnet_client_set_cookie(client_, HttpsUrl("/").c_str(), "jar=1");

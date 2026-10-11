@@ -79,7 +79,8 @@ struct ClientConfig {
 	std::string proxy_bypass;	// Chromium bypass rules, "" = none
 	std::string user_agent;		// "" = build default
 	std::string sec_ch_ua;		// "" = build default
-	std::string platform = "Linux";
+	std::string platform;		// "" = the profile's
+	crnet_platform_profile platform_profile = CRNET_PLATFORM_LINUX;
 	std::string accept_language = "en-US,en;q=0.9";
 	bool http2 = true;
 	bool quic = true;
@@ -138,6 +139,11 @@ struct RequestSpec {
 // ---------------------------------------------------------------------
 
 const std::string &DefaultUserAgent();
+// nullptr for an unknown profile.
+const std::string *PlatformUserAgent(crnet_platform_profile p);
+// The User-Agent and sec-ch-ua-platform value a client sends.
+const std::string &UserAgentOf(const ClientConfig &cfg);
+std::string PlatformOf(const ClientConfig &cfg);
 const std::string &DefaultSecChUa();
 
 // Per-request emulation state computed when the transfer starts.

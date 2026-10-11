@@ -61,15 +61,19 @@ Bind outgoing connections to a local address or interface.
 
 ### platform-profiles
 
-Consistent per-OS browser profiles.
+More per-OS browser profiles, and captures to back them.
 
-- Today: `crnet_client_config_set_platform()` changes only
-  `sec-ch-ua-platform`; the User-Agent must be set separately and
-  nothing checks that the two agree. A mismatch is an easy bot signal.
-- Wanted: one switch (Linux, Windows, macOS, maybe Android) that sets
-  the User-Agent, `sec-ch-ua-platform`, `sec-ch-ua-mobile` and any
-  other per-platform difference together, verified against captures
-  from real Chrome on each platform.
+- Today: `crnet_client_config_set_platform_profile()` covers Linux,
+  Windows and macOS, with strings taken from the Chromium source
+  (`components/embedder_support/user_agent_utils.cc`). Only the Linux
+  profile has been compared with captures from a real Chrome.
+- Wanted: run `tests/fingerprint/capture_chrome.py` with Chrome on
+  Windows and macOS and confirm that nothing but the User-Agent and
+  `sec-ch-ua-platform` differs (header order, TLS and HTTP/2 included).
+- Maybe: an Android profile (`sec-ch-ua-mobile: ?1`, a "Mobile" User-Agent).
+  Chrome on Android may differ beyond headers (field trials, HTTP/2
+  settings), so it needs captures from a real device before it is
+  offered.
 
 ## Build and tooling
 

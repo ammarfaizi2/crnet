@@ -83,7 +83,8 @@ crnet_client_config_free(cfg);
 |---|---|---|
 | `proxy` | direct | `socks5://`, `socks5h://` (same thing: SOCKS5 always resolves names on the proxy), `socks4://`, `http://[user:pass@]host:port`, `https://...`, `direct://`. `socks5://user:pass@host:port` enables SOCKS5 username/password authentication (RFC 1929); two clients that exist at the same time cannot use one SOCKS5 proxy with different credentials. |
 | `proxy_bypass` | none | destinations sent direct, in Chrome's `--proxy-bypass-list` syntax: `*.example.com, 10.0.0.0/8, <local>`. Like Chrome, localhost, loopback and link-local destinations always go direct unless the list contains `<-loopback>`. |
-| `user_agent`, `sec_ch_ua`, `platform`, `accept_language` | Chrome on Linux, `en-US,en;q=0.9` | the browser identity, see [browser-emulation.md](browser-emulation.md) |
+| `platform_profile` | Linux | the operating system to claim: `CRNET_PLATFORM_LINUX`, `CRNET_PLATFORM_WINDOWS` or `CRNET_PLATFORM_MACOS`; sets the User-Agent and `sec-ch-ua-platform` together |
+| `user_agent`, `sec_ch_ua`, `platform`, `accept_language` | the platform profile's, `en-US,en;q=0.9` | the browser identity, see [browser-emulation.md](browser-emulation.md); explicit values take precedence over the platform profile |
 | `http2`, `quic` | on | QUIC is used for HTTP/3 when the server advertises it (Alt-Svc or DNS). Through a proxy Chromium never uses QUIC. |
 | `secure_dns` | off | DNS over HTTPS with Chrome's semantics: `CRNET_SECURE_DNS_AUTOMATIC` uses the DoH templates once a probe shows they work and falls back to ordinary DNS, `CRNET_SECURE_DNS_SECURE` resolves only through them |
 | `builtin_dns` | on | Chromium's own DNS client, as Chrome on Linux, including HTTPS records (ECH, HTTP/3 hints) |
@@ -522,6 +523,7 @@ feature can be used:
 | `CRNET_HAS_PROGRESS_CALLBACK` | 0.19.0 | `crnet_transfer_set_progress_callback()` |
 | `CRNET_HAS_WS_PING` | 0.20.0 | `crnet_ws_ping()`, `crnet_ws_set_pong_callback()`, `crnet_ws_set_auto_ping()` |
 | `CRNET_HAS_SOCKS5_AUTH` | 0.21.0 | `socks5://user:pass@...` proxy URLs |
+| `CRNET_HAS_PLATFORM_PROFILE` | 0.22.0 | `crnet_client_config_set_platform_profile()`, `crnet_platform_user_agent()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

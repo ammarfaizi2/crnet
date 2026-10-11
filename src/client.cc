@@ -331,8 +331,7 @@ bool crnet_client::InitOnNetworkThread()
 {
 	net::URLRequestContextBuilder b;
 
-	b.set_user_agent(cfg_.user_agent.empty() ? crnet::DefaultUserAgent()
-						 : cfg_.user_agent);
+	b.set_user_agent(crnet::UserAgentOf(cfg_));
 	b.set_accept_language(cfg_.accept_language);
 	b.set_enable_brotli(true);
 	b.set_enable_zstd(true);

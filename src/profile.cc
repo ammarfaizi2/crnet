@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
+#include <vector>
 
 #include "base/containers/span.h"
 #include "base/no_destructor.h"
@@ -198,13 +199,64 @@ const std::optional<std::string> *RequestSpec::FindHeader(
 	return nullptr;
 }
 
+namespace {
+
+// components/embedder_support/user_agent_utils.cc GetUnifiedPlatform()
+// and GetPlatformForUAMetadata(), indexed by crnet_platform_profile.
+struct PlatformInfo {
+	const char *ua_platform;
+	const char *ch_platform;
+};
+constexpr auto kPlatforms = std::to_array<PlatformInfo>({
+	{"X11; Linux x86_64", "Linux"},
+	{"Windows NT 10.0; Win64; x64", "Windows"},
+	{"Macintosh; Intel Mac OS X 10_15_7", "macOS"},
+});
+
+const PlatformInfo *FindPlatform(crnet_platform_profile p)
+{
+	size_t i = static_cast<size_t>(p);
+	return i < kPlatforms.size() ? &kPlatforms[i] : nullptr;
+}
+
+} // namespace
+
+const std::string *PlatformUserAgent(crnet_platform_profile p)
+{
+	// BuildUserAgentFromOSAndProduct() with the reduced product token.
+	static const base::NoDestructor<std::vector<std::string>> uas([] {
+		std::vector<std::string> v;
+		for (const PlatformInfo &pi : kPlatforms)
+			v.push_back(base::StrCat(
+				{"Mozilla/5.0 (", pi.ua_platform,
+				 ") AppleWebKit/537.36 (KHTML, like Gecko) "
+				 "Chrome/",
+				 base::NumberToString(kMajor),
+				 ".0.0.0 Safari/537.36"}));
+		return v;
+	}());
+	return FindPlatform(p) ? &(*uas)[static_cast<size_t>(p)] : nullptr;
+}
+
 const std::string &DefaultUserAgent()
 {
-	static const base::NoDestructor<std::string> ua(base::StrCat(
-		{"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, "
-		 "like Gecko) Chrome/",
-		 base::NumberToString(kMajor), ".0.0.0 Safari/537.36"}));
-	return *ua;
+	return *PlatformUserAgent(CRNET_PLATFORM_LINUX);
+}
+
+const std::string &UserAgentOf(const ClientConfig &cfg)
+{
+	if (!cfg.user_agent.empty())
+		return cfg.user_agent;
+	const std::string *ua = PlatformUserAgent(cfg.platform_profile);
+	return ua ? *ua : DefaultUserAgent();
+}
+
+std::string PlatformOf(const ClientConfig &cfg)
+{
+	if (!cfg.platform.empty())
+		return cfg.platform;
+	const PlatformInfo *pi = FindPlatform(cfg.platform_profile);
+	return pi ? pi->ch_platform : kPlatforms[0].ch_platform;
 }
 
 const std::string &DefaultSecChUa()
@@ -220,11 +272,11 @@ BrowserHeaders BuildBrowserHeaders(const ClientConfig &cfg,
 	BrowserHeaders bh;
 	net::HttpRequestHeaders &h = bh.extra;
 
-	const std::string &ua =
-		cfg.user_agent.empty() ? DefaultUserAgent() : cfg.user_agent;
+	const std::string &ua = UserAgentOf(cfg);
 	const std::string &ch_ua =
 		cfg.sec_ch_ua.empty() ? DefaultSecChUa() : cfg.sec_ch_ua;
-	const std::string platform = base::StrCat({"\"", cfg.platform, "\""});
+	const std::string platform =
+		base::StrCat({"\"", PlatformOf(cfg), "\""});
 
 	// The initiator is the page the request pretends to come from: the
 	// Referer's origin when one is given; for fetch() without one, the
@@ -318,8 +370,7 @@ std::optional<WsHeaders> BuildWsHeaders(const ClientConfig &cfg,
 					const char *protocols)
 {
 	WsHeaders wh;
-	const std::string &ua =
-		cfg.user_agent.empty() ? DefaultUserAgent() : cfg.user_agent;
+	const std::string &ua = UserAgentOf(cfg);
 
 	// Chrome's renderer passes User-Agent as the only additional
 	// header, which is why it precedes Upgrade in the handshake.
