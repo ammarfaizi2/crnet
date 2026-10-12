@@ -105,6 +105,9 @@ crnet_client *NewTestClient(crnet_client_config *cfg)
 	if (own)
 		cfg = crnet_client_config_new();
 	crnet_client_config_set_insecure(cfg, 1);
+	// Interfaces coming and going on the host (containers) must not
+	// fail unrelated tests; tests/test_network_change.cc covers that.
+	crnet_client_config_set_ignore_ip_address_changes(cfg, 1);
 	crnet_client *c = crnet_client_new(cfg);
 	if (own)
 		crnet_client_config_free(cfg);

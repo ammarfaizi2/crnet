@@ -40,7 +40,8 @@ std::string HttpsUrl(const std::string &path);
 std::string HttpsH1Url(const std::string &path);
 std::string HttpUrl(const std::string &path);
 
-// A client that accepts any certificate (the `insecure` option).
+// A client that accepts any certificate (the `insecure` option) and
+// ignores local IP address changes.
 crnet_client *NewTestClient(crnet_client_config *cfg = nullptr);
 
 // Owns the pieces of one blocking request.

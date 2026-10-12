@@ -58,7 +58,10 @@ crnet_client *Client(bool ignore, const char *doh = nullptr)
 		// behind it would start and resolve anew, hiding the abort.
 		crnet_client_config_set_quic(cfg, 0);
 	}
-	crnet_client *c = NewTestClient(cfg);
+	// Not NewTestClient(), which ignores address changes.
+	ServerPorts();
+	crnet_client_config_set_insecure(cfg, 1);
+	crnet_client *c = crnet_client_new(cfg);
 	crnet_client_config_free(cfg);
 	return c;
 }
