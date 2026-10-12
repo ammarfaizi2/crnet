@@ -1,0 +1,68 @@
+net: Let a host resolver keep resolutions across IP address changes
+
+HttpNetworkSessionParams::ignore_ip_address_changes keeps the socket
+pools and HTTP/2 sessions of a session when a local IP address
+changes, for hosts where unrelated interfaces come and go (containers,
+VPNs). The session's host resolver has no such switch: its
+OnIPAddressChanged() still aborts every resolution in progress with
+ERR_NETWORK_CHANGED, so requests keep failing on such a host.
+
+Add HostResolver::ManagerOptions::ignore_ip_address_changes. With it, an
+IP address change still invalidates the caches and restarts the
+loopback probe, but leaves the resolutions in progress alone. A change
+of the DNS configuration still aborts them, as they used the old one.
+
+diff --git a/net/dns/host_resolver.h b/net/dns/host_resolver.h
+index db2d35d4e2..f92a721b4c 100644
+--- a/net/dns/host_resolver.h
++++ b/net/dns/host_resolver.h
+@@ -366,6 +366,12 @@ class NET_EXPORT HostResolver {
+     // further context.
+     bool check_ipv6_on_wifi = true;
+ 
++    // crnet: if true, a local IP address change does not abort the
++    // resolutions in progress (caches are still invalidated). For hosts
++    // where unrelated interfaces come and go, as HttpNetworkSessionParams::
++    // ignore_ip_address_changes does for the socket pools.
++    bool ignore_ip_address_changes = false;
++
+     // An experimental options for features::kUseDnsHttpsSvcb
+     // and features::kUseDnsHttpsSvcbAlpn.
+     std::optional<HostResolver::HttpsSvcbOptions> https_svcb_options;
+diff --git a/net/dns/host_resolver_manager.cc b/net/dns/host_resolver_manager.cc
+index ab286b869b..9edb09709f 100644
+--- a/net/dns/host_resolver_manager.cc
++++ b/net/dns/host_resolver_manager.cc
+@@ -445,6 +445,7 @@ HostResolverManager::HostResolverManager(
+       system_dns_config_notifier_(system_dns_config_notifier),
+       target_network_(target_network),
+       check_ipv6_on_wifi_(options.check_ipv6_on_wifi),
++      ignore_ip_address_changes_(options.ignore_ip_address_changes),
+       ipv6_reachability_override_(base::FeatureList::IsEnabled(
+           features::kEnableIPv6ReachabilityOverride)),
+       is_happy_eyeballs_v3_enabled_(
+@@ -1811,6 +1812,10 @@ void HostResolverManager::OnIPAddressChanged(
+     BUILDFLAG(IS_FUCHSIA)
+   RunLoopbackProbeJob();
+ #endif
++  // crnet: the embedder chose to keep resolutions in progress.
++  if (ignore_ip_address_changes_) {
++    return;
++  }
+   AbortJobsWithoutTargetNetwork(true /* in_progress_only */);
+   // `this` may be deleted inside AbortJobsWithoutTargetNetwork().
+ }
+diff --git a/net/dns/host_resolver_manager.h b/net/dns/host_resolver_manager.h
+index b18110c2d1..d1f1f116ed 100644
+--- a/net/dns/host_resolver_manager.h
++++ b/net/dns/host_resolver_manager.h
+@@ -608,6 +608,9 @@ class NET_EXPORT HostResolverManager
+   // WiFi connection. See https://crbug.com/696569 for further context.
+   bool check_ipv6_on_wifi_;
+ 
++  // crnet: see HostResolver::ManagerOptions::ignore_ip_address_changes.
++  const bool ignore_ip_address_changes_;
++
+   base::TimeTicks last_ipv6_probe_time_;
+   bool last_ipv6_probe_result_ = true;
+   bool probing_ipv6_ = false;

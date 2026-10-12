@@ -22,6 +22,7 @@ add_executable(crnet_tests
   test_headers.cc
   test_http.cc
   test_local_address.cc
+  test_network_change.cc
   test_proxy.cc
   test_state.cc
   test_stream.cc

@@ -96,6 +96,7 @@ struct ClientConfig {
 	std::string doh_templates;
 	bool cookies = true;
 	bool insecure = false;
+	bool ignore_ip_address_changes = false;
 	// Extra roots (DER), and whether they replace the Chrome Root Store.
 	std::vector<std::string> trust_anchors;
 	bool trust_anchors_only = false;

@@ -30,6 +30,7 @@ which is asked about a `.invalid` name.
 | `tests/test_stream.cc` | streamed bodies: uploads with known and unknown length over HTTP/1.1 and HTTP/2 (Content-Length vs chunked framing), empty bodies, writes from other threads, upload backpressure, length mismatches, writers released on failure, no rewind on 307, file uploads (whole, slices, resent on 307, missing file), streamed downloads (40 MiB both protocols, backpressure, headers before body, pollable fd, timeouts, errors after data, failure before headers), on_data precedence, upload and download together, 16 concurrent streamed transfers, transfer progress and its callback (rate, changes only, final call before `on_complete`), uploads driven by the pollable write fd |
 | `tests/test_websocket.cc` | WebSockets: Chrome's handshake headers, both delivery modes, pollable fd, subprotocols, Origin/header overrides, cookies both ways, deflate on/off, client/server/abrupt closes, close codes, fragmentation, large messages, size limit, backpressure, pause, pings, invalid UTF-8, refused/slow handshakes, the platform profile's User-Agent, release semantics, shutdown, proxies, 50 concurrent sockets, WebSockets over HTTP/2 (RFC 8441) on an existing connection and the HTTP/1.1 upgrade without one, the idle timeout (restarted by messages, suspended while paused, disabled), no compression offer over HTTP/1.1 and HTTP/2, pings and pongs (answered, unsolicited, auto-ping, auto-ping with the idle timeout), the open and closed descriptors (also for a refused handshake), a fresh connection skipping the HTTP/2 connection, a WebSocket through a proxy identity, server pings reported and keeping the idle timeout at bay, every close code an endpoint may send (and those refused), a server closing with 1014, close results read inside `on_close`, the SOCKS5 reply code of a refused connection |
 | `tests/test_local_address.cc` | local address binding: HTTP/1.1, HTTP/2, plain HTTP, WebSocket and QUIC connections leave from the chosen address, the wildcard, a family without an address (fails, and the other family is tried next), an address the host lacks, validation; interface binding: connections and QUIC bound to the loopback interface (alone and with an address), another interface that cannot reach the server, a missing interface, name validation |
+| `tests/test_network_change.cc` | local IP address changes (`crnet_simulate_ip_address_change()`), by default and with `ignore_ip_address_changes`: connects stuck in a SOCKS5 greeting or a TLS handshake, WebSocket connects, idle HTTP/1.1 and HTTP/2 connections, DNS-over-HTTPS resolutions in progress |
 | `tests/test_tls.cc` | extra trust anchors (file, PEM, anchors only, malformed), client certificates over HTTP and WebSocket |
 | `tests/test_cookies.cc` | cookie jar export and import: lossless JSON round trip including partitioned cookies, Netscape round trip and curl's files, malformed and refused imports, public-suffix cookies |
 | `tests/test_dns.cc` | DNS over HTTPS: secure mode with GET and POST templates and no fallback, automatic mode after a successful probe, invalid settings |
@@ -38,6 +39,24 @@ which is asked about a `.invalid` name.
 | `tests/test_cpp.cc` | the C++ wrapper |
 | `bindings/python/tests/test_crnet.py` | the Python bindings (`python_bindings` in ctest; not in sanitizer builds): blocking and asyncio requests, streams and WebSockets (concurrency, cancellation, the loop kept running, waiting tasks taking turns), and that the package version is the library's |
 | `tests/c_api_smoke.c` | `crnet.h` compiles as strict C99 (`-pedantic -Werror`) and works from C |
+
+### A real network change (manual)
+
+The tests simulate address changes. To see a real one, on a host where
+you have root: create a dummy interface and toggle it while a client
+waits on a connect that cannot finish, for example through a SOCKS5
+"proxy" that accepts TCP and never answers (the address change is the
+interface's link-local IPv6 address coming and going):
+
+```bash
+sudo ip link add crnet-probe0 type dummy
+while sleep 0.15; do sudo ip link set crnet-probe0 down; sudo ip link set crnet-probe0 up; done
+sudo ip link del crnet-probe0
+```
+
+Without `ignore_ip_address_changes` the connect fails with
+`ERR_NETWORK_CHANGED` (-21) within moments; with it, it runs into its
+own timeout.
 
 ## The test server
 

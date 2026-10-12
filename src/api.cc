@@ -17,6 +17,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "crnet/internal.h"
+#include "net/base/network_change_notifier.h"
 #include "net/cert/x509_certificate.h"
 #include "net/dns/public/dns_over_https_config.h"
 #include "net/cert/x509_util.h"
@@ -433,6 +434,22 @@ CRNET_API void crnet_client_config_set_insecure(crnet_client_config *cfg,
 {
 	if (cfg)
 		cfg->cfg.insecure = !!enable;
+}
+
+CRNET_API void crnet_client_config_set_ignore_ip_address_changes(
+	crnet_client_config *cfg, int enable)
+{
+	if (cfg)
+		cfg->cfg.ignore_ip_address_changes = !!enable;
+}
+
+CRNET_API int crnet_simulate_ip_address_change(void)
+{
+	if (!crnet::EnsureGlobalInit(nullptr, nullptr, nullptr))
+		return CRNET_E_STATE;
+	// Observers hear it on their own threads, as from the OS.
+	net::NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
+	return CRNET_OK;
 }
 
 CRNET_API int crnet_client_config_set_host_rules(crnet_client_config *cfg,

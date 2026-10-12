@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 34
+#define CRNET_VERSION_MINOR 35
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -334,6 +334,38 @@ CRNET_API void crnet_client_config_set_cookies(crnet_client_config *cfg,
  */
 CRNET_API void crnet_client_config_set_insecure(crnet_client_config *cfg,
 						int enable);
+
+/*
+ * Keep connections when a local IP address changes. By default, as in
+ * Chrome, any interface or address coming or going on the host (a
+ * container started, a VPN or a dummy interface brought up or down)
+ * aborts the client's connects in progress (TCP, proxy handshake, TLS)
+ * and the DNS resolutions in progress with net error
+ * ERR_NETWORK_CHANGED (-21), and closes its idle connections and HTTP/2
+ * sessions. On a host where unrelated interfaces change all the time
+ * that fails requests that had nothing to do with them. With this on,
+ * none of that happens; a connection whose own path is really gone
+ * fails on its own (reset, timeout) instead.
+ *
+ * What it does not cover: a change of the system's DNS configuration
+ * (resolv.conf) still aborts resolutions in progress, since they used
+ * the old one, and cached DNS results are dropped on an address change
+ * either way (to be resolved again). QUIC sessions are not closed on an
+ * address change in either case. HTTP and WebSocket connections behave
+ * the same. Default off.
+ */
+#define CRNET_HAS_IGNORE_IP_ADDRESS_CHANGES 1
+CRNET_API void crnet_client_config_set_ignore_ip_address_changes(
+	crnet_client_config *cfg, int enable);
+
+/*
+ * For tests: make every client hear that a local IP address changed, as
+ * the operating system's notifications would tell it (on another thread,
+ * shortly after the call), without touching an interface. Initialises
+ * crnet if needed. CRNET_E_STATE if that fails.
+ * (CRNET_HAS_IGNORE_IP_ADDRESS_CHANGES.)
+ */
+CRNET_API int crnet_simulate_ip_address_change(void);
 
 /*
  * Host resolver rules, same syntax as Chrome's --host-resolver-rules,

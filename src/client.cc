@@ -609,6 +609,7 @@ bool crnet_client::InitOnNetworkThread()
 				       ? net::InsecureDnsMode::kEnabledBuiltIn
 				       : net::InsecureDnsMode::kDisabled;
 	mo.additional_types_via_insecure_dns_enabled = true;
+	mo.ignore_ip_address_changes = cfg_.ignore_ip_address_changes;
 	// Chrome applies its secure DNS setting the same way, as overrides
 	// of the system configuration (network::NetworkService::
 	// ConfigureStubHostResolver()).
@@ -634,6 +635,7 @@ bool crnet_client::InitOnNetworkThread()
 	sp.enable_http2 = cfg_.http2;
 	sp.enable_quic = cfg_.quic;
 	sp.ignore_certificate_errors = cfg_.insecure;
+	sp.ignore_ip_address_changes = cfg_.ignore_ip_address_changes;
 	b.set_http_network_session_params(sp);
 	b.set_quic_context(std::move(quic));
 
