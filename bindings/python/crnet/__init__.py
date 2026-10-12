@@ -28,7 +28,7 @@ from ._lib import FOREVER as _FOREVER
 __all__ = [
     "Client", "Response", "Transfer", "WebSocket", "Error", "Timeout",
     "version", "chromium_version", "default_user_agent",
-    "platform_user_agent", "global_init",
+    "platform_user_agent", "global_init", "simulate_ip_address_change",
 ]
 
 # crnet_error
@@ -225,6 +225,13 @@ def global_init(enable_features=None, disable_features=None):
     _check(_lib.crnet_global_init(_b(enable_features),
                                   _b(disable_features)),
            "global_init")
+
+
+def simulate_ip_address_change():
+    """For tests: every client hears that a local IP address changed, as
+    from the operating system (shortly after the call)."""
+    _check(_lib.crnet_simulate_ip_address_change(),
+           "simulate_ip_address_change")
 
 
 def _headers_of(resp):
@@ -675,7 +682,7 @@ _STRING_OPTIONS = ("proxy", "proxy_bypass", "user_agent", "sec_ch_ua",
                    "platform", "accept_language", "host_rules", "netlog",
                    "state_dir", "local_address", "bind_interface")
 _BOOL_OPTIONS = ("http2", "quic", "builtin_dns", "cookies", "insecure",
-                 "trust_anchors_only")
+                 "trust_anchors_only", "ignore_ip_address_changes")
 
 
 class Client:
@@ -686,7 +693,8 @@ class Client:
       proxy, proxy_bypass, user_agent, sec_ch_ua, platform,
       accept_language, host_rules, netlog, state_dir, local_address,
       bind_interface (str)
-      http2, quic, builtin_dns, cookies, insecure, trust_anchors_only
+      http2, quic, builtin_dns, cookies, insecure, trust_anchors_only,
+      ignore_ip_address_changes
       proxy_credentials: (user, password) as bytes or str, replacing the
         proxy URL's; None for none at all
       platform_profile (PLATFORM_*)

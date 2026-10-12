@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 import crnet
@@ -69,9 +70,16 @@ class Packaging(unittest.TestCase):
         self.assertEqual(out.decode().split()[-1], crnet.version())
 
 
+# Interfaces coming and going on the test host must not fail the tests;
+# Configuration.test_ignore_ip_address_changes is about them.
+def Client(**options):
+    options.setdefault("ignore_ip_address_changes", True)
+    return crnet.Client(**options)
+
+
 class ClientTest(unittest.TestCase):
     def setUp(self):
-        self.c = crnet.Client(insecure=True)
+        self.c = Client(insecure=True)
 
     def tearDown(self):
         self.c.close()
@@ -80,7 +88,7 @@ class ClientTest(unittest.TestCase):
 class Library(unittest.TestCase):
     def test_versions(self):
         major, minor, _ = (int(x) for x in crnet.version().split("."))
-        self.assertGreaterEqual((major, minor), (0, 30))
+        self.assertGreaterEqual((major, minor), (0, 35))
         self.assertRegex(crnet.chromium_version(), r"^\d+\.\d+\.\d+\.\d+$")
         self.assertIn("Chrome/", crnet.default_user_agent())
         self.assertIn("Windows NT 10.0",
@@ -90,16 +98,16 @@ class Library(unittest.TestCase):
 
     def test_bad_options(self):
         with self.assertRaises(TypeError):
-            crnet.Client(no_such_option=1)
+            Client(no_such_option=1)
         with self.assertRaises(ValueError):
-            crnet.Client(proxy="ftp://proxy:21")
+            Client(proxy="ftp://proxy:21")
         with self.assertRaises(ValueError):
-            crnet.Client(local_address="not-an-ip")
+            Client(local_address="not-an-ip")
         with self.assertRaises(ValueError):
-            crnet.Client(bind_interface="a/b")
+            Client(bind_interface="a/b")
 
     def test_closed_client(self):
-        c = crnet.Client()
+        c = Client()
         c.close()
         c.close()
         with self.assertRaises(crnet.Error) as cm:
@@ -243,7 +251,7 @@ class Requests(ClientTest):
 
 class Configuration(unittest.TestCase):
     def test_platform_profile(self):
-        with crnet.Client(insecure=True,
+        with Client(insecure=True,
                           platform_profile=crnet.PLATFORM_MACOS) as c:
             e = c.get(url("/echo")).json()
         self.assertEqual(header_of(e, "user-agent"),
@@ -251,15 +259,15 @@ class Configuration(unittest.TestCase):
         self.assertEqual(header_of(e, "sec-ch-ua-platform"), '"macOS"')
 
     def test_trust_anchors(self):
-        with crnet.Client(trust_anchors_file=ports["ca"]) as c:
+        with Client(trust_anchors_file=ports["ca"]) as c:
             self.assertEqual(c.get(url("/echo")).status, 200)
-        with crnet.Client() as c:
+        with Client() as c:
             with self.assertRaises(crnet.Error) as cm:
                 c.get(url("/echo"))
             self.assertEqual(cm.exception.code, crnet.E_NET)
 
     def test_local_address(self):
-        with crnet.Client(local_address="127.0.0.2") as c:
+        with Client(local_address="127.0.0.2") as c:
             e = c.get(url("/echo", "http", host="127.0.0.1")).json()
         self.assertEqual(e["peer_addr"], "127.0.0.2")
 
@@ -267,7 +275,7 @@ class Configuration(unittest.TestCase):
         remote = "https://www.crnet-test:%d/echo" % ports["https"]
         socks = "socks5h://127.0.0.1:%d" % ports["socks5"]
         # The host rule keeps the system's DNS out of the local lookup.
-        with crnet.Client(insecure=True,
+        with Client(insecure=True,
                           host_rules="MAP www.crnet-test ~NOTFOUND") as c:
             self.assertTrue(c.get(remote, proxy=socks).via_proxy)
             with self.assertRaises(crnet.Error) as cm:
@@ -281,10 +289,10 @@ class Configuration(unittest.TestCase):
         proxy = "socks5h://127.0.0.1:%d" % ports["socks5_auth"]
         user = b"crnet-\x00:@\xff"
         def last_auth():
-            with crnet.Client(insecure=True) as s:
+            with Client(insecure=True) as s:
                 return s.get(url("/echo")).json()["stats"]["socks5_auths"][-1]
 
-        with crnet.Client(insecure=True, proxy=proxy,
+        with Client(insecure=True, proxy=proxy,
                           proxy_credentials=(user, "secret")) as c:
             self.assertTrue(c.get(remote).via_proxy)
             self.assertEqual(last_auth(), [user.decode("latin-1"), True])
@@ -296,10 +304,21 @@ class Configuration(unittest.TestCase):
             self.assertTrue(r.via_proxy)
             self.assertEqual(last_auth(), ["crnet-b", True])
 
+    def test_ignore_ip_address_changes(self):
+        for ignore in (False, True):
+            with crnet.Client(insecure=True,
+                              ignore_ip_address_changes=ignore) as c:
+                a = c.get(url("/echo"))
+                crnet.simulate_ip_address_change()
+                time.sleep(0.2)
+                b = c.get(url("/echo"))
+                self.assertEqual(b.socket_reused, ignore)
+                self.assertEqual(b.connection_id == a.connection_id, ignore)
+
     def test_bind_interface(self):
-        with crnet.Client(bind_interface="lo") as c:
+        with Client(bind_interface="lo") as c:
             self.assertEqual(c.get(url("/echo", "http")).status, 200)
-        with crnet.Client(bind_interface="crnet-none0") as c:
+        with Client(bind_interface="crnet-none0") as c:
             with self.assertRaises(crnet.Error) as cm:
                 c.get(url("/echo", "http"))
         self.assertEqual(cm.exception.net_error, -109)
@@ -360,7 +379,8 @@ class WebSockets(ClientTest):
 
 class AsyncTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.c = crnet.aio.AsyncClient(insecure=True)
+        self.c = crnet.aio.AsyncClient(insecure=True,
+                                       ignore_ip_address_changes=True)
 
     async def asyncTearDown(self):
         self.c.close()

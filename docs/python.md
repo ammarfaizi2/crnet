@@ -56,7 +56,7 @@ seconds:
 | `proxy`, `proxy_bypass`, `host_rules`, `local_address`, `bind_interface` | strings, as in the C API |
 | `proxy_credentials` | `(user, password)` as `bytes` or `str`, replacing the proxy URL's; `None` for none at all |
 | `user_agent`, `sec_ch_ua`, `platform`, `accept_language`, `platform_profile` | the browser identity; `platform_profile` is `PLATFORM_LINUX`, `PLATFORM_WINDOWS` or `PLATFORM_MACOS` |
-| `http2`, `quic`, `builtin_dns`, `cookies`, `insecure` | booleans |
+| `http2`, `quic`, `builtin_dns`, `cookies`, `insecure`, `ignore_ip_address_changes` | booleans |
 | `secure_dns`, `doh_templates` | `SECURE_DNS_*` and the DoH URI templates |
 | `trust_anchors`, `trust_anchors_file`, `trust_anchors_only` | PEM text or paths (one or a list), and whether only they are trusted |
 | `client_cert`, `client_cert_file` | `(cert, key)` as PEM text or as paths |
