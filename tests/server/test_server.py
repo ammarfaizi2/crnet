@@ -49,7 +49,8 @@ Endpoints (all servers):
   /response-headers?Name=value&...  200 with those response headers
   /dns-query            DNS over HTTPS (RFC 8484, GET and POST): names
                         under .crnet-test (and Chromium's DoH probe name)
-                        are 127.0.0.1, others NXDOMAIN
+                        are 127.0.0.1, others NXDOMAIN; ?delay_ms= delays
+                        the answer
   /drop                 closes the connection without a response
 
 WebSocket endpoints (HTTP/1.1 upgrade, any server):
@@ -313,8 +314,10 @@ def route(req):
             answer = None
         if answer is None:
             return Response(400, [], b"bad query")
-        return Response(200, [("content-type", "application/dns-message"),
-                              ("cache-control", "max-age=60")], answer)
+        r = Response(200, [("content-type", "application/dns-message"),
+                           ("cache-control", "max-age=60")], answer)
+        r.delay = int(q.get("delay_ms", "0")) / 1000.0
+        return r
     if p in ("/upload-digest", "/slow-upload"):
         doc = {"len": len(req.body),
                "sha256": hashlib.sha256(req.body).hexdigest(),
