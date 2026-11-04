@@ -91,6 +91,7 @@ crnet_client_config_free(cfg);
 | `cookies` | on | in-memory cookie jar shared by the client's requests |
 | `insecure` | off | accept any certificate (testing only; the handshake itself is unchanged) |
 | `ignore_ip_address_changes` | off | keep connects, DNS resolutions in progress and idle connections when a local IP address changes (by default, as in Chrome, any interface coming or going aborts them with `ERR_NETWORK_CHANGED`); a change of the system DNS configuration still aborts resolutions |
+| `socks5_empty_password` | off | let SOCKS5 credentials given as bytes have an empty password, sent as PLEN 0 (RFC 1929 asks for 1 to 255 bytes; libcurl sends it this way) |
 | `trust_anchors` | none | extra roots (PEM, string or file) on top of Chrome's verification: the Chrome Root Store plus user-added roots of the system store. With `trust_anchors_only` they replace both, e.g. to accept only a private CA. |
 | `host_rules` | none | Chrome's `--host-resolver-rules` syntax, e.g. `MAP api.example.com 10.0.0.5:8443` |
 | `timeout` | none | default per-request timeout in ms |
@@ -579,6 +580,7 @@ feature can be used:
 | `CRNET_HAS_WS_RESULTS_IN_ON_CLOSE` | 0.33.0 | `crnet_ws_net_error()`, `_close_code()`, `_close_reason()` valid inside `on_close` |
 | `CRNET_HAS_WS_SOCKS_REPLY` | 0.34.0 | `crnet_ws_socks_reply()` |
 | `CRNET_HAS_IGNORE_IP_ADDRESS_CHANGES` | 0.35.0 | `crnet_client_config_set_ignore_ip_address_changes()`, `crnet_simulate_ip_address_change()` |
+| `CRNET_HAS_SOCKS5_EMPTY_PASSWORD` | 0.36.0 | `crnet_client_config_set_socks5_empty_password()` |
 
 Releases before 0.2.0 define no `CRNET_HAS_*` macro. The soname stays
 `libcrnet.so.0` while the major version is 0, so a program built

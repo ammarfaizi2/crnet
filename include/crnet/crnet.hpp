@@ -69,6 +69,7 @@ public:
 	ClientConfig &cookies(bool on) { crnet_client_config_set_cookies(get(), on); return *this; }
 	ClientConfig &insecure(bool on) { crnet_client_config_set_insecure(get(), on); return *this; }
 	ClientConfig &ignore_ip_address_changes(bool on) { crnet_client_config_set_ignore_ip_address_changes(get(), on); return *this; }
+	ClientConfig &socks5_empty_password(bool on) { crnet_client_config_set_socks5_empty_password(get(), on); return *this; }
 	ClientConfig &add_trust_anchors(const std::string &pem) { check(crnet_client_config_add_trust_anchors(get(), pem.c_str())); return *this; }
 	ClientConfig &add_trust_anchors_file(const std::string &path) { check(crnet_client_config_add_trust_anchors_file(get(), path.c_str())); return *this; }
 	ClientConfig &client_cert(const std::string &cert_pem, const std::string &key_pem) { check(crnet_client_config_set_client_cert(get(), cert_pem.c_str(), key_pem.c_str())); return *this; }

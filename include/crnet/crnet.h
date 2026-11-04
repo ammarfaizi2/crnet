@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 35
+#define CRNET_VERSION_MINOR 36
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -209,13 +209,30 @@ CRNET_API int crnet_client_config_set_proxy(crnet_client_config *cfg,
  * What the proxy accepts is checked once it is known, by
  * crnet_client_new() (NULL) or when a request starts (CRNET_E_INVAL, net
  * error ERR_INVALID_ARGUMENT -4): SOCKS5 takes any 1 to 255 bytes in
- * each (RFC 1929); an HTTP(S) proxy takes UTF-8, with no ':' in the
- * username (Basic authentication); SOCKS4 takes none.
+ * each (RFC 1929), or an empty password with
+ * crnet_client_config_set_socks5_empty_password(); an HTTP(S) proxy
+ * takes UTF-8, with no ':' in the username (Basic authentication);
+ * SOCKS4 takes none.
  */
 #define CRNET_HAS_PROXY_CREDENTIALS 1
 CRNET_API int crnet_client_config_set_proxy_credentials(
 	crnet_client_config *cfg, const void *user, size_t user_len,
 	const void *pass, size_t pass_len);
+
+/*
+ * Let SOCKS5 credentials given as bytes (crnet_client_config_set_proxy_
+ * credentials(), crnet_request_set_proxy_credentials()) have an empty
+ * password, sent as a zero-length password field (PLEN 0), for proxies
+ * set up with a username and no password. RFC 1929 asks for 1 to 255
+ * bytes, so this is off by default and such credentials are refused as
+ * above; libcurl, for one, sends them this way. The username still
+ * needs 1 to 255 bytes. Credentials in a proxy URL are checked when the
+ * URL is set, before the client exists, and keep refusing an empty
+ * SOCKS5 password; give them as bytes instead.
+ */
+#define CRNET_HAS_SOCKS5_EMPTY_PASSWORD 1
+CRNET_API void crnet_client_config_set_socks5_empty_password(
+	crnet_client_config *cfg, int enable);
 
 /*
  * Destinations that bypass the proxy, in Chrome's --proxy-bypass-list

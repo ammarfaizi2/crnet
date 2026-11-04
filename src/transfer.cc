@@ -209,7 +209,9 @@ void crnet_transfer::StartOnNetworkThread()
 		// They are for the request's proxy, and checked against it.
 		const auto &[user, pass] = *spec_.proxy_credentials;
 		if (!spec_.proxy ||
-		    !crnet::ValidProxyCredentials(spec_.proxy->proxy, user, pass)) {
+		    !crnet::ValidProxyCredentials(
+			    spec_.proxy->proxy, user, pass,
+			    client_->config().socks5_empty_password)) {
 			Finish(CRNET_E_INVAL, net::ERR_INVALID_ARGUMENT);
 			return;
 		}

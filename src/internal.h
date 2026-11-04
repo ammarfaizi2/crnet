@@ -97,6 +97,7 @@ struct ClientConfig {
 	bool cookies = true;
 	bool insecure = false;
 	bool ignore_ip_address_changes = false;
+	bool socks5_empty_password = false;	// allow PLEN 0
 	// Extra roots (DER), and whether they replace the Chrome Root Store.
 	std::vector<std::string> trust_anchors;
 	bool trust_anchors_only = false;
@@ -125,9 +126,12 @@ struct ProxySpec {
 // Whether |user|/|pass| can be sent to |proxy| (a Chromium proxy URI):
 // an empty |user| (no credentials) with an empty |pass|; for SOCKS5, 1
 // to 255 bytes each (RFC 1929); for HTTP(S), UTF-8 and no ':' in |user|
-// (Basic authentication); none for SOCKS4.
+// (Basic authentication); none for SOCKS4. |empty_socks5_password| also
+// lets SOCKS5 take an empty password
+// (crnet_client_config_set_socks5_empty_password()).
 bool ValidProxyCredentials(const std::string &proxy, const std::string &user,
-			   const std::string &pass);
+			   const std::string &pass,
+			   bool empty_socks5_password = false);
 
 // The proxy chain for a Chromium proxy URI from ParseProxy(), direct for
 // "".

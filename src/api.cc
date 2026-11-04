@@ -436,6 +436,13 @@ CRNET_API void crnet_client_config_set_insecure(crnet_client_config *cfg,
 		cfg->cfg.insecure = !!enable;
 }
 
+CRNET_API void crnet_client_config_set_socks5_empty_password(
+	crnet_client_config *cfg, int enable)
+{
+	if (cfg)
+		cfg->cfg.socks5_empty_password = !!enable;
+}
+
 CRNET_API void crnet_client_config_set_ignore_ip_address_changes(
 	crnet_client_config *cfg, int enable)
 {
@@ -582,7 +589,8 @@ CRNET_API crnet_client *crnet_client_new(const crnet_client_config *cfg)
 		// Only now is the proxy they are for known.
 		if (!crnet::ValidProxyCredentials(c.proxy,
 						  c.proxy_credentials->first,
-						  c.proxy_credentials->second))
+						  c.proxy_credentials->second,
+						  c.socks5_empty_password))
 			return nullptr;
 		c.proxy_user = c.proxy_credentials->first;
 		c.proxy_pass = c.proxy_credentials->second;

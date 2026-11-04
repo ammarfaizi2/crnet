@@ -937,3 +937,69 @@ TEST(ProxyCredentials, Validation)
 	crnet_request_free(req);
 	crnet_client_free(client);
 }
+
+// An empty SOCKS5 password goes out as PLEN 0 when the client allows it;
+// the test proxy accepts "crnet-nopass" only with an empty password.
+TEST(ProxyCredentials, Socks5EmptyPassword)
+{
+	const Ports &p = ServerPorts();
+	const std::string url = RemoteOnlyUrl(p.https, "/echo");
+	const std::string bare = "socks5h://127.0.0.1:" + std::to_string(p.socks5_auth);
+	const std::string user = "crnet-nopass";
+	auto config = [&](bool allow) {
+		crnet_client_config *cfg = crnet_client_config_new();
+		crnet_client_config_set_socks5_empty_password(cfg, allow);
+		return cfg;
+	};
+
+	// Client credentials: refused by default, sent as PLEN 0 when allowed.
+	for (bool allow : {false, true}) {
+		SCOPED_TRACE(allow ? "allowed" : "default");
+		crnet_client_config *cfg = config(allow);
+		ASSERT_EQ(crnet_client_config_set_proxy(cfg, bare.c_str()), CRNET_OK);
+		ASSERT_EQ(crnet_client_config_set_proxy_credentials(cfg, user.data(), user.size(),
+								     "", 0),
+			  CRNET_OK);
+		crnet_client *c = NewTestClient(cfg);
+		crnet_client_config_free(cfg);
+		if (!allow) {
+			EXPECT_EQ(c, nullptr);
+			continue;
+		}
+		ASSERT_NE(c, nullptr);
+		Result r = Get(c, url);
+		EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+		EXPECT_EQ(SocksAuths().back(), json::array({user, true}));
+		crnet_client_free(c);
+	}
+
+	// Request credentials: the same, checked when the request starts.
+	for (bool allow : {false, true}) {
+		SCOPED_TRACE(allow ? "allowed" : "default");
+		crnet_client_config *cfg = config(allow);
+		crnet_client *c = NewTestClient(cfg);
+		crnet_client_config_free(cfg);
+		Result r = GetWithCredentials(c, url, bare, user, "");
+		if (allow) {
+			EXPECT_EQ(r.rc, CRNET_OK) << crnet_response_error_string(r.resp);
+			EXPECT_EQ(SocksAuths().back(), json::array({user, true}));
+		} else {
+			EXPECT_EQ(r.rc, CRNET_E_INVAL);
+			EXPECT_EQ(r.net_error(), -4);
+		}
+		crnet_client_free(c);
+	}
+
+	// In a URL it is refused when set, before any client exists.
+	crnet_client_config *cfg = config(true);
+	EXPECT_EQ(crnet_client_config_set_proxy(
+			  cfg, ("socks5h://" + user + "@127.0.0.1:" +
+				std::to_string(p.socks5_auth)).c_str()),
+		  CRNET_E_INVAL);
+	crnet_client_config_free(cfg);
+	// The username still needs a byte.
+	cfg = config(true);
+	ASSERT_EQ(crnet_client_config_set_proxy(cfg, bare.c_str()), CRNET_OK);
+	EXPECT_EQ(crnet_client_config_set_proxy_credentials(cfg, "", 0, "x", 1), CRNET_E_INVAL);
+	crnet_client_config_free(cfg);
+}

@@ -398,7 +398,8 @@ private:
 
 bool crnet::ValidProxyCredentials(const std::string &proxy,
 				  const std::string &user,
-				  const std::string &pass)
+				  const std::string &pass,
+				  bool empty_socks5_password)
 {
 	if (user.empty())
 		return pass.empty();
@@ -408,7 +409,9 @@ bool crnet::ValidProxyCredentials(const std::string &proxy,
 		return false;
 	switch (server.scheme()) {
 	case net::ProxyServer::SCHEME_SOCKS5:
-		return user.size() <= 255 && !pass.empty() && pass.size() <= 255;
+		return user.size() <= 255 &&
+		       (!pass.empty() || empty_socks5_password) &&
+		       pass.size() <= 255;
 	case net::ProxyServer::SCHEME_HTTP:
 	case net::ProxyServer::SCHEME_HTTPS:
 		// Basic authentication splits at the first ':', and Chromium
