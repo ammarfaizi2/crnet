@@ -88,7 +88,7 @@ class ClientTest(unittest.TestCase):
 class Library(unittest.TestCase):
     def test_versions(self):
         major, minor, _ = (int(x) for x in crnet.version().split("."))
-        self.assertGreaterEqual((major, minor), (0, 35))
+        self.assertGreaterEqual((major, minor), (0, 36))
         self.assertRegex(crnet.chromium_version(), r"^\d+\.\d+\.\d+\.\d+$")
         self.assertIn("Chrome/", crnet.default_user_agent())
         self.assertIn("Windows NT 10.0",
@@ -314,6 +314,19 @@ class Configuration(unittest.TestCase):
                 b = c.get(url("/echo"))
                 self.assertEqual(b.socket_reused, ignore)
                 self.assertEqual(b.connection_id == a.connection_id, ignore)
+
+    def test_socks5_empty_password(self):
+        remote = "https://www.crnet-test:%d/echo" % ports["https"]
+        proxy = "socks5h://127.0.0.1:%d" % ports["socks5_auth"]
+        creds = ("crnet-nopass", b"")
+        with self.assertRaises(crnet.Error):
+            Client(insecure=True, proxy=proxy, proxy_credentials=creds)
+        with Client(insecure=True, proxy=proxy, proxy_credentials=creds,
+                    socks5_empty_password=True) as c:
+            self.assertTrue(c.get(remote).via_proxy)
+        with Client(insecure=True) as s:
+            auths = s.get(url("/echo")).json()["stats"]["socks5_auths"]
+        self.assertEqual(auths[-1], ["crnet-nopass", True])
 
     def test_bind_interface(self):
         with Client(bind_interface="lo") as c:

@@ -682,7 +682,8 @@ _STRING_OPTIONS = ("proxy", "proxy_bypass", "user_agent", "sec_ch_ua",
                    "platform", "accept_language", "host_rules", "netlog",
                    "state_dir", "local_address", "bind_interface")
 _BOOL_OPTIONS = ("http2", "quic", "builtin_dns", "cookies", "insecure",
-                 "trust_anchors_only", "ignore_ip_address_changes")
+                 "trust_anchors_only", "ignore_ip_address_changes",
+                 "socks5_empty_password")
 
 
 class Client:
@@ -694,7 +695,7 @@ class Client:
       accept_language, host_rules, netlog, state_dir, local_address,
       bind_interface (str)
       http2, quic, builtin_dns, cookies, insecure, trust_anchors_only,
-      ignore_ip_address_changes
+      ignore_ip_address_changes, socks5_empty_password
       proxy_credentials: (user, password) as bytes or str, replacing the
         proxy URL's; None for none at all
       platform_profile (PLATFORM_*)

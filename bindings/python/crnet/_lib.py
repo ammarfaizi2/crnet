@@ -12,7 +12,7 @@ from ctypes import (POINTER, c_char_p, c_int, c_int64, c_size_t, c_uint64,
                     c_void_p)
 
 # The oldest library with every function declared below.
-MIN_VERSION = (0, 35, 0)
+MIN_VERSION = (0, 36, 0)
 
 FOREVER = 2**64 - 1     # UINT64_MAX: wait without a time limit
 
@@ -67,7 +67,8 @@ for _name in ("proxy", "proxy_bypass", "user_agent", "sec_ch_ua",
               "state_dir", "local_address", "bind_interface"):
     _fn("crnet_client_config_set_" + _name, c_int, _P, c_char_p)
 for _name in ("http2", "quic", "builtin_dns", "cookies", "insecure",
-              "trust_anchors_only", "ignore_ip_address_changes"):
+              "trust_anchors_only", "ignore_ip_address_changes",
+              "socks5_empty_password"):
     _fn("crnet_client_config_set_" + _name, None, _P, c_int)
 _fn("crnet_client_config_set_platform_profile", c_int, _P, c_int)
 _fn("crnet_client_config_set_proxy_credentials", c_int, _P, c_char_p,
