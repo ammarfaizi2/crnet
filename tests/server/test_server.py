@@ -11,7 +11,8 @@ Listens on 127.0.0.1 (ephemeral ports) and serves:
     ("https_mtls"; the client's PEM files are "client_cert", "client_key")
   * plain HTTP/1.1
   * a SOCKS5 proxy requiring username "crnet" (or a session user
-    "crnet-<anything>", like a rotating proxy) and password "secret"
+    "crnet-<anything>", like a rotating proxy) and password "secret", or
+    username "crnet-nopass" with an empty password
     (RFC 1929, "socks5_auth"), otherwise like the next one
   * a SOCKS5 proxy (no auth, CONNECT only, remote name resolution) with
     fault injection: destinations rep-N.crnet-test (reply code N),
@@ -109,7 +110,11 @@ PROXY_PASS = "secret"
 
 
 def proxy_user_ok(user, password):
-    """The proxies' users: "crnet", or a session user "crnet-<id>"."""
+    """The proxies' users: "crnet", or a session user "crnet-<id>", with
+    password "secret"; and "crnet-nopass" with an empty password, so that
+    a login it accepts shows the password went out empty."""
+    if user == PROXY_USER + "-nopass":
+        return password == ""
     return ((user == PROXY_USER or user.startswith(PROXY_USER + "-")) and
             password == PROXY_PASS)
 STATS = {"socks5_connects": 0, "http_proxy_connects": 0, "ws_connects": 0,
