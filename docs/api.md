@@ -528,7 +528,7 @@ connection has no DNS, connect or TLS phase.
 describe the headers a program is compiled against, and
 `CRNET_VERSION_NUMBER` combines them for comparisons (0.2.0 is 200,
 1.10.3 is 11003). `crnet_version()` reports the library actually
-loaded, for example `"0.2.0 (Chromium 155.0.8059.39)"`.
+loaded, for example `"0.2.0 (Chromium 157.0.8103.78)"`.
 
 Every capability gets a `CRNET_HAS_*` macro, defined to 1 next to its
 declarations in `crnet.h`, and adding one bumps the minor version. Test

@@ -75,7 +75,7 @@ extern "C" {
  * Releases before 0.2.0 define none of them.
  */
 #define CRNET_VERSION_MAJOR 0
-#define CRNET_VERSION_MINOR 36
+#define CRNET_VERSION_MINOR 37
 #define CRNET_VERSION_PATCH 0
 /* 0.2.0 is 200, 1.10.3 is 11003: compare with >=. */
 #define CRNET_VERSION_NUMBER \
@@ -131,10 +131,10 @@ typedef enum crnet_priority {
 /* Library                                                          */
 /* ---------------------------------------------------------------- */
 
-/* "0.21.0 (Chromium 155.0.8059.39)". Static storage. */
+/* "0.21.0 (Chromium 157.0.8103.78)". Static storage. */
 CRNET_API const char *crnet_version(void);
 
-/* Chromium version crnet was built from, e.g. "155.0.8059.39". */
+/* Chromium version crnet was built from, e.g. "157.0.8103.78". */
 CRNET_API const char *crnet_chromium_version(void);
 
 /* Human readable description of a crnet_error. Static storage. */
@@ -142,7 +142,7 @@ CRNET_API const char *crnet_strerror(int err);
 
 /*
  * Default User-Agent / sec-ch-ua values for this build, e.g.
- * "Mozilla/5.0 (X11; Linux x86_64) ... Chrome/155.0.0.0 Safari/537.36".
+ * "Mozilla/5.0 (X11; Linux x86_64) ... Chrome/157.0.0.0 Safari/537.36".
  * Static storage.
  */
 CRNET_API const char *crnet_default_user_agent(void);

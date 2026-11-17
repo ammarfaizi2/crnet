@@ -191,7 +191,6 @@ public:
 
 	bool OnAnnotateAndMoveUserBlockedCookies(
 		const net::URLRequest &request,
-		const net::FirstPartySetMetadata &first_party_set_metadata,
 		net::CookieAccessResultList &maybe_included_cookies,
 		net::CookieAccessResultList &excluded_cookies) override
 	{
@@ -210,7 +209,6 @@ public:
 	bool OnCanSetCookie(
 		const net::URLRequest &request, const net::CanonicalCookie &cookie,
 		net::CookieOptions *options,
-		const net::FirstPartySetMetadata &first_party_set_metadata,
 		net::CookieInclusionStatus *inclusion_status) override
 	{
 		return cookies_;

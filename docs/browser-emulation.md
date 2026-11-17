@@ -20,7 +20,7 @@ for a library.
 | Browser request headers and their order | `profile.cc` | captured from Chrome (see below) |
 | Cookies (SameSite, Secure, partitioning rules) | `//net` `CookieMonster` | same cookie store |
 
-Fingerprint check against Chrome 155 (tls.peet.ws), identical for crnet
+Fingerprint check against Chrome 157 (tls.peet.ws), identical for crnet
 and Chrome:
 
 ```
@@ -39,14 +39,14 @@ request's mode selects which one crnet reproduces.
 ### `CRNET_MODE_NAVIGATE` (default): a top-level page load
 
 Typed URL, link click or bookmark (`GET`), or a form submission
-(`POST`). HTTP/2 headers, exactly as Chrome 155 sends them:
+(`POST`). HTTP/2 headers, exactly as Chrome 157 sends them:
 
 ```
-sec-ch-ua: "Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"
+sec-ch-ua: "Not-A.Brand";v="99", "Google Chrome";v="157", "Chromium";v="157"
 sec-ch-ua-mobile: ?0
 sec-ch-ua-platform: "Linux"
 upgrade-insecure-requests: 1
-user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36
 accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
 sec-fetch-site: none
 sec-fetch-mode: navigate
@@ -172,7 +172,7 @@ headers, the TLS handshake or HTTP/2 depends on the platform.
 `crnet_client_config_set_platform()` still override single values, and
 take precedence over the profile whatever the order of the calls. Keep
 the major version equal to the build's: the TLS and HTTP/2 fingerprint
-always says "Chrome 155", and a mismatching `User-Agent` is a classic
+always says "Chrome 157", and a mismatching `User-Agent` is a classic
 bot signal.
 
 ## What crnet does not do

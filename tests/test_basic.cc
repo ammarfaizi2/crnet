@@ -40,13 +40,13 @@ TEST(Library, VersionStrings)
 	EXPECT_NE(ch.find("Brand\";v=\""), std::string::npos);
 }
 
-TEST(Library, SecChUaMatchesChrome155)
+TEST(Library, SecChUaMatchesChrome157)
 {
-	if (std::string(crnet_chromium_version()).rfind("155.", 0) != 0)
-		GTEST_SKIP() << "value captured from Chrome 155";
+	if (std::string(crnet_chromium_version()).rfind("157.", 0) != 0)
+		GTEST_SKIP() << "value captured from Chrome 157";
 	EXPECT_STREQ(crnet_default_sec_ch_ua(),
-		     "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", "
-		     "\"Not(A:Brand\";v=\"24\"");
+		     "\"Not-A.Brand\";v=\"99\", \"Google Chrome\";v=\"157\", "
+		     "\"Chromium\";v=\"157\"");
 }
 
 TEST(Library, StrError)

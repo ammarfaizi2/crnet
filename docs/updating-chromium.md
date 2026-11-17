@@ -61,7 +61,7 @@ N+2, that is an outlier. Follow Chrome Stable.
 
 6. **Check the version-dependent identity**: `crnet_default_user_agent()`
    and `crnet_default_sec_ch_ua()` derive from the new major version
-   automatically. `Library.SecChUaMatchesChrome155` in
+   automatically. `Library.SecChUaMatchesChrome157` in
    `tests/test_basic.cc` pins one exact value. Update it to what the new
    Chrome sends.
 

@@ -191,7 +191,7 @@ TEST_F(ClientTest, WsHandshakeMatchesChrome)
 	json doc = json::parse(RecvText(ws));
 	crnet_ws_free(ws);
 
-	// Captured from Chrome 155 (tests/fingerprint/capture_chrome.py).
+	// Captured from Chrome 157 (tests/fingerprint/capture_chrome.py).
 	EXPECT_EQ(HeaderNames(doc), (std::vector<std::string>{
 		"Host", "Connection", "Pragma", "Cache-Control", "User-Agent",
 		"Upgrade", "Origin", "Sec-WebSocket-Version", "Accept-Encoding",

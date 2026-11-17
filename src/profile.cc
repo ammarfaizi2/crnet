@@ -5,7 +5,7 @@
 // //net produces Chrome's TLS and HTTP/2 behaviour on its own, but the
 // browser-level request headers (client hints, fetch metadata, accept)
 // are added above //net by Blink and the network service. They are
-// reproduced here from captures of Chrome 155 (see tests/fingerprint)
+// reproduced here from captures of Chrome 157 (see tests/fingerprint)
 // and the Chromium sources referenced below.
 //
 #include <algorithm>

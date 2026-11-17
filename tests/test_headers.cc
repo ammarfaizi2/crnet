@@ -2,7 +2,7 @@
 //
 // Browser emulation: request headers, their values and their order.
 //
-// The expected sequences below were captured from Google Chrome 155
+// The expected sequences below were captured from Google Chrome 157
 // (headless) talking to tests/server/test_server.py; see
 // docs/fingerprint.md for how to re-capture them for a new release.
 //
@@ -340,7 +340,7 @@ TEST(Identity, PlatformProfiles)
 		{CRNET_PLATFORM_MACOS, "Macintosh; Intel Mac OS X 10_15_7",
 		 "\"macOS\""},
 	};
-	// "155.0.8059.39" reduces to "155.0.0.0".
+	// "157.0.8103.78" reduces to "157.0.0.0".
 	const std::string full = crnet_chromium_version();
 	const std::string product = "Chrome/" +
 		full.substr(0, full.find('.')) + ".0.0.0 Safari/537.36";

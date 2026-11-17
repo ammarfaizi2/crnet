@@ -195,7 +195,7 @@ not block.
 
 ## What Chrome sends
 
-Captured from Chrome 155 (`tests/fingerprint/capture_chrome.py`) and
+Captured from Chrome 157 (`tests/fingerprint/capture_chrome.py`) and
 reproduced by crnet; `tests/test_websocket.cc` checks it:
 
 ```
@@ -204,7 +204,7 @@ Host: example.com
 Connection: Upgrade
 Pragma: no-cache
 Cache-Control: no-cache
-User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36
 Upgrade: websocket
 Origin: https://example.com
 Sec-WebSocket-Version: 13

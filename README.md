@@ -9,7 +9,7 @@ Requests go through the same code Chrome uses, so the TLS ClientHello
 (JA3/JA4), the HTTP/2 connection preface (SETTINGS, WINDOW_UPDATE,
 priorities) and the request headers are those of the Chrome release
 crnet was built from. Sites that fingerprint clients see crnet as
-Chrome. The current build tracks **Chrome 155.0.8059.39**.
+Chrome. The current build tracks **Chrome 157.0.8103.78**.
 
 ```c
 #include <crnet/crnet.h>
